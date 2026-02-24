@@ -12,7 +12,7 @@ import (
 const (
 	numBands = 10
 	fftSize  = 2048
-	barWidth = 5 // character width of each spectrum bar
+	barWidth = 6 // character width of each spectrum bar
 )
 
 // Unicode block elements for bar height (9 levels including space)

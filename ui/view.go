@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const panelWidth = 60 // usable inner width (66 frame - 2 border - 4 padding)
+const panelWidth = 74 // usable inner width (80 frame - 6 padding)
 
 // Pre-built styles for elements created per-render to avoid repeated allocation.
 var (
@@ -140,7 +140,7 @@ func (m Model) renderVolume() string {
 	vol := m.player.Volume()
 	frac := max(0, min(1, (vol+30)/36))
 
-	barW := 22
+	barW := 30
 	filled := int(frac * float64(barW))
 
 	bar := volBarStyle.Render(strings.Repeat("█", filled)) +

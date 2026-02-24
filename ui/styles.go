@@ -5,7 +5,6 @@ import "github.com/charmbracelet/lipgloss"
 // CLIAMP color palette using standard ANSI terminal colors (0-15).
 // These adapt to the user's terminal theme for consistent appearance.
 var (
-	colorBorder  = lipgloss.ANSIColor(8)  // bright black (dark gray)
 	colorTitle   = lipgloss.ANSIColor(10) // bright green
 	colorText    = lipgloss.ANSIColor(15) // bright white
 	colorDim     = lipgloss.ANSIColor(7)  // white (light gray)
@@ -23,10 +22,8 @@ var (
 // Lip Gloss styles
 var (
 	frameStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBorder).
-			Padding(1, 2).
-			Width(66)
+			Padding(1, 3).
+			Width(80)
 
 	titleStyle = lipgloss.NewStyle().
 			Foreground(colorTitle).
