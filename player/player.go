@@ -55,7 +55,7 @@ func (p *Player) Play(path string) error {
 		return fmt.Errorf("open: %w", err)
 	}
 
-	streamer, format, err := decode(f, path)
+	streamer, format, err := decode(f, path, p.sr)
 	if err != nil {
 		f.Close()
 		return fmt.Errorf("decode: %w", err)
@@ -235,9 +235,21 @@ func (p *Player) Close() {
 	p.Stop()
 }
 
+// needsFFmpeg reports whether the given extension requires ffmpeg to decode.
+func needsFFmpeg(ext string) bool {
+	switch ext {
+	case ".m4a", ".aac", ".m4b", ".alac", ".wma", ".opus":
+		return true
+	}
+	return false
+}
+
 // decode selects the appropriate decoder based on the file extension.
-func decode(f *os.File, path string) (beep.StreamSeekCloser, beep.Format, error) {
+func decode(f *os.File, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
 	ext := strings.ToLower(filepath.Ext(path))
+	if needsFFmpeg(ext) {
+		return decodeFFmpeg(path, sr)
+	}
 	switch ext {
 	case ".wav":
 		return wav.Decode(f)

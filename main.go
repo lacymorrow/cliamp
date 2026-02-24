@@ -25,6 +25,12 @@ var audioExts = map[string]bool{
 	".wav":  true,
 	".flac": true,
 	".ogg":  true,
+	".m4a":  true,
+	".aac":  true,
+	".m4b":  true,
+	".alac": true,
+	".wma":  true,
+	".opus": true,
 }
 
 func run() error {
@@ -49,7 +55,7 @@ func run() error {
 	}
 
 	if len(files) == 0 {
-		return errors.New("no playable files found (supported: mp3, wav, flac, ogg)")
+		return errors.New("no playable files found (supported: mp3, wav, flac, ogg, m4a, aac, opus, wma)")
 	}
 
 	// Build playlist from file arguments

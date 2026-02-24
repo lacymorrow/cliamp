@@ -1,6 +1,6 @@
 # CLIAMP
 
-A retro terminal music player inspired by Winamp 2.x. Plays MP3, WAV, FLAC, and OGG with a 10-band spectrum visualizer, 10-band parametric EQ, and playlist management.
+A retro terminal music player inspired by Winamp 2.x. Plays MP3, WAV, FLAC, OGG, AAC, ALAC, Opus, and WMA with a 10-band spectrum visualizer, 10-band parametric EQ, and playlist management.
 
 Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), and [Beep](https://github.com/gopxl/beep).
 
@@ -47,6 +47,21 @@ go build -o cliamp .
 ./cliamp ~/Music/jazz ~/Music/rock # multiple folders
 ./cliamp ~/Music song.mp3          # mix folders and files
 ```
+
+### ffmpeg (optional)
+
+AAC, ALAC (`.m4a`), Opus, and WMA playback requires [ffmpeg](https://ffmpeg.org/) installed:
+
+```sh
+# Arch
+sudo pacman -S ffmpeg
+# Debian/Ubuntu
+sudo apt install ffmpeg
+# macOS
+brew install ffmpeg
+```
+
+MP3, WAV, FLAC, and OGG work without ffmpeg.
 
 ## Configuration
 
