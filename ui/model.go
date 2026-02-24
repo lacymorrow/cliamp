@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"winamp-cli/player"
-	"winamp-cli/playlist"
+	"cliamp/player"
+	"cliamp/playlist"
 )
 
 type focusArea int

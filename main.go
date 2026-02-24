@@ -13,9 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gopxl/beep/v2"
 
-	"winamp-cli/player"
-	"winamp-cli/playlist"
-	"winamp-cli/ui"
+	"cliamp/config"
+	"cliamp/player"
+	"cliamp/playlist"
+	"cliamp/ui"
 )
 
 // audioExts is the set of file extensions the player can decode.
@@ -57,16 +58,47 @@ func run() error {
 		pl.Add(playlist.TrackFromPath(f))
 	}
 
+	// Load user config
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+
 	// Initialize audio engine at CD-quality sample rate
 	sr := beep.SampleRate(44100)
 	p := player.New(sr)
 	defer p.Close()
+
+	// Apply config
+	p.SetVolume(cfg.Volume)
+	for i, gain := range cfg.EQ {
+		p.SetEQBand(i, gain)
+	}
+	switch cfg.Repeat {
+	case "all":
+		pl.CycleRepeat() // off -> all
+	case "one":
+		pl.CycleRepeat() // off -> all
+		pl.CycleRepeat() // all -> one
+	}
+	if cfg.Shuffle {
+		pl.ToggleShuffle()
+	}
 
 	// Launch the TUI
 	m := ui.NewModel(p, pl)
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := prog.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
+	}
+
+	// Save current state for next session
+	cfg.Volume = p.Volume()
+	cfg.EQ = p.EQBands()
+	cfg.Repeat = strings.ToLower(pl.Repeat().String())
+	cfg.Shuffle = pl.Shuffled()
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil

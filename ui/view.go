@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"winamp-cli/playlist"
+	"cliamp/playlist"
 )
 
 const panelWidth = 74 // usable inner width (80 frame - 6 padding)

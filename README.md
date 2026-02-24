@@ -48,6 +48,30 @@ go build -o cliamp .
 ./cliamp ~/Music song.mp3          # mix folders and files
 ```
 
+## Configuration
+
+Copy the example config to get started:
+
+```sh
+mkdir -p ~/.config/cliamp
+cp config.toml.example ~/.config/cliamp/config.toml
+```
+
+```toml
+# Default volume in dB (range: -30 to 6)
+volume = 0
+
+# Repeat mode: "off", "all", or "one"
+repeat = "off"
+
+# Start with shuffle enabled
+shuffle = false
+
+# 10-band EQ gains in dB (range: -12 to 12)
+# Bands: 70Hz, 180Hz, 320Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
+eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+```
+
 ## Keys
 
 | Key | Action |

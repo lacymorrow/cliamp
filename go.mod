@@ -1,4 +1,4 @@
-module winamp-cli
+module cliamp
 
 go 1.25.5
 
