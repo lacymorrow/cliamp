@@ -112,3 +112,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |
 | `q` | Quit |
+
+## Author
+
+[x.com/iamdothash](https://x.com/iamdothash)
