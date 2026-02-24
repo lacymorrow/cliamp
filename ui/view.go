@@ -9,6 +9,14 @@ import (
 
 const panelWidth = 60 // usable inner width (66 frame - 2 border - 4 padding)
 
+// Pre-built styles for elements created per-render to avoid repeated allocation.
+var (
+	seekFillStyle = lipgloss.NewStyle().Foreground(colorSeekBar)
+	seekDimStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	volBarStyle   = lipgloss.NewStyle().Foreground(colorVolume)
+	activeToggle  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+)
+
 // View renders the full TUI frame.
 func (m Model) View() string {
 	if m.quitting {
@@ -70,7 +78,7 @@ func (m Model) renderTrackInfo() string {
 	off := m.titleOff % total
 
 	display := make([]rune, maxW)
-	for i := 0; i < maxW; i++ {
+	for i := range maxW {
 		display[i] = padded[(off+i)%total]
 	}
 	return trackStyle.Render("♫ " + string(display))
@@ -88,13 +96,12 @@ func (m Model) renderTimeStatus() string {
 	timeStr := fmt.Sprintf("%02d:%02d / %02d:%02d", posMin, posSec, durMin, durSec)
 
 	var status string
-	if m.player.IsPlaying() {
-		if m.player.IsPaused() {
-			status = statusStyle.Render("⏸ Paused")
-		} else {
-			status = statusStyle.Render("▶ Playing")
-		}
-	} else {
+	switch {
+	case m.player.IsPlaying() && m.player.IsPaused():
+		status = statusStyle.Render("⏸ Paused")
+	case m.player.IsPlaying():
+		status = statusStyle.Render("▶ Playing")
+	default:
 		status = dimStyle.Render("■ Stopped")
 	}
 
@@ -108,75 +115,52 @@ func (m Model) renderTimeStatus() string {
 }
 
 func (m Model) renderSpectrum() string {
-	samples := m.player.Samples()
-	var bands [numBands]float64
-	if len(samples) > 0 {
-		bands = m.vis.Analyze(samples)
-	} else {
-		bands = m.vis.Analyze(nil)
-	}
+	bands := m.vis.Analyze(m.player.Samples())
 	return m.vis.Render(bands)
 }
 
 func (m Model) renderSeekBar() string {
 	pos := m.player.Position()
 	dur := m.player.Duration()
-	barWidth := panelWidth
 
 	var progress float64
 	if dur > 0 {
 		progress = float64(pos) / float64(dur)
 	}
-	if progress > 1 {
-		progress = 1
-	}
+	progress = max(0, min(1, progress))
 
-	filled := int(progress * float64(barWidth-1))
-	if filled < 0 {
-		filled = 0
-	}
+	filled := int(progress * float64(panelWidth-1))
 
-	seekFill := lipgloss.NewStyle().Foreground(colorSeekBar)
-	seekDim := lipgloss.NewStyle().Foreground(colorDim)
-
-	return seekFill.Render(strings.Repeat("━", filled)) +
-		seekFill.Render("●") +
-		seekDim.Render(strings.Repeat("━", max(0, barWidth-filled-1)))
+	return seekFillStyle.Render(strings.Repeat("━", filled)) +
+		seekFillStyle.Render("●") +
+		seekDimStyle.Render(strings.Repeat("━", max(0, panelWidth-filled-1)))
 }
 
 func (m Model) renderVolume() string {
 	vol := m.player.Volume()
-	frac := (vol + 30) / 36
-	if frac < 0 {
-		frac = 0
-	}
-	if frac > 1 {
-		frac = 1
-	}
+	frac := max(0, min(1, (vol+30)/36))
 
-	barWidth := 22
-	filled := int(frac * float64(barWidth))
+	barW := 22
+	filled := int(frac * float64(barW))
 
-	volStyle := lipgloss.NewStyle().Foreground(colorVolume)
-
-	bar := volStyle.Render(strings.Repeat("█", filled)) +
-		dimStyle.Render(strings.Repeat("░", barWidth-filled))
+	bar := volBarStyle.Render(strings.Repeat("█", filled)) +
+		dimStyle.Render(strings.Repeat("░", barW-filled))
 
 	return labelStyle.Render("VOL ") + bar + dimStyle.Render(fmt.Sprintf(" %+.1fdB", vol))
 }
 
 func (m Model) renderEQ() string {
 	bands := m.player.EQBands()
-	labels := []string{"70", "180", "320", "600", "1k", "3k", "6k", "12k", "14k", "16k"}
+	labels := [10]string{"70", "180", "320", "600", "1k", "3k", "6k", "12k", "14k", "16k"}
 
-	var parts []string
+	parts := make([]string, len(labels))
 	for i, label := range labels {
 		style := eqInactiveStyle
 		if m.focus == focusEQ && i == m.eqCursor {
 			style = eqActiveStyle
 			label = fmt.Sprintf("%+.0f", bands[i])
 		}
-		parts = append(parts, style.Render(label))
+		parts[i] = style.Render(label)
 	}
 
 	return labelStyle.Render("EQ  ") + strings.Join(parts, " ")
@@ -185,15 +169,14 @@ func (m Model) renderEQ() string {
 func (m Model) renderPlaylistHeader() string {
 	var shuffle string
 	if m.playlist.Shuffled() {
-		shuffle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("[Shuffle]")
+		shuffle = activeToggle.Render("[Shuffle]")
 	} else {
 		shuffle = dimStyle.Render("[Shuffle]")
 	}
 
-	repeatMode := m.playlist.Repeat()
-	repeatStr := fmt.Sprintf("[Repeat: %s]", repeatMode)
-	if repeatMode != 0 {
-		repeatStr = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(repeatStr)
+	repeatStr := fmt.Sprintf("[Repeat: %s]", m.playlist.Repeat())
+	if m.playlist.Repeat() != 0 {
+		repeatStr = activeToggle.Render(repeatStr)
 	} else {
 		repeatStr = dimStyle.Render(repeatStr)
 	}
@@ -208,20 +191,15 @@ func (m Model) renderPlaylist() string {
 	}
 
 	currentIdx := m.playlist.Index()
-	visible := m.plVisible
-	if visible > len(tracks) {
-		visible = len(tracks)
-	}
+	visible := min(m.plVisible, len(tracks))
 
 	scroll := m.plScroll
 	if scroll+visible > len(tracks) {
 		scroll = len(tracks) - visible
 	}
-	if scroll < 0 {
-		scroll = 0
-	}
+	scroll = max(0, scroll)
 
-	var lines []string
+	lines := make([]string, 0, visible)
 	for i := scroll; i < scroll+visible && i < len(tracks); i++ {
 		prefix := "  "
 		style := playlistItemStyle
@@ -242,8 +220,7 @@ func (m Model) renderPlaylist() string {
 			name = string(nameRunes[:maxW-1]) + "…"
 		}
 
-		line := style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name))
-		lines = append(lines, line)
+		lines = append(lines, style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name)))
 	}
 
 	return strings.Join(lines, "\n")

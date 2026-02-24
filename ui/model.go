@@ -1,12 +1,13 @@
+// Package ui implements the Bubbletea TUI for the CLIAMP terminal music player.
 package ui
 
 import (
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"winamp-cli/player"
 	"winamp-cli/playlist"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type focusArea int
@@ -85,14 +86,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // nextTrack advances to the next playlist track and starts playing it.
 func (m *Model) nextTrack() {
 	track, ok := m.playlist.Next()
-	if ok {
-		m.plCursor = m.playlist.Index()
-		m.adjustScroll()
-		if err := m.player.Play(track.Path); err != nil {
-			m.err = err
-		}
-	} else {
+	if !ok {
 		m.player.Stop()
+		return
+	}
+	m.plCursor = m.playlist.Index()
+	m.adjustScroll()
+	if err := m.player.Play(track.Path); err != nil {
+		m.err = err
 	}
 }
 
@@ -103,12 +104,13 @@ func (m *Model) prevTrack() {
 		return
 	}
 	track, ok := m.playlist.Prev()
-	if ok {
-		m.plCursor = m.playlist.Index()
-		m.adjustScroll()
-		if err := m.player.Play(track.Path); err != nil {
-			m.err = err
-		}
+	if !ok {
+		return
+	}
+	m.plCursor = m.playlist.Index()
+	m.adjustScroll()
+	if err := m.player.Play(track.Path); err != nil {
+		m.err = err
 	}
 }
 

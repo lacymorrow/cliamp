@@ -1,3 +1,5 @@
+// Package player provides the audio engine for MP3 playback with
+// a 10-band parametric EQ, volume control, and sample capture for visualization.
 package player
 
 import (
@@ -30,7 +32,7 @@ func NewTap(s beep.Streamer, bufSize int) *Tap {
 func (t *Tap) Stream(samples [][2]float64) (int, bool) {
 	n, ok := t.s.Stream(samples)
 	t.mu.Lock()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		t.buf[t.pos] = (samples[i][0] + samples[i][1]) / 2
 		t.pos = (t.pos + 1) % t.size
 	}
@@ -51,7 +53,7 @@ func (t *Tap) Samples(n int) []float64 {
 	out := make([]float64, n)
 	t.mu.Lock()
 	start := (t.pos - n + t.size) % t.size
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = t.buf[(start+i)%t.size]
 	}
 	t.mu.Unlock()

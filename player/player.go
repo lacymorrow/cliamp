@@ -17,7 +17,8 @@ import (
 var EQFreqs = [10]float64{70, 180, 320, 600, 1000, 3000, 6000, 12000, 14000, 16000}
 
 // Player is the audio engine managing the playback pipeline:
-// [MP3 Decode] -> [Resample] -> [10x Biquad EQ] -> [Volume] -> [Tap] -> [Ctrl] -> [Speaker]
+//
+//	[MP3 Decode] -> [Resample] -> [10x Biquad EQ] -> [Volume] -> [Tap] -> [Ctrl] -> [Speaker]
 type Player struct {
 	mu        sync.Mutex
 	sr        beep.SampleRate
@@ -68,7 +69,7 @@ func (p *Player) Play(path string) error {
 	}
 
 	// Chain 10 biquad peaking EQ filters; each reads its gain from p.eqBands[i]
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		s = newBiquad(s, EQFreqs[i], 1.4, &p.eqBands[i], float64(p.sr))
 	}
 
@@ -228,8 +229,7 @@ func (p *Player) Close() {
 	p.Stop()
 }
 
-// --- Volume Streamer ---
-
+// volumeStreamer applies dB gain to an audio stream.
 type volumeStreamer struct {
 	s   beep.Streamer
 	vol *float64
@@ -241,7 +241,7 @@ func (v *volumeStreamer) Stream(samples [][2]float64) (int, bool) {
 	v.mu.Lock()
 	gain := math.Pow(10, *v.vol/20)
 	v.mu.Unlock()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		samples[i][0] *= gain
 		samples[i][1] *= gain
 	}
@@ -250,11 +250,9 @@ func (v *volumeStreamer) Stream(samples [][2]float64) (int, bool) {
 
 func (v *volumeStreamer) Err() error { return v.s.Err() }
 
-// --- Biquad Peaking EQ Filter ---
-// Implements a second-order IIR peaking equalizer per the Audio EQ Cookbook.
+// biquad implements a second-order IIR peaking equalizer per the Audio EQ Cookbook.
 // Each filter reads its gain from a shared pointer, so EQ changes take
 // effect on the next Stream() call without rebuilding the pipeline.
-
 type biquad struct {
 	s    beep.Streamer
 	freq float64
@@ -281,18 +279,18 @@ func (b *biquad) calcCoeffs(dB float64) {
 	b.lastGain = dB
 	b.inited = true
 
-	A := math.Pow(10, dB/40)
+	a := math.Pow(10, dB/40)
 	w0 := 2 * math.Pi * b.freq / b.sr
 	sinW0 := math.Sin(w0)
 	cosW0 := math.Cos(w0)
 	alpha := sinW0 / (2 * b.q)
 
-	b0 := 1 + alpha*A
+	b0 := 1 + alpha*a
 	b1 := -2 * cosW0
-	b2 := 1 - alpha*A
-	a0 := 1 + alpha/A
+	b2 := 1 - alpha*a
+	a0 := 1 + alpha/a
 	a1 := -2 * cosW0
-	a2 := 1 - alpha/A
+	a2 := 1 - alpha/a
 
 	b.b0 = b0 / a0
 	b.b1 = b1 / a0
@@ -312,8 +310,8 @@ func (b *biquad) Stream(samples [][2]float64) (int, bool) {
 
 	b.calcCoeffs(dB)
 
-	for i := 0; i < n; i++ {
-		for ch := 0; ch < 2; ch++ {
+	for i := range n {
+		for ch := range 2 {
 			x := samples[i][ch]
 			y := b.b0*x + b.b1*b.x1[ch] + b.b2*b.x2[ch] - b.a1*b.y1[ch] - b.a2*b.y2[ch]
 			b.x2[ch] = b.x1[ch]

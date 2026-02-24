@@ -1,6 +1,8 @@
+// Package main is the entry point for the CLIAMP terminal music player.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,10 +15,9 @@ import (
 	"winamp-cli/ui"
 )
 
-func main() {
+func run() error {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: cliamp <file.mp3> [file2.mp3 ...]")
-		os.Exit(1)
+		return errors.New("usage: cliamp <file.mp3> [file2.mp3 ...]")
 	}
 
 	// Expand shell globs that may not have been expanded by the shell
@@ -45,6 +46,14 @@ func main() {
 	m := ui.NewModel(p, pl)
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := prog.Run(); err != nil {
+		return fmt.Errorf("tui: %w", err)
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -1,3 +1,4 @@
+// Package playlist manages an ordered track list with shuffle and repeat support.
 package playlist
 
 import (
@@ -153,20 +154,20 @@ func (p *Playlist) ToggleShuffle() {
 	p.shuffle = !p.shuffle
 	if p.shuffle {
 		p.doShuffle()
-	} else {
-		cur := p.order[p.pos]
-		p.order = make([]int, len(p.tracks))
-		for i := range p.order {
-			p.order[i] = i
-		}
-		p.pos = cur
+		return
 	}
+	cur := p.order[p.pos]
+	p.order = make([]int, len(p.tracks))
+	for i := range p.order {
+		p.order[i] = i
+	}
+	p.pos = cur
 }
 
 func (p *Playlist) doShuffle() {
 	cur := p.order[p.pos]
 	others := make([]int, 0, len(p.tracks)-1)
-	for i := 0; i < len(p.tracks); i++ {
+	for i := range len(p.tracks) {
 		if i != cur {
 			others = append(others, i)
 		}
@@ -175,7 +176,9 @@ func (p *Playlist) doShuffle() {
 		j := rand.Intn(i + 1)
 		others[i], others[j] = others[j], others[i]
 	}
-	p.order = append([]int{cur}, others...)
+	p.order = make([]int, 0, len(p.tracks))
+	p.order = append(p.order, cur)
+	p.order = append(p.order, others...)
 	p.pos = 0
 }
 

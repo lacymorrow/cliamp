@@ -12,54 +12,66 @@ import (
 const (
 	numBands = 10
 	fftSize  = 2048
+	barWidth = 5 // character width of each spectrum bar
 )
 
-// Unicode block elements for bar height (8 levels)
+// Unicode block elements for bar height (9 levels including space)
 var barBlocks = []string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
 
 // Frequency edges for 10 spectrum bands (Hz)
 var bandEdges = [11]float64{20, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 16000, 20000}
 
+// Pre-built styles for spectrum bar colors to avoid per-frame allocation.
+var (
+	specLowStyle  = lipgloss.NewStyle().Foreground(spectrumLow)
+	specMidStyle  = lipgloss.NewStyle().Foreground(spectrumMid)
+	specHighStyle = lipgloss.NewStyle().Foreground(spectrumHigh)
+)
+
 // Visualizer performs FFT analysis and renders spectrum bars.
 type Visualizer struct {
 	prev [numBands]float64 // previous frame for temporal smoothing
 	sr   float64
+	buf  []float64 // reusable FFT buffer to avoid per-frame allocation
 }
 
 // NewVisualizer creates a Visualizer for the given sample rate.
 func NewVisualizer(sampleRate float64) *Visualizer {
-	return &Visualizer{sr: sampleRate}
+	return &Visualizer{
+		sr:  sampleRate,
+		buf: make([]float64, fftSize),
+	}
 }
 
 // Analyze runs FFT on raw audio samples and returns 10 normalized band levels (0-1).
 func (v *Visualizer) Analyze(samples []float64) [numBands]float64 {
 	var bands [numBands]float64
 	if len(samples) == 0 {
-		// Decay previous values
-		for b := 0; b < numBands; b++ {
+		// Decay previous values when no audio data
+		for b := range numBands {
 			bands[b] = v.prev[b] * 0.8
 			v.prev[b] = bands[b]
 		}
 		return bands
 	}
 
-	// Zero-pad or truncate to fftSize
-	buf := make([]float64, fftSize)
-	copy(buf, samples)
+	// Zero-fill and copy into reusable buffer
+	clear(v.buf)
+	copy(v.buf, samples)
 
 	// Apply Hann window to reduce spectral leakage
-	for i := 0; i < fftSize; i++ {
+	for i := range fftSize {
 		w := 0.5 * (1 - math.Cos(2*math.Pi*float64(i)/float64(fftSize-1)))
-		buf[i] *= w
+		v.buf[i] *= w
 	}
 
 	// Compute FFT
-	spectrum := fft.FFTReal(buf)
+	spectrum := fft.FFTReal(v.buf)
 
 	binHz := v.sr / float64(fftSize)
 
 	// Sum magnitudes per frequency band
-	for b := 0; b < numBands; b++ {
+	for b := range numBands {
 		loIdx := int(bandEdges[b] / binHz)
 		hiIdx := int(bandEdges[b+1] / binHz)
 		if loIdx < 1 {
@@ -104,12 +116,7 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 
 	for i, level := range bands {
 		idx := int(level * float64(len(barBlocks)-1))
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(barBlocks) {
-			idx = len(barBlocks) - 1
-		}
+		idx = max(0, min(idx, len(barBlocks)-1))
 
 		block := barBlocks[idx]
 
@@ -117,14 +124,14 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 		var style lipgloss.Style
 		switch {
 		case level > 0.75:
-			style = lipgloss.NewStyle().Foreground(spectrumHigh)
+			style = specHighStyle
 		case level > 0.45:
-			style = lipgloss.NewStyle().Foreground(spectrumMid)
+			style = specMidStyle
 		default:
-			style = lipgloss.NewStyle().Foreground(spectrumLow)
+			style = specLowStyle
 		}
 
-		sb.WriteString(style.Render(strings.Repeat(block, 5)))
+		sb.WriteString(style.Render(strings.Repeat(block, barWidth)))
 		if i < numBands-1 {
 			sb.WriteString(" ")
 		}
