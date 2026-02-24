@@ -3,12 +3,23 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+// configPath returns the path to the config file.
+func configPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "cliamp", "config.toml"), nil
+}
 
 // Config holds user preferences loaded from the config file.
 type Config struct {
@@ -31,15 +42,14 @@ func Default() Config {
 func Load() (Config, error) {
 	cfg := Default()
 
-	home, err := os.UserHomeDir()
+	path, err := configPath()
 	if err != nil {
 		return cfg, nil
 	}
 
-	path := filepath.Join(home, ".config", "cliamp", "config.toml")
 	f, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return cfg, nil
 		}
 		return cfg, err
@@ -84,13 +94,12 @@ func Load() (Config, error) {
 
 // Save writes the config to ~/.config/cliamp/config.toml.
 func Save(cfg Config) error {
-	home, err := os.UserHomeDir()
+	path, err := configPath()
 	if err != nil {
 		return err
 	}
 
-	dir := filepath.Join(home, ".config", "cliamp")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
@@ -126,7 +135,6 @@ eq = [%s]
 		strings.Join(eqParts, ", "),
 	)
 
-	path := filepath.Join(dir, "config.toml")
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 

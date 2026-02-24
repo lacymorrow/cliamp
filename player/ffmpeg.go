@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/gopxl/beep/v2"
 )
+
+// pcmFrameSize is the byte size of one stereo s16le sample frame (2 channels * 2 bytes).
+const pcmFrameSize = 4
 
 // decodeFFmpeg uses ffmpeg to decode any audio file into raw PCM,
 // returning a seekable beep.StreamSeekCloser.
@@ -21,7 +25,7 @@ func decodeFFmpeg(path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.
 		"-i", path,
 		"-f", "s16le",
 		"-acodec", "pcm_s16le",
-		"-ar", fmt.Sprintf("%d", sr),
+		"-ar", strconv.Itoa(int(sr)),
 		"-ac", "2",
 		"-loglevel", "error",
 		"pipe:1",
@@ -48,8 +52,7 @@ type pcmStreamer struct {
 }
 
 func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
-	frameSize := 4 // 2 bytes * 2 channels
-	totalFrames := len(p.data) / frameSize
+	totalFrames := len(p.data) / pcmFrameSize
 
 	if p.pos >= totalFrames {
 		return 0, false
@@ -60,7 +63,7 @@ func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
 		if p.pos >= totalFrames {
 			break
 		}
-		off := p.pos * frameSize
+		off := p.pos * pcmFrameSize
 		left := int16(binary.LittleEndian.Uint16(p.data[off : off+2]))
 		right := int16(binary.LittleEndian.Uint16(p.data[off+2 : off+4]))
 		samples[i][0] = float64(left) / 32768
@@ -74,7 +77,7 @@ func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
 func (p *pcmStreamer) Err() error { return nil }
 
 func (p *pcmStreamer) Len() int {
-	return len(p.data) / 4
+	return len(p.data) / pcmFrameSize
 }
 
 func (p *pcmStreamer) Position() int {

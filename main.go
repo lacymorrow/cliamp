@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -148,7 +148,7 @@ func collectAudioFiles(path string) ([]string, error) {
 		return nil, err
 	}
 
-	sort.Strings(files)
+	slices.Sort(files)
 	return files, nil
 }
 

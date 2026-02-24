@@ -4,6 +4,7 @@ package playlist
 import (
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -175,7 +176,7 @@ func (p *Playlist) Queue(trackIdx int) {
 func (p *Playlist) Dequeue(trackIdx int) bool {
 	for i, idx := range p.queue {
 		if idx == trackIdx {
-			p.queue = append(p.queue[:i], p.queue[i+1:]...)
+			p.queue = slices.Delete(p.queue, i, i+1)
 			return true
 		}
 	}
