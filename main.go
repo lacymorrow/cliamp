@@ -17,7 +17,7 @@ import (
 
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: cliamp <file.mp3> [file2.mp3 ...]")
+		return errors.New("usage: cliamp <file.mp3|wav|flac|ogg> [...]")
 	}
 
 	// Expand shell globs that may not have been expanded by the shell

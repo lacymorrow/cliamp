@@ -1,6 +1,6 @@
 # CLIAMP
 
-A retro terminal music player inspired by Winamp 2.x. MP3 playback with a 10-band spectrum visualizer, 10-band parametric EQ, and playlist management.
+A retro terminal music player inspired by Winamp 2.x. Plays MP3, WAV, FLAC, and OGG with a 10-band spectrum visualizer, 10-band parametric EQ, and playlist management.
 
 Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), and [Beep](https://github.com/gopxl/beep).
 
@@ -34,14 +34,14 @@ https://github.com/user-attachments/assets/270ee066-95d2-4a3b-90bc-68a67ae9b92f
 ## Run in dev
 
 ```sh
-go run . track.mp3
+go run . track.mp3 song.flac
 ```
 
 ## Build
 
 ```sh
 go build -o cliamp .
-./cliamp *.mp3
+./cliamp *.mp3 *.flac *.wav *.ogg
 ```
 
 ## Keys

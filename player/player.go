@@ -4,13 +4,18 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gopxl/beep/v2"
+	"github.com/gopxl/beep/v2/flac"
 	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
+	"github.com/gopxl/beep/v2/vorbis"
+	"github.com/gopxl/beep/v2/wav"
 )
 
 // EQFreqs are the center frequencies for the 10-band parametric equalizer.
@@ -40,7 +45,8 @@ func New(sr beep.SampleRate) *Player {
 	return &Player{sr: sr}
 }
 
-// Play opens and starts playing an MP3 file, building the full audio pipeline.
+// Play opens and starts playing an audio file, building the full audio pipeline.
+// Supported formats: MP3, WAV, FLAC, OGG Vorbis.
 func (p *Player) Play(path string) error {
 	p.Stop()
 
@@ -49,7 +55,7 @@ func (p *Player) Play(path string) error {
 		return fmt.Errorf("open: %w", err)
 	}
 
-	streamer, format, err := mp3.Decode(f)
+	streamer, format, err := decode(f, path)
 	if err != nil {
 		f.Close()
 		return fmt.Errorf("decode: %w", err)
@@ -227,6 +233,21 @@ func (p *Player) Samples() []float64 {
 // Close stops playback and cleans up.
 func (p *Player) Close() {
 	p.Stop()
+}
+
+// decode selects the appropriate decoder based on the file extension.
+func decode(f *os.File, path string) (beep.StreamSeekCloser, beep.Format, error) {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".wav":
+		return wav.Decode(f)
+	case ".flac":
+		return flac.Decode(f)
+	case ".ogg":
+		return vorbis.Decode(f)
+	default:
+		return mp3.Decode(f)
+	}
 }
 
 // volumeStreamer applies dB gain to an audio stream.
