@@ -71,8 +71,10 @@ func run() error {
 
 	// Apply config
 	p.SetVolume(cfg.Volume)
-	for i, gain := range cfg.EQ {
-		p.SetEQBand(i, gain)
+	if cfg.EQPreset == "" || cfg.EQPreset == "Custom" {
+		for i, gain := range cfg.EQ {
+			p.SetEQBand(i, gain)
+		}
 	}
 	switch cfg.Repeat {
 	case "all":
@@ -87,14 +89,20 @@ func run() error {
 
 	// Launch the TUI
 	m := ui.NewModel(p, pl)
+	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
+		m.SetEQPreset(cfg.EQPreset)
+	}
 	prog := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := prog.Run(); err != nil {
+	finalModel, err := prog.Run()
+	if err != nil {
 		return fmt.Errorf("tui: %w", err)
 	}
 
 	// Save current state for next session
+	fm := finalModel.(ui.Model)
 	cfg.Volume = p.Volume()
 	cfg.EQ = p.EQBands()
+	cfg.EQPreset = fm.EQPresetName()
 	cfg.Repeat = strings.ToLower(pl.Repeat().String())
 	cfg.Shuffle = pl.Shuffled()
 	if err := config.Save(cfg); err != nil {

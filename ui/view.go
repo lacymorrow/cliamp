@@ -168,14 +168,18 @@ func (m Model) renderEQ() string {
 	parts := make([]string, len(labels))
 	for i, label := range labels {
 		style := eqInactiveStyle
+		if bands[i] != 0 {
+			label = fmt.Sprintf("%+.0f", bands[i])
+		}
 		if m.focus == focusEQ && i == m.eqCursor {
 			style = eqActiveStyle
-			label = fmt.Sprintf("%+.0f", bands[i])
 		}
 		parts[i] = style.Render(label)
 	}
 
-	return labelStyle.Render("EQ  ") + strings.Join(parts, " ")
+	presetName := m.EQPresetName()
+	presetLabel := dimStyle.Render(" [" + presetName + "]")
+	return labelStyle.Render("EQ  ") + strings.Join(parts, " ") + presetLabel
 }
 
 func (m Model) renderPlaylistHeader() string {
@@ -308,5 +312,5 @@ func (m Model) renderHelp() string {
 		count := len(m.searchResults)
 		return helpStyle.Render(fmt.Sprintf("/ %s  (%d found)  [↑↓]Navigate [Enter]Play [Esc]Cancel", query, count))
 	}
-	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [a]Queue [/]Search [Tab]Focus [Q]Quit")
+	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [e]EQ [a]Queue [/]Search [Tab]Focus [Q]Quit")
 }

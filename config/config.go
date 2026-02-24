@@ -12,10 +12,11 @@ import (
 
 // Config holds user preferences loaded from the config file.
 type Config struct {
-	Volume  float64    // dB, range [-30, +6]
-	EQ      [10]float64 // per-band gain in dB, range [-12, +12]
-	Repeat  string     // "off", "all", or "one"
-	Shuffle bool
+	Volume   float64     // dB, range [-30, +6]
+	EQ       [10]float64 // per-band gain in dB, range [-12, +12]
+	EQPreset string      // preset name, or "" for custom
+	Repeat   string      // "off", "all", or "one"
+	Shuffle  bool
 }
 
 // Default returns a Config with sensible defaults.
@@ -73,6 +74,8 @@ func Load() (Config, error) {
 			cfg.Shuffle = val == "true"
 		case "eq":
 			cfg.EQ = parseEQ(val)
+		case "eq_preset":
+			cfg.EQPreset = strings.Trim(val, `"'`)
 		}
 	}
 
@@ -107,13 +110,19 @@ repeat = "%s"
 # Start with shuffle enabled
 shuffle = %t
 
+# EQ preset name (e.g. "Rock", "Jazz", "Classical", "Bass Boost")
+# Leave empty or "Custom" to use the manual eq values below
+eq_preset = "%s"
+
 # 10-band EQ gains in dB (range: -12 to 12)
 # Bands: 70Hz, 180Hz, 320Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
+# Only used when eq_preset is "Custom" or empty
 eq = [%s]
 `,
 		strconv.FormatFloat(cfg.Volume, 'f', -1, 64),
 		cfg.Repeat,
 		cfg.Shuffle,
+		cfg.EQPreset,
 		strings.Join(eqParts, ", "),
 	)
 

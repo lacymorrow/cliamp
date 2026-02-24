@@ -67,6 +67,11 @@ repeat = "off"
 # Start with shuffle enabled
 shuffle = false
 
+# EQ preset: "Flat", "Rock", "Pop", "Jazz", "Classical",
+#             "Bass Boost", "Treble Boost", "Vocal", "Electronic", "Acoustic"
+# Leave empty or "Custom" to use manual eq values below
+eq_preset = "Flat"
+
 # 10-band EQ gains in dB (range: -12 to 12)
 # Bands: 70Hz, 180Hz, 320Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
 eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -86,6 +91,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `j` `k` / `Up` `Down` | Playlist scroll / EQ band adjust |
 | `h` `l` | EQ cursor left/right |
 | `Enter` | Play selected track |
+| `e` | Cycle EQ preset |
 | `/` | Search playlist |
 | `a` | Toggle queue (play next) |
 | `r` | Cycle repeat (Off / All / One) |
