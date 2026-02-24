@@ -35,6 +35,7 @@ https://github.com/user-attachments/assets/270ee066-95d2-4a3b-90bc-68a67ae9b92f
 
 ```sh
 go run . track.mp3 song.flac
+go run . ~/Music/album
 ```
 
 ## Build
@@ -42,6 +43,9 @@ go run . track.mp3 song.flac
 ```sh
 go build -o cliamp .
 ./cliamp *.mp3 *.flac *.wav *.ogg
+./cliamp ~/Music                   # recursively finds all audio files
+./cliamp ~/Music/jazz ~/Music/rock # multiple folders
+./cliamp ~/Music song.mp3          # mix folders and files
 ```
 
 ## Keys
@@ -58,6 +62,7 @@ go build -o cliamp .
 | `j` `k` / `Up` `Down` | Playlist scroll / EQ band adjust |
 | `h` `l` | EQ cursor left/right |
 | `Enter` | Play selected track |
+| `/` | Search playlist |
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |
 | `q` | Quit |

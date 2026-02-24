@@ -4,8 +4,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gopxl/beep/v2"
@@ -15,20 +18,37 @@ import (
 	"winamp-cli/ui"
 )
 
+// audioExts is the set of file extensions the player can decode.
+var audioExts = map[string]bool{
+	".mp3":  true,
+	".wav":  true,
+	".flac": true,
+	".ogg":  true,
+}
+
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: cliamp <file.mp3|wav|flac|ogg> [...]")
+		return errors.New("usage: cliamp <file|folder> [...]")
 	}
 
-	// Expand shell globs that may not have been expanded by the shell
+	// Expand shell globs and resolve directories into audio files
 	var files []string
 	for _, arg := range os.Args[1:] {
 		matches, err := filepath.Glob(arg)
 		if err != nil || len(matches) == 0 {
-			files = append(files, arg)
-		} else {
-			files = append(files, matches...)
+			matches = []string{arg}
 		}
+		for _, path := range matches {
+			resolved, err := collectAudioFiles(path)
+			if err != nil {
+				return fmt.Errorf("scanning %s: %w", path, err)
+			}
+			files = append(files, resolved...)
+		}
+	}
+
+	if len(files) == 0 {
+		return errors.New("no playable files found (supported: mp3, wav, flac, ogg)")
 	}
 
 	// Build playlist from file arguments
@@ -50,6 +70,40 @@ func run() error {
 	}
 
 	return nil
+}
+
+// collectAudioFiles returns audio file paths for the given argument.
+// If path is a directory, it walks it recursively collecting supported files.
+// If path is a file with a supported extension, it returns it directly.
+func collectAudioFiles(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		if audioExts[strings.ToLower(filepath.Ext(path))] {
+			return []string{path}, nil
+		}
+		return nil, nil
+	}
+
+	var files []string
+	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && audioExts[strings.ToLower(filepath.Ext(p))] {
+			files = append(files, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(files)
+	return files, nil
 }
 
 func main() {
