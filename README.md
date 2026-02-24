@@ -4,6 +4,11 @@ A retro terminal music player inspired by Winamp 2.x. MP3 playback with a 10-ban
 
 Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), and [Beep](https://github.com/gopxl/beep).
 
+
+https://github.com/user-attachments/assets/270ee066-95d2-4a3b-90bc-68a67ae9b92f
+
+
+## Ascii
 ```
 ╭────────────────────────────────────────────────────────────────╮
 │                                                                │
