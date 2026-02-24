@@ -63,6 +63,7 @@ go build -o cliamp .
 | `h` `l` | EQ cursor left/right |
 | `Enter` | Play selected track |
 | `/` | Search playlist |
+| `a` | Toggle queue (play next) |
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |
 | `q` | Quit |

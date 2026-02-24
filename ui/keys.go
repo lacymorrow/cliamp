@@ -110,6 +110,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.eqCursor++
 		}
 
+	case "a":
+		if m.focus == focusPlaylist {
+			if !m.playlist.Dequeue(m.plCursor) {
+				m.playlist.Queue(m.plCursor)
+			}
+		}
+
 	case "/":
 		m.searching = true
 		m.searchQuery = ""

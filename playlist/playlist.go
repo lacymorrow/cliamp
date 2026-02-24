@@ -56,16 +56,18 @@ func (t Track) DisplayName() string {
 
 // Playlist manages an ordered list of tracks with shuffle and repeat support.
 type Playlist struct {
-	tracks  []Track
-	order   []int // indices into tracks, shuffled or sequential
-	pos     int   // current position in order
-	shuffle bool
-	repeat  RepeatMode
+	tracks    []Track
+	order     []int // indices into tracks, shuffled or sequential
+	pos       int   // current position in order
+	shuffle   bool
+	repeat    RepeatMode
+	queue     []int // track indices queued to play next
+	queuedIdx int   // track index currently playing from queue, -1 if none
 }
 
 // New creates an empty Playlist.
 func New() *Playlist {
-	return &Playlist{}
+	return &Playlist{queuedIdx: -1}
 }
 
 // Add appends tracks to the playlist.
@@ -85,6 +87,9 @@ func (p *Playlist) Current() (Track, int) {
 	if len(p.tracks) == 0 {
 		return Track{}, -1
 	}
+	if p.queuedIdx >= 0 {
+		return p.tracks[p.queuedIdx], p.queuedIdx
+	}
 	idx := p.order[p.pos]
 	return p.tracks[idx], idx
 }
@@ -94,14 +99,26 @@ func (p *Playlist) Index() int {
 	if len(p.order) == 0 {
 		return -1
 	}
+	if p.queuedIdx >= 0 {
+		return p.queuedIdx
+	}
 	return p.order[p.pos]
 }
 
 // Next advances to the next track. Returns false if at end with repeat off.
+// Queued tracks are played first before resuming normal order.
 func (p *Playlist) Next() (Track, bool) {
 	if len(p.tracks) == 0 {
 		return Track{}, false
 	}
+	// Play from queue first
+	if len(p.queue) > 0 {
+		idx := p.queue[0]
+		p.queue = p.queue[1:]
+		p.queuedIdx = idx
+		return p.tracks[idx], true
+	}
+	p.queuedIdx = -1
 	if p.repeat == RepeatOne {
 		return p.tracks[p.order[p.pos]], true
 	}
@@ -121,6 +138,7 @@ func (p *Playlist) Next() (Track, bool) {
 
 // Prev moves to the previous track. Wraps around with RepeatAll.
 func (p *Playlist) Prev() (Track, bool) {
+	p.queuedIdx = -1
 	if len(p.tracks) == 0 {
 		return Track{}, false
 	}
@@ -137,6 +155,7 @@ func (p *Playlist) Prev() (Track, bool) {
 
 // SetIndex sets the current position to the given track index.
 func (p *Playlist) SetIndex(i int) {
+	p.queuedIdx = -1
 	for pos, idx := range p.order {
 		if idx == i {
 			p.pos = pos
@@ -144,6 +163,38 @@ func (p *Playlist) SetIndex(i int) {
 		}
 	}
 }
+
+// Queue adds a track to the play-next queue by its index.
+func (p *Playlist) Queue(trackIdx int) {
+	if trackIdx >= 0 && trackIdx < len(p.tracks) {
+		p.queue = append(p.queue, trackIdx)
+	}
+}
+
+// Dequeue removes a track from the queue. Returns true if it was found.
+func (p *Playlist) Dequeue(trackIdx int) bool {
+	for i, idx := range p.queue {
+		if idx == trackIdx {
+			p.queue = append(p.queue[:i], p.queue[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// QueuePosition returns the 1-based position of a track in the queue,
+// or 0 if the track is not queued.
+func (p *Playlist) QueuePosition(trackIdx int) int {
+	for i, idx := range p.queue {
+		if idx == trackIdx {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// QueueLen returns the number of tracks in the queue.
+func (p *Playlist) QueueLen() int { return len(p.queue) }
 
 // Tracks returns all tracks in the playlist.
 func (p *Playlist) Tracks() []Track { return p.tracks }

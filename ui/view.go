@@ -193,7 +193,12 @@ func (m Model) renderPlaylistHeader() string {
 		repeatStr = dimStyle.Render(repeatStr)
 	}
 
-	return dimStyle.Render("── Playlist ── ") + shuffle + " " + repeatStr + " " + dimStyle.Render("──")
+	var queueStr string
+	if qLen := m.playlist.QueueLen(); qLen > 0 {
+		queueStr = " " + activeToggle.Render(fmt.Sprintf("[Queue: %d]", qLen))
+	}
+
+	return dimStyle.Render("── Playlist ── ") + shuffle + " " + repeatStr + queueStr + " " + dimStyle.Render("──")
 }
 
 func (m Model) renderPlaylist() string {
@@ -230,13 +235,23 @@ func (m Model) renderPlaylist() string {
 		}
 
 		name := tracks[i].DisplayName()
-		maxW := panelWidth - 6
+		queueSuffix := ""
+		if qp := m.playlist.QueuePosition(i); qp > 0 {
+			queueSuffix = fmt.Sprintf(" [Q%d]", qp)
+		}
+		maxW := panelWidth - 6 - len([]rune(queueSuffix))
 		nameRunes := []rune(name)
 		if len(nameRunes) > maxW {
 			name = string(nameRunes[:maxW-1]) + "…"
 		}
 
-		lines = append(lines, style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name)))
+		line := fmt.Sprintf("%s%d. %s", prefix, i+1, name)
+		if queueSuffix != "" {
+			line = style.Render(line) + activeToggle.Render(queueSuffix)
+		} else {
+			line = style.Render(line)
+		}
+		lines = append(lines, line)
 	}
 
 	return strings.Join(lines, "\n")
@@ -293,5 +308,5 @@ func (m Model) renderHelp() string {
 		count := len(m.searchResults)
 		return helpStyle.Render(fmt.Sprintf("/ %s  (%d found)  [↑↓]Navigate [Enter]Play [Esc]Cancel", query, count))
 	}
-	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [/]Search [Tab]Focus [Q]Quit")
+	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [a]Queue [/]Search [Tab]Focus [Q]Quit")
 }
