@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +16,7 @@ type focusArea int
 const (
 	focusPlaylist focusArea = iota
 	focusEQ
+	focusSearch
 )
 
 type tickMsg time.Time
@@ -34,6 +36,13 @@ type Model struct {
 	quitting  bool
 	width     int
 	height    int
+
+	// Search mode state
+	searching     bool
+	searchQuery   string
+	searchResults []int // indices into playlist tracks
+	searchCursor  int
+	prevFocus     focusArea // focus to restore on cancel
 }
 
 // NewModel creates a Model wired to the given player and playlist.
@@ -133,5 +142,20 @@ func (m *Model) adjustScroll() {
 	}
 	if m.plCursor >= m.plScroll+m.plVisible {
 		m.plScroll = m.plCursor - m.plVisible + 1
+	}
+}
+
+// updateSearch filters the playlist by the current search query.
+func (m *Model) updateSearch() {
+	m.searchResults = nil
+	m.searchCursor = 0
+	if m.searchQuery == "" {
+		return
+	}
+	query := strings.ToLower(m.searchQuery)
+	for i, t := range m.playlist.Tracks() {
+		if strings.Contains(strings.ToLower(t.DisplayName()), query) {
+			m.searchResults = append(m.searchResults, i)
+		}
 	}
 }

@@ -282,11 +282,11 @@ type biquad struct {
 	sr   float64
 	// Per-channel filter state
 	x1, x2 [2]float64
-	y1, y2  [2]float64
+	y1, y2 [2]float64
 	// Cached coefficients
-	lastGain            float64
+	lastGain           float64
 	b0, b1, b2, a1, a2 float64
-	inited              bool
+	inited             bool
 }
 
 func newBiquad(s beep.Streamer, freq, q float64, gain *float64, sr float64) *biquad {

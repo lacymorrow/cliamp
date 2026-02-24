@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"winamp-cli/playlist"
 )
 
 const panelWidth = 74 // usable inner width (80 frame - 6 padding)
@@ -200,6 +202,10 @@ func (m Model) renderPlaylist() string {
 		return dimStyle.Render("  No tracks loaded")
 	}
 
+	if m.searching {
+		return m.renderSearchResults(tracks)
+	}
+
 	currentIdx := m.playlist.Index()
 	visible := min(m.plVisible, len(tracks))
 
@@ -236,6 +242,56 @@ func (m Model) renderPlaylist() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m Model) renderSearchResults(tracks []playlist.Track) string {
+	if len(m.searchResults) == 0 {
+		if m.searchQuery != "" {
+			return dimStyle.Render("  No matches")
+		}
+		return dimStyle.Render("  Type to search…")
+	}
+
+	currentIdx := m.playlist.Index()
+	visible := min(m.plVisible, len(m.searchResults))
+
+	// Scroll the search results so the cursor is always visible
+	scroll := 0
+	if m.searchCursor >= visible {
+		scroll = m.searchCursor - visible + 1
+	}
+
+	lines := make([]string, 0, visible)
+	for j := scroll; j < scroll+visible && j < len(m.searchResults); j++ {
+		i := m.searchResults[j]
+		prefix := "  "
+		style := playlistItemStyle
+
+		if i == currentIdx && m.player.IsPlaying() {
+			prefix = "▶ "
+			style = playlistActiveStyle
+		}
+
+		if j == m.searchCursor {
+			style = playlistSelectedStyle
+		}
+
+		name := tracks[i].DisplayName()
+		maxW := panelWidth - 6
+		nameRunes := []rune(name)
+		if len(nameRunes) > maxW {
+			name = string(nameRunes[:maxW-1]) + "…"
+		}
+
+		lines = append(lines, style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name)))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 func (m Model) renderHelp() string {
-	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [Tab]Focus [Q]Quit")
+	if m.searching {
+		query := m.searchQuery
+		count := len(m.searchResults)
+		return helpStyle.Render(fmt.Sprintf("/ %s  (%d found)  [↑↓]Navigate [Enter]Play [Esc]Cancel", query, count))
+	}
+	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [/]Search [Tab]Focus [Q]Quit")
 }
