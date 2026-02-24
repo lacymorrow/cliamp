@@ -99,20 +99,8 @@ func run() error {
 		m.SetEQPreset(cfg.EQPreset)
 	}
 	prog := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := prog.Run()
-	if err != nil {
+	if _, err := prog.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
-	}
-
-	// Save current state for next session
-	fm := finalModel.(ui.Model)
-	cfg.Volume = p.Volume()
-	cfg.EQ = p.EQBands()
-	cfg.EQPreset = fm.EQPresetName()
-	cfg.Repeat = strings.ToLower(pl.Repeat().String())
-	cfg.Shuffle = pl.Shuffled()
-	if err := config.Save(cfg); err != nil {
-		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil
