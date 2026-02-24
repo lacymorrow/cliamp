@@ -7,8 +7,8 @@ import "github.com/charmbracelet/lipgloss"
 var (
 	colorBorder  = lipgloss.ANSIColor(8)  // bright black (dark gray)
 	colorTitle   = lipgloss.ANSIColor(10) // bright green
-	colorText    = lipgloss.ANSIColor(7)  // white (light gray)
-	colorDim     = lipgloss.ANSIColor(8)  // bright black (dark gray)
+	colorText    = lipgloss.ANSIColor(15) // bright white
+	colorDim     = lipgloss.ANSIColor(7)  // white (light gray)
 	colorAccent  = lipgloss.ANSIColor(11) // bright yellow
 	colorPlaying = lipgloss.ANSIColor(10) // bright green
 	colorSeekBar = lipgloss.ANSIColor(11) // bright yellow
