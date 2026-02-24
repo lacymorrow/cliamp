@@ -50,7 +50,17 @@ func (m Model) View() string {
 	}
 
 	content := strings.Join(sections, "\n")
-	return frameStyle.Render(content)
+	frame := frameStyle.Render(content)
+
+	// Center horizontally and vertically within the terminal
+	frameW := lipgloss.Width(frame)
+	frameH := lipgloss.Height(frame)
+
+	padLeft := max(0, (m.width-frameW)/2)
+	padTop := max(0, (m.height-frameH)/2)
+
+	return strings.Repeat("\n", padTop) +
+		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
 }
 
 func (m Model) renderTitle() string {
