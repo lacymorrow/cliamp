@@ -42,7 +42,7 @@ func NewModel(p *player.Player, pl *playlist.Playlist) Model {
 		player:    p,
 		playlist:  pl,
 		vis:       NewVisualizer(44100),
-		plVisible: 8,
+		plVisible: 5,
 	}
 }
 

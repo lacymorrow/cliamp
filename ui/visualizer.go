@@ -110,32 +110,52 @@ func (v *Visualizer) Analyze(samples []float64) [numBands]float64 {
 	return bands
 }
 
-// Render converts band levels into a colored spectrum bar string.
+// barHeight is the number of character rows for the spectrum bars.
+const barHeight = 5
+
+// Render converts band levels into a multi-row colored spectrum bar string.
 func (v *Visualizer) Render(bands [numBands]float64) string {
-	var sb strings.Builder
+	lines := make([]string, barHeight)
 
-	for i, level := range bands {
-		idx := int(level * float64(len(barBlocks)-1))
-		idx = max(0, min(idx, len(barBlocks)-1))
+	for row := range barHeight {
+		var sb strings.Builder
+		// threshold: top row = highest level, bottom row = lowest
+		rowBottom := float64(barHeight-1-row) / float64(barHeight)
+		rowTop := float64(barHeight-row) / float64(barHeight)
 
-		block := barBlocks[idx]
+		for i, level := range bands {
+			var block string
+			if level >= rowTop {
+				// Fully filled row
+				block = "█"
+			} else if level > rowBottom {
+				// Partially filled — pick a fractional block
+				frac := (level - rowBottom) / (rowTop - rowBottom)
+				idx := int(frac * float64(len(barBlocks)-1))
+				idx = max(0, min(idx, len(barBlocks)-1))
+				block = barBlocks[idx]
+			} else {
+				block = " "
+			}
 
-		// Color gradient: green -> yellow -> red based on level
-		var style lipgloss.Style
-		switch {
-		case level > 0.75:
-			style = specHighStyle
-		case level > 0.45:
-			style = specMidStyle
-		default:
-			style = specLowStyle
+			// Color gradient based on row height
+			var style lipgloss.Style
+			switch {
+			case rowBottom >= 0.6:
+				style = specHighStyle
+			case rowBottom >= 0.3:
+				style = specMidStyle
+			default:
+				style = specLowStyle
+			}
+
+			sb.WriteString(style.Render(strings.Repeat(block, barWidth)))
+			if i < numBands-1 {
+				sb.WriteString(" ")
+			}
 		}
-
-		sb.WriteString(style.Render(strings.Repeat(block, barWidth)))
-		if i < numBands-1 {
-			sb.WriteString(" ")
-		}
+		lines[row] = sb.String()
 	}
 
-	return sb.String()
+	return strings.Join(lines, "\n")
 }
