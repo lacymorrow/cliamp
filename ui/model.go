@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
 )
@@ -51,6 +52,9 @@ type Model struct {
 	searchResults []int // indices into playlist tracks
 	searchCursor  int
 	prevFocus     focusArea // focus to restore on cancel
+
+	// MPRIS D-Bus service (nil on non-Linux or if D-Bus unavailable)
+	mpris *mpris.Service
 }
 
 // NewModel creates a Model wired to the given player and playlist.
@@ -156,6 +160,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if the current track finished naturally
 		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.TrackDone() {
 			m.nextTrack()
+			m.notifyMPRIS()
 		}
 		m.titleOff++
 		return m, tickCmd()
@@ -171,6 +176,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.provLoading = false
 		if m.playlist.Len() > 0 {
 			m.playCurrentTrack()
+			m.notifyMPRIS()
 		}
 		return m, nil
 
@@ -178,6 +184,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg
 		m.provLoading = false
 		return m, nil
+
+	case mpris.InitMsg:
+		m.mpris = msg.Svc
+		return m, nil
+
+	case mpris.PlayPauseMsg:
+		if !m.player.IsPlaying() {
+			m.playCurrentTrack()
+		} else {
+			m.player.TogglePause()
+		}
+		m.notifyMPRIS()
+		return m, nil
+
+	case mpris.NextMsg:
+		m.nextTrack()
+		m.notifyMPRIS()
+		return m, nil
+
+	case mpris.PrevMsg:
+		m.prevTrack()
+		m.notifyMPRIS()
+		return m, nil
+
+	case mpris.StopMsg:
+		m.player.Stop()
+		m.notifyMPRIS()
+		return m, nil
+
+	case mpris.QuitMsg:
+		m.player.Close()
+		m.quitting = true
+		return m, tea.Quit
 	}
 
 	return m, nil
@@ -234,6 +273,29 @@ func (m *Model) adjustScroll() {
 	if m.plCursor >= m.plScroll+m.plVisible {
 		m.plScroll = m.plCursor - m.plVisible + 1
 	}
+}
+
+// notifyMPRIS sends the current playback state to the MPRIS service
+// so desktop widgets and playerctl stay in sync.
+func (m *Model) notifyMPRIS() {
+	if m.mpris == nil {
+		return
+	}
+	status := "Stopped"
+	if m.player.IsPlaying() {
+		if m.player.IsPaused() {
+			status = "Paused"
+		} else {
+			status = "Playing"
+		}
+	}
+	track, _ := m.playlist.Current()
+	info := mpris.TrackInfo{
+		Title:  track.Title,
+		Artist: track.Artist,
+		Length: m.player.Duration().Microseconds(),
+	}
+	m.mpris.Update(status, info, m.player.Volume())
 }
 
 // updateSearch filters the playlist by the current search query.

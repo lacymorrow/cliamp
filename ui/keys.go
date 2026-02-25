@@ -62,15 +62,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.player.TogglePause()
 		}
+		m.notifyMPRIS()
 
 	case "s":
 		m.player.Stop()
+		m.notifyMPRIS()
 
 	case ">", ".":
 		m.nextTrack()
+		m.notifyMPRIS()
 
 	case "<", ",":
 		m.prevTrack()
+		m.notifyMPRIS()
 
 	case "left":
 		if m.focus == focusEQ {
@@ -118,13 +122,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		if m.focus == focusPlaylist {
 			m.playlist.SetIndex(m.plCursor)
 			m.playCurrentTrack()
+			m.notifyMPRIS()
 		}
 
 	case "+", "=":
 		m.player.SetVolume(m.player.Volume() + 1)
+		m.notifyMPRIS()
 
 	case "-":
 		m.player.SetVolume(m.player.Volume() - 1)
+		m.notifyMPRIS()
 
 	case "r":
 		m.playlist.CycleRepeat()
@@ -189,6 +196,7 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 			m.plCursor = idx
 			m.adjustScroll()
 			m.playCurrentTrack()
+			m.notifyMPRIS()
 		}
 		m.searching = false
 		m.focus = focusPlaylist

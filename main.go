@@ -15,6 +15,7 @@ import (
 
 	"cliamp/config"
 	"cliamp/external/navidrome"
+	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
 	"cliamp/ui"
@@ -109,6 +110,14 @@ func run() error {
 		m.SetEQPreset(cfg.EQPreset)
 	}
 	prog := tea.NewProgram(m, tea.WithAltScreen())
+
+	// Start MPRIS D-Bus service for media key / playerctl support.
+	mprisSvc, err := mpris.New(func(msg interface{}) { prog.Send(msg) })
+	if err == nil && mprisSvc != nil {
+		defer mprisSvc.Close()
+		go prog.Send(mpris.InitMsg{Svc: mprisSvc})
+	}
+
 	if _, err := prog.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
 	}
