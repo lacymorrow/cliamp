@@ -113,6 +113,7 @@ func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
 			Path:   c.streamURL(t.ID),
 			Title:  t.Title,
 			Artist: t.Artist,
+			Stream: true,
 		})
 	}
 	return tracks, nil

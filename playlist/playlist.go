@@ -3,6 +3,7 @@ package playlist
 
 import (
 	"math/rand"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -28,16 +29,38 @@ func (r RepeatMode) String() string {
 	}
 }
 
-// Track represents a single audio file.
+// Track represents a single audio file or HTTP stream.
 type Track struct {
 	Path   string
 	Title  string
 	Artist string
+	Stream bool // true for HTTP/HTTPS URLs
 }
 
-// TrackFromPath creates a Track by parsing the filename.
+// IsURL reports whether path is an HTTP or HTTPS URL.
+func IsURL(path string) bool {
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
+}
+
+// IsM3U reports whether the URL points to an M3U playlist file.
+func IsM3U(path string) bool {
+	if !IsURL(path) {
+		return false
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(u.Path))
+	return ext == ".m3u" || ext == ".m3u8"
+}
+
+// TrackFromPath creates a Track by parsing the filename or URL.
 // Supports "Artist - Title" format, otherwise uses the filename as title.
 func TrackFromPath(path string) Track {
+	if IsURL(path) {
+		return trackFromURL(path)
+	}
 	base := filepath.Base(path)
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 	parts := strings.SplitN(name, " - ", 2)
@@ -45,6 +68,32 @@ func TrackFromPath(path string) Track {
 		return Track{Path: path, Artist: strings.TrimSpace(parts[0]), Title: strings.TrimSpace(parts[1])}
 	}
 	return Track{Path: path, Title: name}
+}
+
+// trackFromURL creates a Track from an HTTP/HTTPS URL, extracting a clean
+// display title from the URL path (ignoring query parameters).
+func trackFromURL(rawURL string) Track {
+	t := Track{Path: rawURL, Stream: true}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Title = rawURL
+		return t
+	}
+
+	// Extract filename from URL path
+	base := filepath.Base(u.Path)
+	if base != "" && base != "." && base != "/" {
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		if name != "" && name != "stream" && name != "rest" {
+			t.Title = name
+			return t
+		}
+	}
+
+	// Fallback: use hostname
+	t.Title = u.Hostname()
+	return t
 }
 
 // DisplayName returns a formatted display string for the track.

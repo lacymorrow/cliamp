@@ -48,6 +48,31 @@ go build -o cliamp .
 ./cliamp ~/Music song.mp3          # mix folders and files
 ```
 
+## HTTP Streaming
+
+Play audio directly from URLs or M3U playlists:
+
+```sh
+./cliamp https://example.com/song.mp3
+./cliamp http://radio-station.com/stream.m3u
+./cliamp local.mp3 https://example.com/remote.mp3   # mix local + remote
+```
+
+For non-seekable HTTP streams, the UI shows `● Streaming` with a static seek bar, and seek keys are silently ignored.
+
+## Navidrome
+
+Connect to a [Navidrome](https://www.navidrome.org/) ([GitHub](https://github.com/navidrome/navidrome)) server via environment variables:
+
+```sh
+export NAVIDROME_URL="https://your-server.com"
+export NAVIDROME_USER="your-username"
+export NAVIDROME_PASS="your-password"
+./cliamp
+```
+
+The app starts in provider mode, letting you browse and play your Navidrome playlists.
+
 ### ffmpeg (optional)
 
 AAC, ALAC (`.m4a`), Opus, and WMA playback requires [ffmpeg](https://ffmpeg.org/) installed:

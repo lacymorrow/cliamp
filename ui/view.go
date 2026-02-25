@@ -107,10 +107,14 @@ func (m Model) renderTimeStatus() string {
 
 	timeStr := fmt.Sprintf("%02d:%02d / %02d:%02d", posMin, posSec, durMin, durSec)
 
+	track, _ := m.playlist.Current()
+
 	var status string
 	switch {
 	case m.player.IsPlaying() && m.player.IsPaused():
 		status = statusStyle.Render("⏸ Paused")
+	case m.player.IsPlaying() && track.Stream:
+		status = statusStyle.Render("● Streaming")
 	case m.player.IsPlaying():
 		status = statusStyle.Render("▶ Playing")
 	default:
@@ -132,6 +136,15 @@ func (m Model) renderSpectrum() string {
 }
 
 func (m Model) renderSeekBar() string {
+	// Show a static streaming bar for non-seekable streams
+	if !m.player.Seekable() && m.player.IsPlaying() {
+		label := " STREAMING "
+		pad := panelWidth - len(label)
+		left := pad / 2
+		right := pad - left
+		return seekFillStyle.Render(strings.Repeat("━", left) + label + strings.Repeat("━", right))
+	}
+
 	pos := m.player.Position()
 	dur := m.player.Duration()
 
@@ -344,7 +357,15 @@ func (m Model) renderHelp() string {
 		return helpStyle.Render("[↑↓]Navigate  [Enter]Load Playlist  [Tab]Focus  [Q]Quit")
 	}
 
-	help := "[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [e]EQ [a]Queue [/]Search "
+	help := "[Spc]⏯  [<>]Trk "
+
+	// Hide seek hint for non-seekable streams
+	track, _ := m.playlist.Current()
+	if !track.Stream || m.player.Seekable() {
+		help += "[←→]Seek "
+	}
+
+	help += "[+-]Vol [e]EQ [a]Queue [/]Search "
 
 	// Conditionally show the back button if a provider is configured
 	if m.provider != nil {

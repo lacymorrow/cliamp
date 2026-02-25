@@ -157,6 +157,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tickMsg:
+		// Surface stream errors (e.g., connection drops) before checking track done
+		if err := m.player.StreamErr(); err != nil {
+			m.err = err
+		}
 		// Check if the current track finished naturally
 		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.TrackDone() {
 			m.nextTrack()

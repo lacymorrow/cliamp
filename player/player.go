@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,30 @@ import (
 // EQFreqs are the center frequencies for the 10-band parametric equalizer.
 var EQFreqs = [10]float64{70, 180, 320, 600, 1000, 3000, 6000, 12000, 14000, 16000}
 
+// SupportedExts is the set of file extensions the player can decode.
+var SupportedExts = map[string]bool{
+	".mp3":  true,
+	".wav":  true,
+	".flac": true,
+	".ogg":  true,
+	".m4a":  true,
+	".aac":  true,
+	".m4b":  true,
+	".alac": true,
+	".wma":  true,
+	".opus": true,
+}
+
+// httpClient is used for all HTTP streaming with a connection timeout.
+var httpClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
+
+// isURL reports whether path is an HTTP or HTTPS URL.
+func isURL(path string) bool {
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
+}
+
 // Player is the audio engine managing the playback pipeline:
 //
 //	[MP3 Decode] -> [Resample] -> [10x Biquad EQ] -> [Volume] -> [Tap] -> [Ctrl] -> [Speaker]
@@ -38,6 +63,7 @@ type Player struct {
 	trackDone atomic.Bool
 	playing   bool
 	paused    bool
+	seekable  bool
 	rc        io.ReadCloser
 }
 
@@ -52,24 +78,9 @@ func New(sr beep.SampleRate) *Player {
 func (p *Player) Play(path string) error {
 	p.Stop()
 
-	var rc io.ReadCloser
-	var err error
-
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		resp, err := http.Get(path)
-		if err != nil {
-			return fmt.Errorf("http get: %w", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return fmt.Errorf("http stream failed: %s", resp.Status)
-		}
-		rc = resp.Body
-	} else {
-		rc, err = os.Open(path)
-		if err != nil {
-			return fmt.Errorf("open: %w", err)
-		}
+	rc, err := openSource(path)
+	if err != nil {
+		return err
 	}
 
 	streamer, format, err := decode(rc, path, p.sr)
@@ -83,6 +94,11 @@ func (p *Player) Play(path string) error {
 	p.streamer = streamer
 	p.format = format
 	p.trackDone.Store(false)
+
+	// HTTP streams decoded natively read from a non-seekable http.Response.Body.
+	// FFmpeg-decoded streams are fully buffered in memory and therefore seekable.
+	_, isPCM := streamer.(*pcmStreamer)
+	p.seekable = !isURL(path) || isPCM
 
 	var s beep.Streamer = streamer
 
@@ -144,14 +160,16 @@ func (p *Player) Stop() {
 	p.tap = nil
 	p.playing = false
 	p.paused = false
+	p.seekable = false
 	p.trackDone.Store(false)
 }
 
 // Seek moves the playback position by the given duration (positive or negative).
+// Returns nil immediately for non-seekable streams (e.g., HTTP without ffmpeg).
 func (p *Player) Seek(d time.Duration) error {
 	speaker.Lock()
 	defer speaker.Unlock()
-	if p.streamer == nil {
+	if p.streamer == nil || !p.seekable {
 		return nil
 	}
 	curSample := p.streamer.Position()
@@ -236,6 +254,24 @@ func (p *Player) TrackDone() bool {
 	return p.trackDone.Load()
 }
 
+// Seekable reports whether the current track supports seeking.
+func (p *Player) Seekable() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.seekable
+}
+
+// StreamErr returns the current streamer error, if any (e.g., connection drops).
+func (p *Player) StreamErr() error {
+	p.mu.Lock()
+	s := p.streamer
+	p.mu.Unlock()
+	if s == nil {
+		return nil
+	}
+	return s.Err()
+}
+
 // Samples returns the latest audio samples from the tap for FFT analysis.
 func (p *Player) Samples() []float64 {
 	p.mu.Lock()
@@ -252,6 +288,44 @@ func (p *Player) Close() {
 	p.Stop()
 }
 
+// openSource returns a ReadCloser for the given path, handling both
+// local files and HTTP URLs.
+func openSource(path string) (io.ReadCloser, error) {
+	if !isURL(path) {
+		return os.Open(path)
+	}
+	resp, err := httpClient.Get(path)
+	if err != nil {
+		return nil, fmt.Errorf("http get: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("http status %s", resp.Status)
+	}
+	return resp.Body, nil
+}
+
+// formatExt returns the audio format extension for a path.
+// For URLs, it parses the path component (ignoring query params),
+// checks a "format" query param as fallback, and defaults to ".mp3".
+func formatExt(path string) string {
+	if !isURL(path) {
+		return strings.ToLower(filepath.Ext(path))
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		return ".mp3"
+	}
+	ext := strings.ToLower(filepath.Ext(u.Path))
+	if ext == "" || ext == ".view" {
+		if f := u.Query().Get("format"); f != "" {
+			return "." + strings.ToLower(f)
+		}
+		return ".mp3"
+	}
+	return ext
+}
+
 // needsFFmpeg reports whether the given extension requires ffmpeg to decode.
 func needsFFmpeg(ext string) bool {
 	switch ext {
@@ -263,10 +337,7 @@ func needsFFmpeg(ext string) bool {
 
 // decode selects the appropriate decoder based on the file extension.
 func decode(rc io.ReadCloser, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
-	ext := strings.ToLower(filepath.Ext(path))
-	if strings.Contains(path, "stream.view") || strings.Contains(path, "format=mp3") {
-		ext = ".mp3"
-	}
+	ext := formatExt(path)
 	if needsFFmpeg(ext) {
 		return decodeFFmpeg(path, sr)
 	}

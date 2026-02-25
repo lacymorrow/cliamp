@@ -2,9 +2,11 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,20 +22,6 @@ import (
 	"cliamp/playlist"
 	"cliamp/ui"
 )
-
-// audioExts is the set of file extensions the player can decode.
-var audioExts = map[string]bool{
-	".mp3":  true,
-	".wav":  true,
-	".flac": true,
-	".ogg":  true,
-	".m4a":  true,
-	".aac":  true,
-	".m4b":  true,
-	".alac": true,
-	".wma":  true,
-	".opus": true,
-}
 
 func run() error {
 	var provider playlist.Provider
@@ -53,6 +41,19 @@ func run() error {
 	// Expand shell globs and resolve directories into audio files
 	var files []string
 	for _, arg := range os.Args[1:] {
+		// URLs bypass glob expansion and filesystem checks
+		if playlist.IsURL(arg) {
+			if playlist.IsM3U(arg) {
+				streams, err := resolveM3U(arg)
+				if err != nil {
+					return fmt.Errorf("resolving m3u %s: %w", arg, err)
+				}
+				files = append(files, streams...)
+			} else {
+				files = append(files, arg)
+			}
+			continue
+		}
 		matches, err := filepath.Glob(arg)
 		if err != nil || len(matches) == 0 {
 			matches = []string{arg}
@@ -135,7 +136,7 @@ func collectAudioFiles(path string) ([]string, error) {
 	}
 
 	if !info.IsDir() {
-		if audioExts[strings.ToLower(filepath.Ext(path))] {
+		if player.SupportedExts[strings.ToLower(filepath.Ext(path))] {
 			return []string{path}, nil
 		}
 		return nil, nil
@@ -146,7 +147,7 @@ func collectAudioFiles(path string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && audioExts[strings.ToLower(filepath.Ext(p))] {
+		if !d.IsDir() && player.SupportedExts[strings.ToLower(filepath.Ext(p))] {
 			files = append(files, p)
 		}
 		return nil
@@ -157,6 +158,26 @@ func collectAudioFiles(path string) ([]string, error) {
 
 	slices.Sort(files)
 	return files, nil
+}
+
+// resolveM3U fetches an M3U playlist URL and returns the stream URLs it contains.
+func resolveM3U(m3uURL string) ([]string, error) {
+	resp, err := http.Get(m3uURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var urls []string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		urls = append(urls, line)
+	}
+	return urls, scanner.Err()
 }
 
 func main() {
