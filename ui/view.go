@@ -171,7 +171,11 @@ func (m Model) renderVolume() string {
 	bar := volBarStyle.Render(strings.Repeat("█", filled)) +
 		dimStyle.Render(strings.Repeat("░", barW-filled))
 
-	return labelStyle.Render("VOL ") + bar + dimStyle.Render(fmt.Sprintf(" %+.1fdB", vol))
+	line := labelStyle.Render("VOL ") + bar + dimStyle.Render(fmt.Sprintf(" %+.1fdB", vol))
+	if m.player.Mono() {
+		line += " " + activeToggle.Render("[Mono]")
+	}
+	return line
 }
 
 func (m Model) renderEQ() string {
@@ -365,7 +369,7 @@ func (m Model) renderHelp() string {
 		help += "[←→]Seek "
 	}
 
-	help += "[+-]Vol [e]EQ [a]Queue [/]Search "
+	help += "[+-]Vol [m]Mono [e]EQ [a]Queue [/]Search "
 
 	// Conditionally show the back button if a provider is configured
 	if m.provider != nil {

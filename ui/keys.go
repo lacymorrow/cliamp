@@ -170,6 +170,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
+	case "m":
+		m.player.ToggleMono()
+
 	case "/":
 		m.searching = true
 		m.searchQuery = ""

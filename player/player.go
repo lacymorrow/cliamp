@@ -64,6 +64,7 @@ type Player struct {
 	playing   bool
 	paused    bool
 	seekable  bool
+	mono      bool
 	rc        io.ReadCloser
 }
 
@@ -112,8 +113,8 @@ func (p *Player) Play(path string) error {
 		s = newBiquad(s, EQFreqs[i], 1.4, &p.eqBands[i], float64(p.sr))
 	}
 
-	// Volume control
-	s = &volumeStreamer{s: s, vol: &p.volume, mu: &p.mu}
+	// Volume control + mono downmix
+	s = &volumeStreamer{s: s, vol: &p.volume, mono: &p.mono, mu: &p.mu}
 
 	// Tap for FFT visualization
 	p.tap = NewTap(s, 4096)
@@ -216,6 +217,20 @@ func (p *Player) Volume() float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.volume
+}
+
+// ToggleMono switches between stereo and mono (L+R downmix) output.
+func (p *Player) ToggleMono() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.mono = !p.mono
+}
+
+// Mono returns true if mono output is enabled.
+func (p *Player) Mono() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.mono
 }
 
 // SetEQBand sets a single EQ band's gain in dB, clamped to [-12, +12].
@@ -353,21 +368,28 @@ func decode(rc io.ReadCloser, path string, sr beep.SampleRate) (beep.StreamSeekC
 	}
 }
 
-// volumeStreamer applies dB gain to an audio stream.
+// volumeStreamer applies dB gain and optional mono downmix to an audio stream.
 type volumeStreamer struct {
-	s   beep.Streamer
-	vol *float64
-	mu  *sync.Mutex
+	s    beep.Streamer
+	vol  *float64
+	mono *bool
+	mu   *sync.Mutex
 }
 
 func (v *volumeStreamer) Stream(samples [][2]float64) (int, bool) {
 	n, ok := v.s.Stream(samples)
 	v.mu.Lock()
 	gain := math.Pow(10, *v.vol/20)
+	mono := *v.mono
 	v.mu.Unlock()
 	for i := range n {
 		samples[i][0] *= gain
 		samples[i][1] *= gain
+		if mono {
+			mid := (samples[i][0] + samples[i][1]) / 2
+			samples[i][0] = mid
+			samples[i][1] = mid
+		}
 	}
 	return n, ok
 }
