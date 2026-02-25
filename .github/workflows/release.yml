@@ -33,20 +33,23 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install Linux audio dependencies
-        if: matrix.goos == 'linux'
+      - name: Install ALSA dev (amd64)
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: |
-          sudo dpkg --add-architecture arm64 || true
-          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list.d/*.list || true
-          sudo tee /etc/apt/sources.list.d/arm64.list > /dev/null <<SOURCES
-          deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs) main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs)-updates main restricted universe multiverse
-          SOURCES
           sudo apt-get update
           sudo apt-get install -y libasound2-dev
-          if [ "${{ matrix.goarch }}" = "arm64" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64
-          fi
+
+      - name: Install ALSA dev and cross-compiler (arm64)
+        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
+        run: |
+          sudo dpkg --add-architecture arm64
+          # Pin existing sources to amd64 only (ubuntu sources, not third-party)
+          sudo sed -i 's/^deb http/deb [arch=amd64] http/' /etc/apt/sources.list || true
+          # Add arm64 package sources
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs) main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64-ports.list
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64
 
       - name: Build
         env:
