@@ -10,6 +10,9 @@ repeat = "off"
 # Start with shuffle enabled
 shuffle = false
 
+# Start with mono output (L+R downmix)
+mono = false
+
 # EQ preset: "Flat", "Rock", "Pop", "Jazz", "Classical",
 #             "Bass Boost", "Treble Boost", "Vocal", "Electronic", "Acoustic"
 # Leave empty or "Custom" to use manual eq values below

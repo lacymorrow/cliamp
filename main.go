@@ -104,6 +104,9 @@ func run() error {
 	if cfg.Shuffle {
 		pl.ToggleShuffle()
 	}
+	if cfg.Mono {
+		p.ToggleMono()
+	}
 
 	// Launch the TUI
 	m := ui.NewModel(p, pl, provider)

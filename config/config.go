@@ -28,6 +28,7 @@ type Config struct {
 	EQPreset string      // preset name, or "" for custom
 	Repeat   string      // "off", "all", or "one"
 	Shuffle  bool
+	Mono     bool
 }
 
 // Default returns a Config with sensible defaults.
@@ -82,6 +83,8 @@ func Load() (Config, error) {
 			}
 		case "shuffle":
 			cfg.Shuffle = val == "true"
+		case "mono":
+			cfg.Mono = val == "true"
 		case "eq":
 			cfg.EQ = parseEQ(val)
 		case "eq_preset":
@@ -119,6 +122,9 @@ repeat = "%s"
 # Start with shuffle enabled
 shuffle = %t
 
+# Start with mono output (L+R downmix)
+mono = %t
+
 # EQ preset name (e.g. "Rock", "Jazz", "Classical", "Bass Boost")
 # Leave empty or "Custom" to use the manual eq values below
 eq_preset = "%s"
@@ -131,6 +137,7 @@ eq = [%s]
 		strconv.FormatFloat(cfg.Volume, 'f', -1, 64),
 		cfg.Repeat,
 		cfg.Shuffle,
+		cfg.Mono,
 		cfg.EQPreset,
 		strings.Join(eqParts, ", "),
 	)
