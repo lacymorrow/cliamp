@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gopxl/beep/v2"
 
+	"cliamp/external/navidrome"
 	"cliamp/config"
 	"cliamp/player"
 	"cliamp/playlist"
@@ -34,8 +35,18 @@ var audioExts = map[string]bool{
 }
 
 func run() error {
-	if len(os.Args) < 2 {
-		return errors.New("usage: cliamp <file|folder> [...]")
+	var provider playlist.Provider
+
+	navURL := os.Getenv("NAVIDROME_URL")
+	navUser := os.Getenv("NAVIDROME_USER")
+	navPass := os.Getenv("NAVIDROME_PASS")
+
+	if navURL != "" && navUser != "" && navPass != "" {
+		provider = &navidrome.NavidromeClient{URL: navURL, User: navUser, Password: navPass}
+	}
+
+	if len(os.Args) < 2 && provider == nil {
+		return errors.New("usage: cliamp <file|folder> [...] or configure a provider via ENV\n\n - Navidrome: NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS\n")
 	}
 
 	// Expand shell globs and resolve directories into audio files
@@ -54,11 +65,10 @@ func run() error {
 		}
 	}
 
-	if len(files) == 0 {
-		return errors.New("no playable files found (supported: mp3, wav, flac, ogg, m4a, aac, opus, wma)")
+	if len(files) == 0 && provider == nil {
+		return errors.New("no playable files found")
 	}
 
-	// Build playlist from file arguments
 	pl := playlist.New()
 	for _, f := range files {
 		pl.Add(playlist.TrackFromPath(f))
@@ -94,7 +104,7 @@ func run() error {
 	}
 
 	// Launch the TUI
-	m := ui.NewModel(p, pl)
+	m := ui.NewModel(p, pl, provider)
 	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
 		m.SetEQPreset(cfg.EQPreset)
 	}

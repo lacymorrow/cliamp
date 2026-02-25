@@ -183,6 +183,10 @@ func (m Model) renderEQ() string {
 }
 
 func (m Model) renderPlaylistHeader() string {
+	if m.focus == focusProvider {
+		return dimStyle.Render(fmt.Sprintf("── %s Playlists ── ", m.provider.Name()))
+	}
+
 	var shuffle string
 	if m.playlist.Shuffled() {
 		shuffle = activeToggle.Render("[Shuffle]")
@@ -206,6 +210,30 @@ func (m Model) renderPlaylistHeader() string {
 }
 
 func (m Model) renderPlaylist() string {
+	if m.focus == focusProvider {
+		if m.provLoading {
+			return dimStyle.Render(fmt.Sprintf("  Loading %s...", m.provider.Name()))
+		}
+		if len(m.providerLists) == 0 {
+			return dimStyle.Render("  No playlists found.")
+		}
+
+		visible := min(m.plVisible, len(m.providerLists))
+		scroll := max(0, m.provCursor-visible+1)
+
+		var lines []string
+		for j := scroll; j < scroll+visible && j < len(m.providerLists); j++ {
+			p := m.providerLists[j]
+			prefix, style := "  ", playlistItemStyle
+			if j == m.provCursor {
+				style = playlistSelectedStyle
+				prefix = "> "
+			}
+			lines = append(lines, style.Render(fmt.Sprintf("%s%s (%d tracks)", prefix, p.Name, p.TrackCount)))
+		}
+		return strings.Join(lines, "\n")
+	}
+
 	tracks := m.playlist.Tracks()
 	if len(tracks) == 0 {
 		return dimStyle.Render("  No tracks loaded")

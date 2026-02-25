@@ -17,6 +17,7 @@ const (
 	focusPlaylist focusArea = iota
 	focusEQ
 	focusSearch
+	focusProvider
 )
 
 type tickMsg time.Time
@@ -37,6 +38,10 @@ type Model struct {
 	width     int
 	height    int
 
+	provider      playlist.Provider
+	providerLists []playlist.PlaylistInfo
+	provCursor    int
+	provLoading   bool
 	// EQ preset state (-1 = custom, 0+ = index into eqPresets)
 	eqPresetIdx int
 
@@ -49,14 +54,20 @@ type Model struct {
 }
 
 // NewModel creates a Model wired to the given player and playlist.
-func NewModel(p *player.Player, pl *playlist.Playlist) Model {
-	return Model{
+func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider) Model {
+	m := Model{
 		player:      p,
 		playlist:    pl,
 		vis:         NewVisualizer(44100),
 		plVisible:   5,
 		eqPresetIdx: -1, // custom until a preset is selected
 	}
+	if prov != nil {
+		m.provider = prov
+		m.focus = focusProvider
+		m.provLoading = true
+	}
+	return m
 }
 
 // SetEQPreset sets the preset index by name. Returns true if found.
@@ -90,9 +101,35 @@ func (m *Model) applyEQPreset() {
 	}
 }
 
+func fetchPlaylistsCmd(prov playlist.Provider) tea.Cmd {
+	return func() tea.Msg {
+		pls, err := prov.Playlists()
+		if err != nil {
+			return err
+		}
+		return pls
+	}
+}
+
+type tracksLoadedMsg []playlist.Track
+
+func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
+	return func() tea.Msg {
+		tracks, err := prov.Tracks(playlistID)
+		if err != nil {
+			return err
+		}
+		return tracksLoadedMsg(tracks)
+	}
+}
+
 // Init starts the tick timer and requests the terminal size.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(), tea.WindowSize())
+	cmds := []tea.Cmd{tickCmd(), tea.WindowSize()}
+	if m.provider != nil {
+		cmds = append(cmds, fetchPlaylistsCmd(m.provider))
+	}
+	return tea.Batch(cmds...)
 }
 
 func tickCmd() tea.Cmd {
@@ -122,6 +159,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.titleOff++
 		return m, tickCmd()
+
+	case []playlist.PlaylistInfo:
+		m.providerLists = msg
+		m.provLoading = false
+		return m, nil
+
+	case tracksLoadedMsg:
+		m.playlist.Add(msg...)
+		m.focus = focusPlaylist
+		m.provLoading = false
+		if m.playlist.Len() > 0 {
+			m.playCurrentTrack()
+		}
+		return m, nil
+
+	case error:
+		m.err = msg
+		m.provLoading = false
+		return m, nil
 	}
 
 	return m, nil

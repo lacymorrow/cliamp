@@ -2,7 +2,9 @@ package player
 
 import (
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +38,7 @@ type Player struct {
 	trackDone atomic.Bool
 	playing   bool
 	paused    bool
-	file      *os.File
+	rc        io.ReadCloser
 }
 
 // New creates a Player and initializes the speaker at the given sample rate.
@@ -50,19 +52,34 @@ func New(sr beep.SampleRate) *Player {
 func (p *Player) Play(path string) error {
 	p.Stop()
 
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open: %w", err)
+	var rc io.ReadCloser
+	var err error
+
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		resp, err := http.Get(path)
+		if err != nil {
+			return fmt.Errorf("http get: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("http stream failed: %s", resp.Status)
+		}
+		rc = resp.Body
+	} else {
+		rc, err = os.Open(path)
+		if err != nil {
+			return fmt.Errorf("open: %w", err)
+		}
 	}
 
-	streamer, format, err := decode(f, path, p.sr)
+	streamer, format, err := decode(rc, path, p.sr)
 	if err != nil {
-		f.Close()
+		rc.Close()
 		return fmt.Errorf("decode: %w", err)
 	}
 
 	p.mu.Lock()
-	p.file = f
+	p.rc = rc
 	p.streamer = streamer
 	p.format = format
 	p.trackDone.Store(false)
@@ -119,9 +136,9 @@ func (p *Player) Stop() {
 		p.streamer.Close()
 		p.streamer = nil
 	}
-	if p.file != nil {
-		p.file.Close()
-		p.file = nil
+	if p.rc != nil {
+		p.rc.Close()
+		p.rc = nil
 	}
 	p.ctrl = nil
 	p.tap = nil
@@ -245,20 +262,23 @@ func needsFFmpeg(ext string) bool {
 }
 
 // decode selects the appropriate decoder based on the file extension.
-func decode(f *os.File, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
+func decode(rc io.ReadCloser, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
 	ext := strings.ToLower(filepath.Ext(path))
+	if strings.Contains(path, "stream.view") || strings.Contains(path, "format=mp3") {
+		ext = ".mp3"
+	}
 	if needsFFmpeg(ext) {
 		return decodeFFmpeg(path, sr)
 	}
 	switch ext {
 	case ".wav":
-		return wav.Decode(f)
+		return wav.Decode(rc)
 	case ".flac":
-		return flac.Decode(f)
+		return flac.Decode(rc)
 	case ".ogg":
-		return vorbis.Decode(f)
+		return vorbis.Decode(rc)
 	default:
-		return mp3.Decode(f)
+		return mp3.Decode(rc)
 	}
 }
 

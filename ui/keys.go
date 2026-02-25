@@ -13,6 +13,33 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleSearchKey(msg)
 	}
 
+	if m.focus == focusProvider {
+		switch msg.String() {
+		case "q", "ctrl+c":
+			m.player.Close()
+			m.quitting = true
+			return tea.Quit
+		case "up", "k":
+			if m.provCursor > 0 {
+				m.provCursor--
+			}
+		case "down", "j":
+			if m.provCursor < len(m.providerLists)-1 {
+				m.provCursor++
+			}
+		case "enter":
+			if len(m.providerLists) > 0 && !m.provLoading {
+				m.provLoading = true
+				return fetchTracksCmd(m.provider, m.providerLists[m.provCursor].ID)
+			}
+		case "tab":
+			if m.playlist.Len() > 0 {
+				m.focus = focusPlaylist
+			}
+		}
+		return nil
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.player.Close()
