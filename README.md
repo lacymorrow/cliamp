@@ -60,6 +60,16 @@ Play audio directly from URLs or M3U playlists:
 
 For non-seekable HTTP streams, the UI shows `● Streaming` with a static seek bar, and seek keys are silently ignored.
 
+## Podcasts
+
+Play any podcast by passing its RSS feed URL:
+
+```sh
+./cliamp https://example.com/podcast/feed.xml
+```
+
+Episode titles and the podcast name are extracted from the feed and shown in the playlist.
+
 ## Navidrome
 
 Connect to a [Navidrome](https://www.navidrome.org/) ([GitHub](https://github.com/navidrome/navidrome)) server via environment variables:
