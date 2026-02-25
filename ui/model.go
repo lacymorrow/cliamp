@@ -46,8 +46,11 @@ type Model struct {
 	// EQ preset state (-1 = custom, 0+ = index into eqPresets)
 	eqPresetIdx int
 
+	// Keymap overlay
+	showKeymap bool
+
 	// Search mode state
-	searching     bool
+	searching  bool
 	searchQuery   string
 	searchResults []int // indices into playlist tracks
 	searchCursor  int

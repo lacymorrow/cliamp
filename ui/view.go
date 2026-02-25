@@ -25,6 +25,10 @@ func (m Model) View() string {
 		return ""
 	}
 
+	if m.showKeymap {
+		return m.renderKeymapOverlay()
+	}
+
 	sections := []string{
 		// Now playing
 		m.renderTitle(),
@@ -58,6 +62,51 @@ func (m Model) View() string {
 	frameW := lipgloss.Width(frame)
 	frameH := lipgloss.Height(frame)
 
+	padLeft := max(0, (m.width-frameW)/2)
+	padTop := max(0, (m.height-frameH)/2)
+
+	return strings.Repeat("\n", padTop) +
+		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+}
+
+func (m Model) renderKeymapOverlay() string {
+	keys := []struct{ key, action string }{
+		{"Space", "Play / Pause"},
+		{"s", "Stop"},
+		{"> .", "Next track"},
+		{"< ,", "Previous track"},
+		{"← →", "Seek ±5s"},
+		{"+ -", "Volume up/down"},
+		{"m", "Toggle mono"},
+		{"e", "Cycle EQ preset"},
+		{"↑ ↓", "Playlist scroll / EQ adjust"},
+		{"h l", "EQ cursor left/right"},
+		{"Enter", "Play selected track"},
+		{"a", "Toggle queue (play next)"},
+		{"r", "Cycle repeat"},
+		{"z", "Toggle shuffle"},
+		{"/", "Search playlist"},
+		{"Tab", "Toggle focus"},
+		{"Esc", "Back to provider"},
+		{"Ctrl+K", "This keymap"},
+		{"q", "Quit"},
+	}
+
+	lines := []string{
+		titleStyle.Render("K E Y M A P"),
+		"",
+	}
+	for _, k := range keys {
+		line := fmt.Sprintf("  %-10s %s", k.key, k.action)
+		lines = append(lines, dimStyle.Render(line))
+	}
+	lines = append(lines, "", helpStyle.Render("Press any key to close"))
+
+	content := strings.Join(lines, "\n")
+	frame := frameStyle.Render(content)
+
+	frameW := lipgloss.Width(frame)
+	frameH := lipgloss.Height(frame)
 	padLeft := max(0, (m.width-frameW)/2)
 	padTop := max(0, (m.height-frameH)/2)
 

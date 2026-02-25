@@ -127,6 +127,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `<` `,` | Previous track |
 | `Left` `Right` | Seek -/+5s |
 | `+` `-` | Volume up/down |
+| `m` | Toggle mono |
 | `Tab` | Toggle focus (Playlist / EQ) |
 | `j` `k` / `Up` `Down` | Playlist scroll / EQ band adjust |
 | `h` `l` | EQ cursor left/right |
@@ -136,6 +137,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `a` | Toggle queue (play next) |
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |
+| `Ctrl+K` | Show keymap |
 | `q` | Quit |
 
 ## Author

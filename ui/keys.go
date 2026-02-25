@@ -9,6 +9,12 @@ import (
 
 // handleKey processes a single key press and returns an optional command.
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
+	// Dismiss keymap overlay on any key
+	if m.showKeymap {
+		m.showKeymap = false
+		return nil
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -180,6 +186,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.searchCursor = 0
 		m.prevFocus = m.focus
 		m.focus = focusSearch
+
+	case "ctrl+k":
+		m.showKeymap = true
 	}
 
 	return nil
