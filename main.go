@@ -13,8 +13,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gopxl/beep/v2"
 
-	"cliamp/external/navidrome"
 	"cliamp/config"
+	"cliamp/external/navidrome"
 	"cliamp/player"
 	"cliamp/playlist"
 	"cliamp/ui"

@@ -9,9 +9,9 @@ type PlaylistInfo struct {
 type Provider interface {
 	// Provider name
 	Name() string
-	
+
 	Playlists() ([]PlaylistInfo, error)
-	
+
 	//Local file or URL
 	Tracks(playlistID string) ([]Track, error)
 }
