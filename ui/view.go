@@ -340,5 +340,18 @@ func (m Model) renderHelp() string {
 		count := len(m.searchResults)
 		return helpStyle.Render(fmt.Sprintf("/ %s  (%d found)  [↑↓]Navigate [Enter]Play [Esc]Cancel", query, count))
 	}
-	return helpStyle.Render("[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [e]EQ [a]Queue [/]Search [Tab]Focus [Q]Quit")
+	if m.focus == focusProvider {
+		return helpStyle.Render("[↑↓]Navigate  [Enter]Load Playlist  [Tab]Focus  [Q]Quit")
+	}
+
+	help := "[Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [e]EQ [a]Queue [/]Search "
+
+	// Conditionally show the back button if a provider is configured
+	if m.provider != nil {
+		help += "[Esc]Back "
+	}
+
+	help += "[Tab]Focus [Q]Quit"
+
+	return helpStyle.Render(help)
 }

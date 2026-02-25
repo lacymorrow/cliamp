@@ -23,6 +23,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.provCursor > 0 {
 				m.provCursor--
 			}
+		case " ":
+			if !m.player.IsPlaying() {
+				m.playCurrentTrack()
+			} else {
+				m.player.TogglePause()
+			}
 		case "down", "j":
 			if m.provCursor < len(m.providerLists)-1 {
 				m.provCursor++
@@ -45,6 +51,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.player.Close()
 		m.quitting = true
 		return tea.Quit
+	case "esc", "backspace", "b":
+		if m.focus == focusPlaylist && m.provider != nil {
+			m.focus = focusProvider
+		}
 
 	case " ":
 		if !m.player.IsPlaying() {
