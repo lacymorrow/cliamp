@@ -55,6 +55,19 @@ func IsM3U(path string) bool {
 	return ext == ".m3u" || ext == ".m3u8"
 }
 
+// IsFeed reports whether the URL points to a podcast RSS/XML feed.
+func IsFeed(path string) bool {
+	if !IsURL(path) {
+		return false
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(u.Path))
+	return ext == ".xml" || ext == ".rss" || ext == ".atom"
+}
+
 // TrackFromPath creates a Track by parsing the filename or URL.
 // Supports "Artist - Title" format, otherwise uses the filename as title.
 func TrackFromPath(path string) Track {

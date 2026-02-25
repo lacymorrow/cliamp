@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -40,10 +41,17 @@ func run() error {
 
 	// Expand shell globs and resolve directories into audio files
 	var files []string
+	var feedTracks []playlist.Track
 	for _, arg := range os.Args[1:] {
 		// URLs bypass glob expansion and filesystem checks
 		if playlist.IsURL(arg) {
-			if playlist.IsM3U(arg) {
+			if playlist.IsFeed(arg) {
+				tracks, err := resolveFeed(arg)
+				if err != nil {
+					return fmt.Errorf("resolving feed %s: %w", arg, err)
+				}
+				feedTracks = append(feedTracks, tracks...)
+			} else if playlist.IsM3U(arg) {
 				streams, err := resolveM3U(arg)
 				if err != nil {
 					return fmt.Errorf("resolving m3u %s: %w", arg, err)
@@ -67,7 +75,7 @@ func run() error {
 		}
 	}
 
-	if len(files) == 0 && provider == nil {
+	if len(files) == 0 && len(feedTracks) == 0 && provider == nil {
 		return errors.New("no playable files found")
 	}
 
@@ -75,6 +83,7 @@ func run() error {
 	for _, f := range files {
 		pl.Add(playlist.TrackFromPath(f))
 	}
+	pl.Add(feedTracks...)
 
 	// Load user config
 	cfg, err := config.Load()
@@ -161,6 +170,45 @@ func collectAudioFiles(path string) ([]string, error) {
 
 	slices.Sort(files)
 	return files, nil
+}
+
+// resolveFeed fetches a podcast RSS feed and returns tracks with metadata.
+func resolveFeed(feedURL string) ([]playlist.Track, error) {
+	resp, err := http.Get(feedURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var rss struct {
+		Channel struct {
+			Title string `xml:"title"`
+			Items []struct {
+				Title     string `xml:"title"`
+				Enclosure struct {
+					URL  string `xml:"url,attr"`
+					Type string `xml:"type,attr"`
+				} `xml:"enclosure"`
+			} `xml:"item"`
+		} `xml:"channel"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&rss); err != nil {
+		return nil, fmt.Errorf("parsing feed: %w", err)
+	}
+
+	var tracks []playlist.Track
+	for _, item := range rss.Channel.Items {
+		if item.Enclosure.URL == "" {
+			continue
+		}
+		tracks = append(tracks, playlist.Track{
+			Path:   item.Enclosure.URL,
+			Title:  item.Title,
+			Artist: rss.Channel.Title,
+			Stream: true,
+		})
+	}
+	return tracks, nil
 }
 
 // resolveM3U fetches an M3U playlist URL and returns the stream URLs it contains.
