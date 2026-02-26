@@ -35,7 +35,16 @@ func run() error {
 	}
 
 	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 && provider == nil {
-		return errors.New("usage: cliamp <file|folder> [...] or configure a provider via ENV\n\n - Navidrome: NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS\n")
+		return errors.New(`usage: cliamp <file|folder|url> [...]
+
+  Local files     cliamp track.mp3 song.flac ~/Music
+  HTTP stream     cliamp https://example.com/song.mp3
+  Radio / M3U     cliamp http://radio.example.com/stream.m3u
+  Podcast feed    cliamp https://example.com/podcast/feed.xml
+
+  Navidrome       Set NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
+
+Formats: mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)`)
 	}
 
 	pl := playlist.New()
