@@ -16,25 +16,40 @@ curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
 
 ## Ascii
 ```
-╭────────────────────────────────────────────────────────────────╮
-│                                                                │
-│  C L I A M P                                                   │
-│  ♫ Artist - Song Title                                         │
-│  01:23 / 04:56                                    ▶ Playing    │
-│                                                                │
-│  █████ ▇▇▇▇▇ ▅▅▅▅▅ █████ ▃▃▃▃▃ ▅▅▅▅▅ ▇▇▇▇▇ ▃▃▃▃▃ ▂▂▂▂▂ ▁▁▁▁▁   │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│                                                                │
-│  VOL ██████████████████░░░░  +0.0dB                            │
-│  EQ  70 180 320 600 1k 3k 6k 12k 14k 16k                       │
-│                                                                │
-│  ── Playlist ── [Shuffle] [Repeat: Off] ──                     │
-│  ▶ 1. Song One                                                 │
-│    2. Song Two                                                 │
-│                                                                │
-│  [Spc]⏯  [<>]Trk [←→]Seek [+-]Vol [Tab]Focus [Q]Quit           │
-│                                                                │
-╰────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────╮
+│                                                                  │
+│  C L I A M P                                                     │
+│  ♫ Artist - Song Title                                           │
+│  01:23 / 04:56                                    ▶ Playing      │
+│                                                                  │
+│  █████ ▇▇▇▇▇ ▅▅▅▅▅ █████ ▃▃▃▃▃ ▅▅▅▅▅ ▇▇▇▇▇ ▃▃▃▃▃ ▂▂▂▂▂ ▁▁▁▁▁     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
+│                                                                  │
+│  VOL ██████████████████░░░░  +0.0dB                              │
+│  EQ  70 180 320 600 1k 3k 6k 12k 14k 16k                         │
+│                                                                  │
+│  ── Playlist ── [Shuffle] [Repeat: Off] ──                       │
+│  ▶ 1. Song One                                                   │
+│    2. Song Two                                                   │
+│                                                                  │
+│  [Spc]⏯ [<>]Trk [←→]Seek [+-]Vol [m]Mono [e]EQ [/]Search [Q]Quit │
+│                                                                  │
+╰──────────────────────────────────────────────────────────────────╯
+```
+
+## Build
+
+```sh
+go build -o cliamp .
+```
+
+## Usage
+
+```sh
+./cliamp *.mp3 *.flac *.wav *.ogg
+./cliamp ~/Music                   # recursively finds all audio files
+./cliamp ~/Music/jazz ~/Music/rock # multiple folders
+./cliamp ~/Music song.mp3          # mix folders and files
 ```
 
 ## Run in dev
@@ -42,16 +57,6 @@ curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
 ```sh
 go run . track.mp3 song.flac
 go run . ~/Music/album
-```
-
-## Build
-
-```sh
-go build -o cliamp .
-./cliamp *.mp3 *.flac *.wav *.ogg
-./cliamp ~/Music                   # recursively finds all audio files
-./cliamp ~/Music/jazz ~/Music/rock # multiple folders
-./cliamp ~/Music song.mp3          # mix folders and files
 ```
 
 ## HTTP Streaming
@@ -123,6 +128,9 @@ repeat = "off"
 # Start with shuffle enabled
 shuffle = false
 
+# Start with mono output (L+R downmix)
+mono = false
+
 # EQ preset: "Flat", "Rock", "Pop", "Jazz", "Classical",
 #             "Bass Boost", "Treble Boost", "Vocal", "Electronic", "Acoustic"
 # Leave empty or "Custom" to use manual eq values below
@@ -130,6 +138,7 @@ eq_preset = "Flat"
 
 # 10-band EQ gains in dB (range: -12 to 12)
 # Bands: 70Hz, 180Hz, 320Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
+# Only used when eq_preset is "Custom" or empty
 eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ```
 
@@ -154,6 +163,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |
 | `Ctrl+K` | Show keymap |
+| `b` `Esc` | Back to provider (Navidrome) |
 | `q` | Quit |
 
 ## Author
