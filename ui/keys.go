@@ -30,11 +30,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				m.provCursor--
 			}
 		case " ":
-			if !m.player.IsPlaying() {
-				m.playCurrentTrack()
-			} else {
-				m.player.TogglePause()
-			}
+			m.togglePlayPause()
 		case "down", "j":
 			if m.provCursor < len(m.providerLists)-1 {
 				m.provCursor++
@@ -63,11 +59,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case " ":
-		if !m.player.IsPlaying() {
-			m.playCurrentTrack()
-		} else {
-			m.player.TogglePause()
-		}
+		m.togglePlayPause()
 		m.notifyMPRIS()
 
 	case "s":

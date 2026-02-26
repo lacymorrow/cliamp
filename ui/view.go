@@ -9,8 +9,6 @@ import (
 	"cliamp/playlist"
 )
 
-const panelWidth = 74 // usable inner width (80 frame - 6 padding)
-
 // Pre-built styles for elements created per-render to avoid repeated allocation.
 var (
 	seekFillStyle = lipgloss.NewStyle().Foreground(colorSeekBar)

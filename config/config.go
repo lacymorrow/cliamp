@@ -145,6 +145,46 @@ eq = [%s]
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+// PlayerConfig is the subset of player controls needed to apply config.
+type PlayerConfig interface {
+	SetVolume(db float64)
+	SetEQBand(band int, dB float64)
+	ToggleMono()
+}
+
+// PlaylistConfig is the subset of playlist controls needed to apply config.
+type PlaylistConfig interface {
+	CycleRepeat()
+	ToggleShuffle()
+}
+
+// ApplyPlayer applies audio-engine settings from the config.
+func (c Config) ApplyPlayer(p PlayerConfig) {
+	p.SetVolume(c.Volume)
+	if c.EQPreset == "" || c.EQPreset == "Custom" {
+		for i, gain := range c.EQ {
+			p.SetEQBand(i, gain)
+		}
+	}
+	if c.Mono {
+		p.ToggleMono()
+	}
+}
+
+// ApplyPlaylist applies playlist-state settings from the config.
+func (c Config) ApplyPlaylist(pl PlaylistConfig) {
+	switch c.Repeat {
+	case "all":
+		pl.CycleRepeat() // off -> all
+	case "one":
+		pl.CycleRepeat() // off -> all
+		pl.CycleRepeat() // all -> one
+	}
+	if c.Shuffle {
+		pl.ToggleShuffle()
+	}
+}
+
 // parseEQ parses a TOML-style array like [0, 1.5, -2, ...] into 10 bands.
 func parseEQ(val string) [10]float64 {
 	var bands [10]float64

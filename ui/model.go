@@ -50,7 +50,7 @@ type Model struct {
 	showKeymap bool
 
 	// Search mode state
-	searching  bool
+	searching     bool
 	searchQuery   string
 	searchResults []int // indices into playlist tracks
 	searchCursor  int
@@ -249,6 +249,8 @@ func (m *Model) nextTrack() {
 	m.adjustScroll()
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
+	} else {
+		m.err = nil
 	}
 	m.preloadNext()
 }
@@ -267,6 +269,8 @@ func (m *Model) prevTrack() {
 	m.adjustScroll()
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
+	} else {
+		m.err = nil
 	}
 	m.preloadNext()
 }
@@ -280,6 +284,8 @@ func (m *Model) playCurrentTrack() {
 	m.titleOff = 0
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
+	} else {
+		m.err = nil
 	}
 	m.preloadNext()
 }
@@ -324,6 +330,15 @@ func (m *Model) notifyMPRIS() {
 		Length: m.player.Duration().Microseconds(),
 	}
 	m.mpris.Update(status, info, m.player.Volume())
+}
+
+// togglePlayPause starts playback if stopped, or toggles pause if playing.
+func (m *Model) togglePlayPause() {
+	if !m.player.IsPlaying() {
+		m.playCurrentTrack()
+	} else {
+		m.player.TogglePause()
+	}
 }
 
 // updateSearch filters the playlist by the current search query.

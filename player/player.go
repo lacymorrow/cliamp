@@ -1,74 +1,16 @@
 package player
 
 import (
-	"fmt"
-	"io"
-	"math"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gopxl/beep/v2"
-	"github.com/gopxl/beep/v2/flac"
-	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
-	"github.com/gopxl/beep/v2/vorbis"
-	"github.com/gopxl/beep/v2/wav"
 )
 
-// EQFreqs are the center frequencies for the 10-band parametric equalizer.
-var EQFreqs = [10]float64{70, 180, 320, 600, 1000, 3000, 6000, 12000, 14000, 16000}
-
-// SupportedExts is the set of file extensions the player can decode.
-var SupportedExts = map[string]bool{
-	".mp3":  true,
-	".wav":  true,
-	".flac": true,
-	".ogg":  true,
-	".m4a":  true,
-	".aac":  true,
-	".m4b":  true,
-	".alac": true,
-	".wma":  true,
-	".opus": true,
-}
-
-// httpClient is used for all HTTP streaming. It sets a dial/TLS/header
-// timeout but no overall timeout, so infinite live streams aren't killed.
-var httpClient = &http.Client{
-	Transport: &http.Transport{
-		ResponseHeaderTimeout: 15 * time.Second,
-	},
-}
-
-// isURL reports whether path is an HTTP or HTTPS URL.
-func isURL(path string) bool {
-	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
-}
-
-// trackPipeline bundles a decoded track's resources.
-type trackPipeline struct {
-	decoder  beep.StreamSeekCloser // raw decoder (for Position/Duration/Seek)
-	stream   beep.Streamer         // decoder + optional resample (fed to gapless)
-	format   beep.Format
-	seekable bool
-	rc       io.ReadCloser // source file/HTTP body
-}
-
-// close releases the pipeline's resources.
-func (tp *trackPipeline) close() {
-	if tp.decoder != nil {
-		tp.decoder.Close()
-	}
-	if tp.rc != nil {
-		tp.rc.Close()
-	}
-}
+// DefaultSampleRate is the CD-quality sample rate used for audio output.
+const DefaultSampleRate = 44100
 
 // Player is the audio engine managing the playback pipeline:
 //
@@ -115,38 +57,6 @@ func New(sr beep.SampleRate) *Player {
 	return p
 }
 
-// buildPipeline opens and decodes a track, returning a ready-to-play pipeline.
-func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
-	rc, err := openSource(path)
-	if err != nil {
-		return nil, err
-	}
-
-	decoder, format, err := decode(rc, path, p.sr)
-	if err != nil {
-		rc.Close()
-		return nil, fmt.Errorf("decode: %w", err)
-	}
-
-	// HTTP streams decoded natively read from a non-seekable http.Response.Body.
-	// FFmpeg-decoded streams are fully buffered in memory and therefore seekable.
-	_, isPCM := decoder.(*pcmStreamer)
-	seekable := !isURL(path) || isPCM
-
-	var s beep.Streamer = decoder
-	if format.SampleRate != p.sr {
-		s = beep.Resample(4, format.SampleRate, p.sr, s)
-	}
-
-	return &trackPipeline{
-		decoder:  decoder,
-		stream:   s,
-		format:   format,
-		seekable: seekable,
-		rc:       rc,
-	}, nil
-}
-
 // Play opens and starts playing an audio file. On the first call it builds
 // the long-lived EQ → volume → tap → ctrl chain and starts the speaker.
 // Subsequent calls swap only the track source via the gapless streamer.
@@ -156,22 +66,28 @@ func (p *Player) Play(path string) error {
 		return err
 	}
 
+	// Collect old pipelines to close after releasing locks.
+	var oldCurrent, oldNext *trackPipeline
+
+	if p.started {
+		// Lock the speaker so the goroutine finishes any in-progress Stream()
+		// call before we swap the source. This prevents reading from a decoder
+		// that we're about to close.
+		speaker.Lock()
+		p.gapless.Replace(tp.stream)
+		speaker.Unlock()
+	}
+
 	p.mu.Lock()
 
-	// Close previous track resources
-	if p.current != nil {
-		p.current.close()
-	}
-	// Discard any preloaded next
-	if p.nextPipeline != nil {
-		p.nextPipeline.close()
-		p.nextPipeline = nil
-	}
-
+	oldCurrent = p.current
+	oldNext = p.nextPipeline
 	p.current = tp
-	p.gapless.Replace(tp.stream)
+	p.nextPipeline = nil
 
 	if !p.started {
+		p.gapless.Replace(tp.stream)
+
 		// Build the long-lived pipeline once
 		var s beep.Streamer = p.gapless
 
@@ -187,6 +103,7 @@ func (p *Player) Play(path string) error {
 		p.mu.Unlock()
 
 		speaker.Play(p.ctrl)
+		closePipelines(oldCurrent, oldNext)
 		return nil
 	}
 
@@ -196,6 +113,8 @@ func (p *Player) Play(path string) error {
 	p.paused = false
 	p.mu.Unlock()
 
+	// Close old resources after all locks are released
+	closePipelines(oldCurrent, oldNext)
 	return nil
 }
 
@@ -206,27 +125,39 @@ func (p *Player) Preload(path string) error {
 		return err
 	}
 
+	// Lock speaker to atomically swap the gapless next stream, ensuring no
+	// in-flight transition reads from the old pipeline we're about to close.
+	speaker.Lock()
+	p.gapless.SetNext(tp.stream)
+	speaker.Unlock()
+
 	p.mu.Lock()
-	// Close previously preloaded pipeline if any
-	if p.nextPipeline != nil {
-		p.nextPipeline.close()
-	}
+	old := p.nextPipeline
 	p.nextPipeline = tp
 	p.mu.Unlock()
 
-	p.gapless.SetNext(tp.stream)
+	if old != nil {
+		old.close()
+	}
 	return nil
 }
 
 // ClearPreload discards the preloaded next track (e.g., when shuffle/repeat changes).
+// Speaker is locked to ensure no in-flight gapless transition can reference the
+// pipeline we're about to close.
 func (p *Player) ClearPreload() {
+	speaker.Lock()
 	p.gapless.SetNext(nil)
+	speaker.Unlock()
+
 	p.mu.Lock()
-	if p.nextPipeline != nil {
-		p.nextPipeline.close()
-		p.nextPipeline = nil
-	}
+	old := p.nextPipeline
+	p.nextPipeline = nil
 	p.mu.Unlock()
+
+	if old != nil {
+		old.close()
+	}
 }
 
 // GaplessAdvanced returns true (once) when a gapless transition happened.
@@ -248,26 +179,33 @@ func (p *Player) TogglePause() {
 // (outputting silence via the gapless streamer) so it can be restarted without
 // rebuilding the pipeline.
 func (p *Player) Stop() {
+	// Lock speaker to ensure the goroutine finishes any in-progress Stream()
+	// call, then clear the source and pause. After unlock, the speaker will
+	// only see silence from the gapless streamer (paused ctrl).
+	speaker.Lock()
 	p.gapless.Clear()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.current != nil {
-		p.current.close()
-		p.current = nil
-	}
-	if p.nextPipeline != nil {
-		p.nextPipeline.close()
-		p.nextPipeline = nil
-	}
 	if p.ctrl != nil {
 		p.ctrl.Paused = true
 	}
+	speaker.Unlock()
+
+	// Now safe to close decoder resources — speaker can't be reading them.
+	p.mu.Lock()
+	oldCurrent := p.current
+	oldNext := p.nextPipeline
+	p.current = nil
+	p.nextPipeline = nil
 	p.playing = false
 	p.paused = false
+	p.mu.Unlock()
+
+	closePipelines(oldCurrent, oldNext)
 }
 
 // Seek moves the playback position by the given duration (positive or negative).
 // Returns nil immediately for non-seekable streams (e.g., HTTP without ffmpeg).
+// The speaker lock is acquired first (outer), then p.mu briefly to snapshot
+// the current pipeline, ensuring consistent lock ordering with the audio thread.
 func (p *Player) Seek(d time.Duration) error {
 	speaker.Lock()
 	defer speaker.Unlock()
@@ -412,172 +350,3 @@ func (p *Player) Close() {
 	p.Stop()
 	speaker.Clear()
 }
-
-// openSource returns a ReadCloser for the given path, handling both
-// local files and HTTP URLs.
-func openSource(path string) (io.ReadCloser, error) {
-	if !isURL(path) {
-		return os.Open(path)
-	}
-	resp, err := httpClient.Get(path)
-	if err != nil {
-		return nil, fmt.Errorf("http get: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("http status %s", resp.Status)
-	}
-	return resp.Body, nil
-}
-
-// formatExt returns the audio format extension for a path.
-// For URLs, it parses the path component (ignoring query params),
-// checks a "format" query param as fallback, and defaults to ".mp3".
-func formatExt(path string) string {
-	if !isURL(path) {
-		return strings.ToLower(filepath.Ext(path))
-	}
-	u, err := url.Parse(path)
-	if err != nil {
-		return ".mp3"
-	}
-	ext := strings.ToLower(filepath.Ext(u.Path))
-	if ext == "" || ext == ".view" {
-		if f := u.Query().Get("format"); f != "" {
-			return "." + strings.ToLower(f)
-		}
-		return ".mp3"
-	}
-	return ext
-}
-
-// needsFFmpeg reports whether the given extension requires ffmpeg to decode.
-func needsFFmpeg(ext string) bool {
-	switch ext {
-	case ".m4a", ".aac", ".m4b", ".alac", ".wma", ".opus":
-		return true
-	}
-	return false
-}
-
-// decode selects the appropriate decoder based on the file extension.
-func decode(rc io.ReadCloser, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
-	ext := formatExt(path)
-	if needsFFmpeg(ext) {
-		return decodeFFmpeg(path, sr)
-	}
-	switch ext {
-	case ".wav":
-		return wav.Decode(rc)
-	case ".flac":
-		return flac.Decode(rc)
-	case ".ogg":
-		return vorbis.Decode(rc)
-	default:
-		return mp3.Decode(rc)
-	}
-}
-
-// volumeStreamer applies dB gain and optional mono downmix to an audio stream.
-type volumeStreamer struct {
-	s    beep.Streamer
-	vol  *float64
-	mono *bool
-	mu   *sync.Mutex
-}
-
-func (v *volumeStreamer) Stream(samples [][2]float64) (int, bool) {
-	n, ok := v.s.Stream(samples)
-	v.mu.Lock()
-	gain := math.Pow(10, *v.vol/20)
-	mono := *v.mono
-	v.mu.Unlock()
-	for i := range n {
-		samples[i][0] *= gain
-		samples[i][1] *= gain
-		if mono {
-			mid := (samples[i][0] + samples[i][1]) / 2
-			samples[i][0] = mid
-			samples[i][1] = mid
-		}
-	}
-	return n, ok
-}
-
-func (v *volumeStreamer) Err() error { return v.s.Err() }
-
-// biquad implements a second-order IIR peaking equalizer per the Audio EQ Cookbook.
-// Each filter reads its gain from a shared pointer, so EQ changes take
-// effect on the next Stream() call without rebuilding the pipeline.
-type biquad struct {
-	s    beep.Streamer
-	freq float64
-	q    float64
-	gain *float64 // points to Player.eqBands[i]
-	sr   float64
-	// Per-channel filter state
-	x1, x2 [2]float64
-	y1, y2 [2]float64
-	// Cached coefficients
-	lastGain           float64
-	b0, b1, b2, a1, a2 float64
-	inited             bool
-}
-
-func newBiquad(s beep.Streamer, freq, q float64, gain *float64, sr float64) *biquad {
-	return &biquad{s: s, freq: freq, q: q, gain: gain, sr: sr}
-}
-
-func (b *biquad) calcCoeffs(dB float64) {
-	if b.inited && dB == b.lastGain {
-		return
-	}
-	b.lastGain = dB
-	b.inited = true
-
-	a := math.Pow(10, dB/40)
-	w0 := 2 * math.Pi * b.freq / b.sr
-	sinW0 := math.Sin(w0)
-	cosW0 := math.Cos(w0)
-	alpha := sinW0 / (2 * b.q)
-
-	b0 := 1 + alpha*a
-	b1 := -2 * cosW0
-	b2 := 1 - alpha*a
-	a0 := 1 + alpha/a
-	a1 := -2 * cosW0
-	a2 := 1 - alpha/a
-
-	b.b0 = b0 / a0
-	b.b1 = b1 / a0
-	b.b2 = b2 / a0
-	b.a1 = a1 / a0
-	b.a2 = a2 / a0
-}
-
-func (b *biquad) Stream(samples [][2]float64) (int, bool) {
-	n, ok := b.s.Stream(samples)
-	dB := *b.gain
-
-	// Skip processing when gain is effectively zero
-	if dB > -0.1 && dB < 0.1 {
-		return n, ok
-	}
-
-	b.calcCoeffs(dB)
-
-	for i := range n {
-		for ch := range 2 {
-			x := samples[i][ch]
-			y := b.b0*x + b.b1*b.x1[ch] + b.b2*b.x2[ch] - b.a1*b.y1[ch] - b.a2*b.y2[ch]
-			b.x2[ch] = b.x1[ch]
-			b.x1[ch] = x
-			b.y2[ch] = b.y1[ch]
-			b.y1[ch] = y
-			samples[i][ch] = y
-		}
-	}
-	return n, ok
-}
-
-func (b *biquad) Err() error { return b.s.Err() }

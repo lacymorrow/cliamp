@@ -19,6 +19,9 @@ var (
 	spectrumHigh = lipgloss.ANSIColor(9)  // bright red
 )
 
+// panelWidth is the usable inner width (80 frame - 6 padding).
+const panelWidth = 74
+
 // Lip Gloss styles
 var (
 	frameStyle = lipgloss.NewStyle().

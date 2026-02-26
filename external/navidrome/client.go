@@ -7,27 +7,34 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"cliamp/playlist"
 )
 
+// NavidromeClient implements playlist.Provider for a Navidrome/Subsonic server.
 type NavidromeClient struct {
-	URL      string
-	User     string
-	Password string
+	url      string
+	user     string
+	password string
 }
 
-type NavidromePlaylist struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Count int    `json:"songCount"`
+// New creates a NavidromeClient with the given server credentials.
+func New(serverURL, user, password string) *NavidromeClient {
+	return &NavidromeClient{url: serverURL, user: user, password: password}
 }
 
-type NavidromeTrack struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
+// NewFromEnv creates a NavidromeClient from NAVIDROME_URL, NAVIDROME_USER,
+// and NAVIDROME_PASS environment variables. Returns nil if any are unset.
+func NewFromEnv() *NavidromeClient {
+	u := os.Getenv("NAVIDROME_URL")
+	user := os.Getenv("NAVIDROME_USER")
+	pass := os.Getenv("NAVIDROME_PASS")
+	if u == "" || user == "" || pass == "" {
+		return nil
+	}
+	return New(u, user, pass)
 }
 
 func (c *NavidromeClient) Name() string {
@@ -36,20 +43,20 @@ func (c *NavidromeClient) Name() string {
 
 func (c *NavidromeClient) buildURL(endpoint string, params url.Values) string {
 	salt := fmt.Sprintf("%d", time.Now().UnixNano())
-	hash := md5.Sum([]byte(c.Password + salt))
+	hash := md5.Sum([]byte(c.password + salt))
 	token := hex.EncodeToString(hash[:])
 
 	if params == nil {
 		params = url.Values{}
 	}
-	params.Set("u", c.User)
+	params.Set("u", c.user)
 	params.Set("t", token)
 	params.Set("s", salt)
 	params.Set("v", "1.0.0")
 	params.Set("c", "cliamp")
 	params.Set("f", "json")
 
-	return fmt.Sprintf("%s/rest/%s?%s", c.URL, endpoint, params.Encode())
+	return fmt.Sprintf("%s/rest/%s?%s", c.url, endpoint, params.Encode())
 }
 
 func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
@@ -119,7 +126,7 @@ func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
 	return tracks, nil
 }
 
-// StreamURL generates the authenticated streaming URL for a track ID.
+// streamURL generates the authenticated streaming URL for a track ID.
 func (c *NavidromeClient) streamURL(id string) string {
 	return c.buildURL("stream", url.Values{"id": {id}, "format": {"mp3"}})
 }
