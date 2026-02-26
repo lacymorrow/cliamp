@@ -64,6 +64,9 @@ type Model struct {
 	// Async stream buffering (true while HTTP connect is in progress)
 	buffering bool
 
+	// Live stream title from ICY metadata (e.g., "Artist - Song")
+	streamTitle string
+
 	// MPRIS D-Bus service (nil on non-Linux or if D-Bus unavailable)
 	mpris *mpris.Service
 }
@@ -213,6 +216,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.player.StreamErr(); err != nil {
 			m.err = err
 		}
+		// Poll ICY stream title for live radio display.
+		if title := m.player.StreamTitle(); title != "" {
+			m.streamTitle = title
+		}
 		var cmds []tea.Cmd
 		// Check gapless transition (audio already playing next track)
 		if m.player.GaplessAdvanced() {
@@ -351,6 +358,7 @@ func (m *Model) playCurrentTrack() tea.Cmd {
 
 // playTrack plays a track, using async HTTP for streams and sync I/O for local files.
 func (m *Model) playTrack(track playlist.Track) tea.Cmd {
+	m.streamTitle = ""
 	if track.Stream {
 		m.buffering = true
 		m.err = nil
@@ -408,6 +416,15 @@ func (m *Model) notifyMPRIS() {
 		Title:  track.Title,
 		Artist: track.Artist,
 		Length: m.player.Duration().Microseconds(),
+	}
+	// Override with ICY stream title for radio streams (format: "Artist - Title").
+	if m.streamTitle != "" && track.Stream {
+		if artist, title, ok := strings.Cut(m.streamTitle, " - "); ok {
+			info.Artist = artist
+			info.Title = title
+		} else {
+			info.Title = m.streamTitle
+		}
 	}
 	m.mpris.Update(status, info, m.player.Volume())
 }

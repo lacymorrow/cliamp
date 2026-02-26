@@ -34,6 +34,8 @@ type Player struct {
 	mono         bool
 
 	gaplessAdvance atomic.Bool // set when gapless transition fires
+
+	streamTitle atomic.Value // stores string, set by ICY reader callback
 }
 
 // New creates a Player and initializes the speaker at the given sample rate.
@@ -313,6 +315,18 @@ func (p *Player) IsPaused() bool {
 // Drained returns true if the current track ended with no preloaded next track.
 func (p *Player) Drained() bool {
 	return p.gapless.Drained()
+}
+
+// StreamTitle returns the current ICY stream title (e.g., "Artist - Song").
+// Returns "" when no ICY metadata has been received.
+func (p *Player) StreamTitle() string {
+	v, _ := p.streamTitle.Load().(string)
+	return v
+}
+
+// setStreamTitle is the ICY onMeta callback, called from the reader goroutine.
+func (p *Player) setStreamTitle(title string) {
+	p.streamTitle.Store(title)
 }
 
 // Seekable reports whether the current track supports seeking.

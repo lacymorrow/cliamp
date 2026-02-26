@@ -37,9 +37,25 @@ func closePipelines(ps ...*trackPipeline) {
 
 // buildPipeline opens and decodes a track, returning a ready-to-play pipeline.
 func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
-	rc, err := openSource(path)
+	// Clear stream title on each new pipeline build.
+	p.streamTitle.Store("")
+
+	// For HTTP URLs, pass the ICY metadata callback; for local files, nil.
+	var onMeta func(string)
+	if isURL(path) {
+		onMeta = p.setStreamTitle
+	}
+
+	rc, err := openSource(path, onMeta)
 	if err != nil {
 		return nil, err
+	}
+
+	// For OGG HTTP streams, use the chained decoder so Icecast radio
+	// continues across song boundaries instead of stopping at EOS.
+	ext := formatExt(path)
+	if isURL(path) && ext == ".ogg" {
+		return p.buildChainedOggPipeline(rc)
 	}
 
 	decoder, format, err := decode(rc, path, p.sr)
@@ -64,5 +80,24 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 		format:   format,
 		seekable: seekable,
 		rc:       rc,
+	}, nil
+}
+
+// buildChainedOggPipeline creates a pipeline with a chainedOggStreamer for
+// Icecast OGG/Vorbis radio streams that re-initializes the decoder at each
+// logical bitstream boundary.
+func (p *Player) buildChainedOggPipeline(rc io.ReadCloser) (*trackPipeline, error) {
+	cs, format, err := newChainedOggStreamer(rc, p.sr)
+	if err != nil {
+		rc.Close()
+		return nil, fmt.Errorf("decode chained ogg: %w", err)
+	}
+
+	return &trackPipeline{
+		decoder:  cs,
+		stream:   cs, // already resampled internally if needed
+		format:   format,
+		seekable: false,
+		rc:       nil, // chainedOggStreamer owns the lifecycle
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,11 +49,22 @@ func isURL(path string) bool {
 
 // openSource returns a ReadCloser for the given path, handling both
 // local files and HTTP URLs.
-func openSource(path string) (io.ReadCloser, error) {
+//
+// For HTTP URLs, it sends the Icy-MetaData:1 header to request ICY metadata.
+// If the server responds with icy-metaint, the body is wrapped in an icyReader
+// that strips metadata and fires onMeta with each StreamTitle update.
+func openSource(path string, onMeta func(string)) (io.ReadCloser, error) {
 	if !isURL(path) {
 		return os.Open(path)
 	}
-	resp, err := httpClient.Get(path)
+	req, err := http.NewRequest("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("http request: %w", err)
+	}
+	// Request ICY metadata — servers that don't support it simply ignore this header.
+	req.Header.Set("Icy-MetaData", "1")
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
@@ -60,7 +72,17 @@ func openSource(path string) (io.ReadCloser, error) {
 		resp.Body.Close()
 		return nil, fmt.Errorf("http status %s", resp.Status)
 	}
-	return resp.Body, nil
+
+	body := resp.Body
+
+	// Wrap in ICY reader if the server provides a metaint interval.
+	if metaStr := resp.Header.Get("Icy-Metaint"); metaStr != "" && onMeta != nil {
+		if metaInt, err := strconv.Atoi(metaStr); err == nil && metaInt > 0 {
+			body = newIcyReader(body, metaInt, onMeta)
+		}
+	}
+
+	return body, nil
 }
 
 // formatExt returns the audio format extension for a path.

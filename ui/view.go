@@ -122,6 +122,10 @@ func (m Model) renderTrackInfo() string {
 	if name == "" {
 		name = "No track loaded"
 	}
+	// Show live ICY stream title instead of static track name for radio streams.
+	if m.streamTitle != "" && track.Stream {
+		name = m.streamTitle
+	}
 
 	maxW := panelWidth - 4
 	runes := []rune(name)
