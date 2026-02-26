@@ -199,6 +199,33 @@ func (p *Playlist) Next() (Track, bool) {
 	return Track{}, false
 }
 
+// PeekNext returns the next track without advancing the playlist position.
+// Returns false when the next track can't be predicted (e.g., shuffle wrap).
+func (p *Playlist) PeekNext() (Track, bool) {
+	if len(p.tracks) == 0 {
+		return Track{}, false
+	}
+	// Queued tracks take priority
+	if len(p.queue) > 0 {
+		return p.tracks[p.queue[0]], true
+	}
+	if p.repeat == RepeatOne {
+		idx := p.order[p.pos]
+		if p.queuedIdx >= 0 {
+			idx = p.queuedIdx
+		}
+		return p.tracks[idx], true
+	}
+	if p.pos+1 < len(p.order) {
+		return p.tracks[p.order[p.pos+1]], true
+	}
+	if p.repeat == RepeatAll && !p.shuffle {
+		return p.tracks[p.order[0]], true
+	}
+	// RepeatAll+shuffle: can't predict after re-shuffle; RepeatOff at end
+	return Track{}, false
+}
+
 // Prev moves to the previous track. Wraps around with RepeatAll.
 func (p *Playlist) Prev() (Track, bool) {
 	p.queuedIdx = -1

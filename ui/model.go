@@ -164,8 +164,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.player.StreamErr(); err != nil {
 			m.err = err
 		}
-		// Check if the current track finished naturally
-		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.TrackDone() {
+		// Check gapless transition (audio already playing next track)
+		if m.player.GaplessAdvanced() {
+			m.playlist.Next()
+			m.plCursor = m.playlist.Index()
+			m.adjustScroll()
+			m.titleOff = 0
+			m.preloadNext()
+			m.notifyMPRIS()
+		}
+		// Check if gapless drained (end of playlist, no preloaded next)
+		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() {
 			m.nextTrack()
 			m.notifyMPRIS()
 		}
@@ -241,6 +250,7 @@ func (m *Model) nextTrack() {
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
 	}
+	m.preloadNext()
 }
 
 // prevTrack goes to the previous track, or restarts if >3s into the current one.
@@ -258,6 +268,7 @@ func (m *Model) prevTrack() {
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
 	}
+	m.preloadNext()
 }
 
 // playCurrentTrack starts playing whatever track the playlist cursor points to.
@@ -269,6 +280,16 @@ func (m *Model) playCurrentTrack() {
 	m.titleOff = 0
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
+	}
+	m.preloadNext()
+}
+
+// preloadNext looks ahead in the playlist and preloads the next track for
+// gapless transition. Errors are silently ignored — playback falls back to
+// non-gapless if preloading fails.
+func (m *Model) preloadNext() {
+	if next, ok := m.playlist.PeekNext(); ok {
+		m.player.Preload(next.Path)
 	}
 }
 

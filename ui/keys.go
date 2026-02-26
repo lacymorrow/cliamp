@@ -141,9 +141,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "r":
 		m.playlist.CycleRepeat()
+		m.player.ClearPreload()
+		m.preloadNext()
 
 	case "z":
 		m.playlist.ToggleShuffle()
+		m.player.ClearPreload()
+		m.preloadNext()
 
 	case "tab":
 		if m.focus == focusPlaylist {

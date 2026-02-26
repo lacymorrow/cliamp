@@ -51,90 +51,187 @@ func isURL(path string) bool {
 	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
+// trackPipeline bundles a decoded track's resources.
+type trackPipeline struct {
+	decoder  beep.StreamSeekCloser // raw decoder (for Position/Duration/Seek)
+	stream   beep.Streamer         // decoder + optional resample (fed to gapless)
+	format   beep.Format
+	seekable bool
+	rc       io.ReadCloser // source file/HTTP body
+}
+
+// close releases the pipeline's resources.
+func (tp *trackPipeline) close() {
+	if tp.decoder != nil {
+		tp.decoder.Close()
+	}
+	if tp.rc != nil {
+		tp.rc.Close()
+	}
+}
+
 // Player is the audio engine managing the playback pipeline:
 //
-//	[MP3 Decode] -> [Resample] -> [10x Biquad EQ] -> [Volume] -> [Tap] -> [Ctrl] -> [Speaker]
+//	[Gapless] -> [10x Biquad EQ] -> [Volume] -> [Tap] -> [Ctrl] -> speaker
+//	     ↑
+//	     ├─ current: [Decode A] → [Resample A]
+//	     └─ next:    [Decode B] → [Resample B]  (preloaded)
 type Player struct {
-	mu        sync.Mutex
-	sr        beep.SampleRate
-	streamer  beep.StreamSeekCloser
-	format    beep.Format
-	ctrl      *beep.Ctrl
-	volume    float64 // dB, range [-30, +6]
-	eqBands   [10]float64
-	tap       *Tap
-	trackDone atomic.Bool
-	playing   bool
-	paused    bool
-	seekable  bool
-	mono      bool
-	rc        io.ReadCloser
+	mu           sync.Mutex
+	sr           beep.SampleRate
+	gapless      *gaplessStreamer
+	current      *trackPipeline // active track's resources
+	nextPipeline *trackPipeline // preloaded track's resources
+	started      bool           // true after first speaker.Play()
+	ctrl         *beep.Ctrl
+	volume       float64 // dB, range [-30, +6]
+	eqBands      [10]float64
+	tap          *Tap
+	playing      bool
+	paused       bool
+	mono         bool
+
+	gaplessAdvance atomic.Bool // set when gapless transition fires
 }
 
 // New creates a Player and initializes the speaker at the given sample rate.
 func New(sr beep.SampleRate) *Player {
 	speaker.Init(sr, sr.N(time.Second/10))
-	return &Player{sr: sr}
+	p := &Player{sr: sr}
+	p.gapless = &gaplessStreamer{}
+	p.gapless.onSwap = func() {
+		// Called from audio thread (goroutine) when gapless transition occurs.
+		// Swap current ← nextPipeline and close the old one.
+		p.mu.Lock()
+		old := p.current
+		p.current = p.nextPipeline
+		p.nextPipeline = nil
+		p.mu.Unlock()
+		if old != nil {
+			old.close()
+		}
+		p.gaplessAdvance.Store(true)
+	}
+	return p
 }
 
-// Play opens and starts playing an audio file, building the full audio pipeline.
-// Supported formats: MP3, WAV, FLAC, OGG Vorbis.
-func (p *Player) Play(path string) error {
-	p.Stop()
-
+// buildPipeline opens and decodes a track, returning a ready-to-play pipeline.
+func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 	rc, err := openSource(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	streamer, format, err := decode(rc, path, p.sr)
+	decoder, format, err := decode(rc, path, p.sr)
 	if err != nil {
 		rc.Close()
-		return fmt.Errorf("decode: %w", err)
+		return nil, fmt.Errorf("decode: %w", err)
 	}
-
-	p.mu.Lock()
-	p.rc = rc
-	p.streamer = streamer
-	p.format = format
-	p.trackDone.Store(false)
 
 	// HTTP streams decoded natively read from a non-seekable http.Response.Body.
 	// FFmpeg-decoded streams are fully buffered in memory and therefore seekable.
-	_, isPCM := streamer.(*pcmStreamer)
-	p.seekable = !isURL(path) || isPCM
+	_, isPCM := decoder.(*pcmStreamer)
+	seekable := !isURL(path) || isPCM
 
-	var s beep.Streamer = streamer
-
-	// Resample to target sample rate if needed
+	var s beep.Streamer = decoder
 	if format.SampleRate != p.sr {
 		s = beep.Resample(4, format.SampleRate, p.sr, s)
 	}
 
-	// Chain 10 biquad peaking EQ filters; each reads its gain from p.eqBands[i]
-	for i := range 10 {
-		s = newBiquad(s, EQFreqs[i], 1.4, &p.eqBands[i], float64(p.sr))
+	return &trackPipeline{
+		decoder:  decoder,
+		stream:   s,
+		format:   format,
+		seekable: seekable,
+		rc:       rc,
+	}, nil
+}
+
+// Play opens and starts playing an audio file. On the first call it builds
+// the long-lived EQ → volume → tap → ctrl chain and starts the speaker.
+// Subsequent calls swap only the track source via the gapless streamer.
+func (p *Player) Play(path string) error {
+	tp, err := p.buildPipeline(path)
+	if err != nil {
+		return err
 	}
 
-	// Volume control + mono downmix
-	s = &volumeStreamer{s: s, vol: &p.volume, mono: &p.mono, mu: &p.mu}
+	p.mu.Lock()
 
-	// Tap for FFT visualization
-	p.tap = NewTap(s, 4096)
+	// Close previous track resources
+	if p.current != nil {
+		p.current.close()
+	}
+	// Discard any preloaded next
+	if p.nextPipeline != nil {
+		p.nextPipeline.close()
+		p.nextPipeline = nil
+	}
 
-	// Pause/resume control
-	p.ctrl = &beep.Ctrl{Streamer: p.tap}
+	p.current = tp
+	p.gapless.Replace(tp.stream)
 
+	if !p.started {
+		// Build the long-lived pipeline once
+		var s beep.Streamer = p.gapless
+
+		for i := range 10 {
+			s = newBiquad(s, EQFreqs[i], 1.4, &p.eqBands[i], float64(p.sr))
+		}
+		s = &volumeStreamer{s: s, vol: &p.volume, mono: &p.mono, mu: &p.mu}
+		p.tap = NewTap(s, 4096)
+		p.ctrl = &beep.Ctrl{Streamer: p.tap}
+		p.started = true
+		p.playing = true
+		p.paused = false
+		p.mu.Unlock()
+
+		speaker.Play(p.ctrl)
+		return nil
+	}
+
+	// Unpause if paused
+	p.ctrl.Paused = false
 	p.playing = true
 	p.paused = false
 	p.mu.Unlock()
 
-	// Play with end-of-track callback
-	speaker.Play(beep.Seq(p.ctrl, beep.Callback(func() {
-		p.trackDone.Store(true)
-	})))
-
 	return nil
+}
+
+// Preload builds a pipeline for the next track and queues it for gapless transition.
+func (p *Player) Preload(path string) error {
+	tp, err := p.buildPipeline(path)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	// Close previously preloaded pipeline if any
+	if p.nextPipeline != nil {
+		p.nextPipeline.close()
+	}
+	p.nextPipeline = tp
+	p.mu.Unlock()
+
+	p.gapless.SetNext(tp.stream)
+	return nil
+}
+
+// ClearPreload discards the preloaded next track (e.g., when shuffle/repeat changes).
+func (p *Player) ClearPreload() {
+	p.gapless.SetNext(nil)
+	p.mu.Lock()
+	if p.nextPipeline != nil {
+		p.nextPipeline.close()
+		p.nextPipeline = nil
+	}
+	p.mu.Unlock()
+}
+
+// GaplessAdvanced returns true (once) when a gapless transition happened.
+func (p *Player) GaplessAdvanced() bool {
+	return p.gaplessAdvance.CompareAndSwap(true, false)
 }
 
 // TogglePause toggles between paused and playing states.
@@ -147,25 +244,26 @@ func (p *Player) TogglePause() {
 	}
 }
 
-// Stop halts playback and releases resources.
+// Stop halts playback and releases resources. The speaker continues running
+// (outputting silence via the gapless streamer) so it can be restarted without
+// rebuilding the pipeline.
 func (p *Player) Stop() {
-	speaker.Clear()
+	p.gapless.Clear()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.streamer != nil {
-		p.streamer.Close()
-		p.streamer = nil
+	if p.current != nil {
+		p.current.close()
+		p.current = nil
 	}
-	if p.rc != nil {
-		p.rc.Close()
-		p.rc = nil
+	if p.nextPipeline != nil {
+		p.nextPipeline.close()
+		p.nextPipeline = nil
 	}
-	p.ctrl = nil
-	p.tap = nil
+	if p.ctrl != nil {
+		p.ctrl.Paused = true
+	}
 	p.playing = false
 	p.paused = false
-	p.seekable = false
-	p.trackDone.Store(false)
 }
 
 // Seek moves the playback position by the given duration (positive or negative).
@@ -173,39 +271,46 @@ func (p *Player) Stop() {
 func (p *Player) Seek(d time.Duration) error {
 	speaker.Lock()
 	defer speaker.Unlock()
-	if p.streamer == nil || !p.seekable {
+	p.mu.Lock()
+	cur := p.current
+	p.mu.Unlock()
+	if cur == nil || !cur.seekable {
 		return nil
 	}
-	curSample := p.streamer.Position()
-	curDur := p.format.SampleRate.D(curSample)
-	newSample := p.format.SampleRate.N(curDur + d)
+	curSample := cur.decoder.Position()
+	curDur := cur.format.SampleRate.D(curSample)
+	newSample := cur.format.SampleRate.N(curDur + d)
 	if newSample < 0 {
 		newSample = 0
 	}
-	if newSample >= p.streamer.Len() {
-		newSample = p.streamer.Len() - 1
+	if newSample >= cur.decoder.Len() {
+		newSample = cur.decoder.Len() - 1
 	}
-	return p.streamer.Seek(newSample)
+	return cur.decoder.Seek(newSample)
 }
 
 // Position returns the current playback position.
 func (p *Player) Position() time.Duration {
 	speaker.Lock()
 	defer speaker.Unlock()
-	if p.streamer == nil {
+	p.mu.Lock()
+	cur := p.current
+	p.mu.Unlock()
+	if cur == nil {
 		return 0
 	}
-	return p.format.SampleRate.D(p.streamer.Position())
+	return cur.format.SampleRate.D(cur.decoder.Position())
 }
 
 // Duration returns the total duration of the current track.
 func (p *Player) Duration() time.Duration {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.streamer == nil {
+	cur := p.current
+	p.mu.Unlock()
+	if cur == nil {
 		return 0
 	}
-	return p.format.SampleRate.D(p.streamer.Len())
+	return cur.format.SampleRate.D(cur.decoder.Len())
 }
 
 // SetVolume sets the volume in dB, clamped to [-30, +6].
@@ -267,27 +372,28 @@ func (p *Player) IsPaused() bool {
 	return p.paused
 }
 
-// TrackDone returns true if the current track has finished playing.
-func (p *Player) TrackDone() bool {
-	return p.trackDone.Load()
+// Drained returns true if the current track ended with no preloaded next track.
+func (p *Player) Drained() bool {
+	return p.gapless.Drained()
 }
 
 // Seekable reports whether the current track supports seeking.
 func (p *Player) Seekable() bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.seekable
+	cur := p.current
+	p.mu.Unlock()
+	return cur != nil && cur.seekable
 }
 
 // StreamErr returns the current streamer error, if any (e.g., connection drops).
 func (p *Player) StreamErr() error {
 	p.mu.Lock()
-	s := p.streamer
+	cur := p.current
 	p.mu.Unlock()
-	if s == nil {
+	if cur == nil {
 		return nil
 	}
-	return s.Err()
+	return cur.decoder.Err()
 }
 
 // Samples returns the latest audio samples from the tap for FFT analysis.
@@ -301,9 +407,10 @@ func (p *Player) Samples() []float64 {
 	return tap.Samples(2048)
 }
 
-// Close stops playback and cleans up.
+// Close fully stops the speaker and cleans up all resources.
 func (p *Player) Close() {
 	p.Stop()
+	speaker.Clear()
 }
 
 // openSource returns a ReadCloser for the given path, handling both
