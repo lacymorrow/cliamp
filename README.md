@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/270ee066-95d2-4a3b-90bc-68a67ae9b92f
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
 ```
 
 ## Ascii
