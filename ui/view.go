@@ -158,6 +158,8 @@ func (m Model) renderTimeStatus() string {
 
 	var status string
 	switch {
+	case m.buffering:
+		status = statusStyle.Render("◌ Buffering...")
 	case m.player.IsPlaying() && m.player.IsPaused():
 		status = statusStyle.Render("⏸ Paused")
 	case m.player.IsPlaying() && track.Stream:
@@ -300,6 +302,9 @@ func (m Model) renderPlaylist() string {
 
 	tracks := m.playlist.Tracks()
 	if len(tracks) == 0 {
+		if m.feedLoading {
+			return dimStyle.Render("  Loading feed...")
+		}
 		return dimStyle.Render("  No tracks loaded")
 	}
 

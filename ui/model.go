@@ -10,6 +10,7 @@ import (
 	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
+	"cliamp/resolve"
 )
 
 type focusArea int
@@ -56,6 +57,13 @@ type Model struct {
 	searchCursor  int
 	prevFocus     focusArea // focus to restore on cancel
 
+	// Async feed/M3U URL resolution
+	pendingURLs []string
+	feedLoading bool
+
+	// Async stream buffering (true while HTTP connect is in progress)
+	buffering bool
+
 	// MPRIS D-Bus service (nil on non-Linux or if D-Bus unavailable)
 	mpris *mpris.Service
 }
@@ -75,6 +83,12 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider) M
 		m.provLoading = true
 	}
 	return m
+}
+
+// SetPendingURLs stores remote URLs (feeds, M3U) for async resolution after Init.
+func (m *Model) SetPendingURLs(urls []string) {
+	m.pendingURLs = urls
+	m.feedLoading = len(urls) > 0
 }
 
 // SetEQPreset sets the preset index by name. Returns true if found.
@@ -120,6 +134,38 @@ func fetchPlaylistsCmd(prov playlist.Provider) tea.Cmd {
 
 type tracksLoadedMsg []playlist.Track
 
+// feedsLoadedMsg carries tracks resolved from remote feed/M3U URLs.
+type feedsLoadedMsg []playlist.Track
+
+func resolveRemoteCmd(urls []string) tea.Cmd {
+	return func() tea.Msg {
+		tracks, err := resolve.Remote(urls)
+		if err != nil {
+			return err
+		}
+		return feedsLoadedMsg(tracks)
+	}
+}
+
+// streamPlayedMsg signals that async stream Play() completed.
+type streamPlayedMsg struct{ err error }
+
+// streamPreloadedMsg signals that async stream Preload() completed.
+type streamPreloadedMsg struct{}
+
+func playStreamCmd(p *player.Player, path string) tea.Cmd {
+	return func() tea.Msg {
+		return streamPlayedMsg{err: p.Play(path)}
+	}
+}
+
+func preloadStreamCmd(p *player.Player, path string) tea.Cmd {
+	return func() tea.Msg {
+		p.Preload(path) // errors silently ignored
+		return streamPreloadedMsg{}
+	}
+}
+
 func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
 	return func() tea.Msg {
 		tracks, err := prov.Tracks(playlistID)
@@ -135,6 +181,9 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tickCmd(), tea.WindowSize()}
 	if m.provider != nil {
 		cmds = append(cmds, fetchPlaylistsCmd(m.provider))
+	}
+	if len(m.pendingURLs) > 0 {
+		cmds = append(cmds, resolveRemoteCmd(m.pendingURLs))
 	}
 	return tea.Batch(cmds...)
 }
@@ -164,22 +213,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.player.StreamErr(); err != nil {
 			m.err = err
 		}
+		var cmds []tea.Cmd
 		// Check gapless transition (audio already playing next track)
 		if m.player.GaplessAdvanced() {
 			m.playlist.Next()
 			m.plCursor = m.playlist.Index()
 			m.adjustScroll()
 			m.titleOff = 0
-			m.preloadNext()
+			cmds = append(cmds, m.preloadNext())
 			m.notifyMPRIS()
 		}
 		// Check if gapless drained (end of playlist, no preloaded next)
 		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() {
-			m.nextTrack()
+			cmds = append(cmds, m.nextTrack())
 			m.notifyMPRIS()
 		}
 		m.titleOff++
-		return m, tickCmd()
+		cmds = append(cmds, tickCmd())
+		return m, tea.Batch(cmds...)
 
 	case []playlist.PlaylistInfo:
 		m.providerLists = msg
@@ -191,14 +242,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus = focusPlaylist
 		m.provLoading = false
 		if m.playlist.Len() > 0 {
-			m.playCurrentTrack()
+			cmd := m.playCurrentTrack()
 			m.notifyMPRIS()
+			return m, cmd
 		}
+		return m, nil
+
+	case feedsLoadedMsg:
+		m.feedLoading = false
+		m.playlist.Add(msg...)
+		if m.playlist.Len() > 0 && !m.player.IsPlaying() {
+			cmd := m.playCurrentTrack()
+			m.notifyMPRIS()
+			return m, cmd
+		}
+		return m, nil
+
+	case streamPlayedMsg:
+		m.buffering = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.err = nil
+		}
+		m.notifyMPRIS()
+		return m, m.preloadNext()
+
+	case streamPreloadedMsg:
 		return m, nil
 
 	case error:
 		m.err = msg
 		m.provLoading = false
+		m.feedLoading = false
+		m.buffering = false
 		return m, nil
 
 	case mpris.InitMsg:
@@ -206,23 +283,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case mpris.PlayPauseMsg:
-		if !m.player.IsPlaying() {
-			m.playCurrentTrack()
-		} else {
-			m.player.TogglePause()
-		}
+		cmd := m.togglePlayPause()
 		m.notifyMPRIS()
-		return m, nil
+		return m, cmd
 
 	case mpris.NextMsg:
-		m.nextTrack()
+		cmd := m.nextTrack()
 		m.notifyMPRIS()
-		return m, nil
+		return m, cmd
 
 	case mpris.PrevMsg:
-		m.prevTrack()
+		cmd := m.prevTrack()
 		m.notifyMPRIS()
-		return m, nil
+		return m, cmd
 
 	case mpris.StopMsg:
 		m.player.Stop()
@@ -239,64 +312,71 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // nextTrack advances to the next playlist track and starts playing it.
-func (m *Model) nextTrack() {
+// Returns a tea.Cmd for async stream playback.
+func (m *Model) nextTrack() tea.Cmd {
 	track, ok := m.playlist.Next()
 	if !ok {
 		m.player.Stop()
-		return
+		return nil
 	}
 	m.plCursor = m.playlist.Index()
 	m.adjustScroll()
-	if err := m.player.Play(track.Path); err != nil {
-		m.err = err
-	} else {
-		m.err = nil
-	}
-	m.preloadNext()
+	return m.playTrack(track)
 }
 
 // prevTrack goes to the previous track, or restarts if >3s into the current one.
-func (m *Model) prevTrack() {
+func (m *Model) prevTrack() tea.Cmd {
 	if m.player.Position() > 3*time.Second {
 		m.player.Seek(-m.player.Position())
-		return
+		return nil
 	}
 	track, ok := m.playlist.Prev()
 	if !ok {
-		return
+		return nil
 	}
 	m.plCursor = m.playlist.Index()
 	m.adjustScroll()
-	if err := m.player.Play(track.Path); err != nil {
-		m.err = err
-	} else {
-		m.err = nil
-	}
-	m.preloadNext()
+	return m.playTrack(track)
 }
 
 // playCurrentTrack starts playing whatever track the playlist cursor points to.
-func (m *Model) playCurrentTrack() {
+func (m *Model) playCurrentTrack() tea.Cmd {
 	track, idx := m.playlist.Current()
 	if idx < 0 {
-		return
+		return nil
 	}
 	m.titleOff = 0
+	return m.playTrack(track)
+}
+
+// playTrack plays a track, using async HTTP for streams and sync I/O for local files.
+func (m *Model) playTrack(track playlist.Track) tea.Cmd {
+	if track.Stream {
+		m.buffering = true
+		m.err = nil
+		return playStreamCmd(m.player, track.Path)
+	}
 	if err := m.player.Play(track.Path); err != nil {
 		m.err = err
 	} else {
 		m.err = nil
 	}
-	m.preloadNext()
+	return m.preloadNext()
 }
 
 // preloadNext looks ahead in the playlist and preloads the next track for
 // gapless transition. Errors are silently ignored — playback falls back to
 // non-gapless if preloading fails.
-func (m *Model) preloadNext() {
-	if next, ok := m.playlist.PeekNext(); ok {
-		m.player.Preload(next.Path)
+func (m *Model) preloadNext() tea.Cmd {
+	next, ok := m.playlist.PeekNext()
+	if !ok {
+		return nil
 	}
+	if next.Stream {
+		return preloadStreamCmd(m.player, next.Path)
+	}
+	m.player.Preload(next.Path)
+	return nil
 }
 
 // adjustScroll ensures plCursor is visible in the playlist view.
@@ -333,12 +413,12 @@ func (m *Model) notifyMPRIS() {
 }
 
 // togglePlayPause starts playback if stopped, or toggles pause if playing.
-func (m *Model) togglePlayPause() {
+func (m *Model) togglePlayPause() tea.Cmd {
 	if !m.player.IsPlaying() {
-		m.playCurrentTrack()
-	} else {
-		m.player.TogglePause()
+		return m.playCurrentTrack()
 	}
+	m.player.TogglePause()
+	return nil
 }
 
 // updateSearch filters the playlist by the current search query.

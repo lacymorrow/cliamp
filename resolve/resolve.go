@@ -17,29 +17,24 @@ import (
 	"cliamp/playlist"
 )
 
-// Tracks resolves CLI arguments into playlist tracks.
-// Each argument may be a file path, directory, glob pattern, HTTP stream URL,
-// M3U playlist URL, or RSS podcast feed URL.
-func Tracks(args []string) ([]playlist.Track, error) {
+// Result holds the output of Args: instantly-resolved tracks and
+// remote URLs (feeds, M3U) that need async HTTP fetching.
+type Result struct {
+	Tracks  []playlist.Track // local files, dirs, plain stream URLs
+	Pending []string         // feed/M3U URLs to resolve asynchronously
+}
+
+// Args separates CLI arguments into immediately-resolved local tracks
+// and pending remote URLs (feeds, M3U) that require HTTP fetching.
+func Args(args []string) (Result, error) {
+	var r Result
 	var files []string
-	var feedTracks []playlist.Track
 
 	for _, arg := range args {
 		if playlist.IsURL(arg) {
-			switch {
-			case playlist.IsFeed(arg):
-				tracks, err := resolveFeed(arg)
-				if err != nil {
-					return nil, fmt.Errorf("resolving feed %s: %w", arg, err)
-				}
-				feedTracks = append(feedTracks, tracks...)
-			case playlist.IsM3U(arg):
-				streams, err := resolveM3U(arg)
-				if err != nil {
-					return nil, fmt.Errorf("resolving m3u %s: %w", arg, err)
-				}
-				files = append(files, streams...)
-			default:
+			if playlist.IsFeed(arg) || playlist.IsM3U(arg) {
+				r.Pending = append(r.Pending, arg)
+			} else {
 				files = append(files, arg)
 			}
 			continue
@@ -51,17 +46,39 @@ func Tracks(args []string) ([]playlist.Track, error) {
 		for _, path := range matches {
 			resolved, err := collectAudioFiles(path)
 			if err != nil {
-				return nil, fmt.Errorf("scanning %s: %w", path, err)
+				return r, fmt.Errorf("scanning %s: %w", path, err)
 			}
 			files = append(files, resolved...)
 		}
 	}
 
-	var tracks []playlist.Track
 	for _, f := range files {
-		tracks = append(tracks, playlist.TrackFromPath(f))
+		r.Tracks = append(r.Tracks, playlist.TrackFromPath(f))
 	}
-	tracks = append(tracks, feedTracks...)
+	return r, nil
+}
+
+// Remote fetches feed and M3U URLs and returns the resolved tracks.
+func Remote(urls []string) ([]playlist.Track, error) {
+	var tracks []playlist.Track
+	for _, u := range urls {
+		switch {
+		case playlist.IsFeed(u):
+			t, err := resolveFeed(u)
+			if err != nil {
+				return nil, fmt.Errorf("resolving feed %s: %w", u, err)
+			}
+			tracks = append(tracks, t...)
+		case playlist.IsM3U(u):
+			streams, err := resolveM3U(u)
+			if err != nil {
+				return nil, fmt.Errorf("resolving m3u %s: %w", u, err)
+			}
+			for _, s := range streams {
+				tracks = append(tracks, playlist.TrackFromPath(s))
+			}
+		}
+	}
 	return tracks, nil
 }
 

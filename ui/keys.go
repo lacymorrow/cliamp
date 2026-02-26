@@ -30,7 +30,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				m.provCursor--
 			}
 		case " ":
-			m.togglePlayPause()
+			return m.togglePlayPause()
 		case "down", "j":
 			if m.provCursor < len(m.providerLists)-1 {
 				m.provCursor++
@@ -59,20 +59,23 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case " ":
-		m.togglePlayPause()
+		cmd := m.togglePlayPause()
 		m.notifyMPRIS()
+		return cmd
 
 	case "s":
 		m.player.Stop()
 		m.notifyMPRIS()
 
 	case ">", ".":
-		m.nextTrack()
+		cmd := m.nextTrack()
 		m.notifyMPRIS()
+		return cmd
 
 	case "<", ",":
-		m.prevTrack()
+		cmd := m.prevTrack()
 		m.notifyMPRIS()
+		return cmd
 
 	case "left":
 		if m.focus == focusEQ {
@@ -119,8 +122,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "enter":
 		if m.focus == focusPlaylist {
 			m.playlist.SetIndex(m.plCursor)
-			m.playCurrentTrack()
+			cmd := m.playCurrentTrack()
 			m.notifyMPRIS()
+			return cmd
 		}
 
 	case "+", "=":
@@ -134,12 +138,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "r":
 		m.playlist.CycleRepeat()
 		m.player.ClearPreload()
-		m.preloadNext()
+		return m.preloadNext()
 
 	case "z":
 		m.playlist.ToggleShuffle()
 		m.player.ClearPreload()
-		m.preloadNext()
+		return m.preloadNext()
 
 	case "tab":
 		if m.focus == focusPlaylist {
@@ -198,16 +202,18 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 		m.focus = m.prevFocus
 
 	case tea.KeyEnter:
+		var cmd tea.Cmd
 		if len(m.searchResults) > 0 {
 			idx := m.searchResults[m.searchCursor]
 			m.playlist.SetIndex(idx)
 			m.plCursor = idx
 			m.adjustScroll()
-			m.playCurrentTrack()
+			cmd = m.playCurrentTrack()
 			m.notifyMPRIS()
 		}
 		m.searching = false
 		m.focus = focusPlaylist
+		return cmd
 
 	case tea.KeyUp:
 		if m.searchCursor > 0 {

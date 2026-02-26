@@ -29,17 +29,17 @@ func run() error {
 		provider = c
 	}
 
-	tracks, err := resolve.Tracks(os.Args[1:])
+	resolved, err := resolve.Args(os.Args[1:])
 	if err != nil {
 		return err
 	}
 
-	if len(tracks) == 0 && provider == nil {
+	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 && provider == nil {
 		return errors.New("usage: cliamp <file|folder> [...] or configure a provider via ENV\n\n - Navidrome: NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS\n")
 	}
 
 	pl := playlist.New()
-	pl.Add(tracks...)
+	pl.Add(resolved.Tracks...)
 
 	p := player.New(beep.SampleRate(player.DefaultSampleRate))
 	defer p.Close()
@@ -48,6 +48,7 @@ func run() error {
 	cfg.ApplyPlaylist(pl)
 
 	m := ui.NewModel(p, pl, provider)
+	m.SetPendingURLs(resolved.Pending)
 	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
 		m.SetEQPreset(cfg.EQPreset)
 	}

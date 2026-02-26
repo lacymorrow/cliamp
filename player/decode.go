@@ -31,11 +31,13 @@ var SupportedExts = map[string]bool{
 	".opus": true,
 }
 
-// httpClient is used for all HTTP streaming. It sets a dial/TLS/header
+// httpClient is used for all HTTP streaming. It sets a generous header
 // timeout but no overall timeout, so infinite live streams aren't killed.
+// ForceAttemptHTTP2 is left at its default (false) to avoid HTTP/2
+// framing issues with some podcast CDNs.
 var httpClient = &http.Client{
 	Transport: &http.Transport{
-		ResponseHeaderTimeout: 15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	},
 }
 
