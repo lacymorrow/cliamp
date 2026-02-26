@@ -69,6 +69,16 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 	_, isPCM := decoder.(*pcmStreamer)
 	seekable := !isURL(path) || isPCM
 
+	// Native decoders (mp3, vorbis, flac, wav) wrap rc internally and their
+	// Close() already closes the underlying reader. Set rc to nil so
+	// trackPipeline.close() doesn't double-close the file descriptor.
+	// FFmpeg decoders read via the path argument; rc is unused but still needs
+	// cleanup, so keep it set for that path.
+	pipelineRC := rc
+	if !isPCM {
+		pipelineRC = nil
+	}
+
 	var s beep.Streamer = decoder
 	if format.SampleRate != p.sr {
 		s = beep.Resample(4, format.SampleRate, p.sr, s)
@@ -79,7 +89,7 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 		stream:   s,
 		format:   format,
 		seekable: seekable,
-		rc:       rc,
+		rc:       pipelineRC,
 	}, nil
 }
 
