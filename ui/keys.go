@@ -280,12 +280,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	if _, err := io.Copy(out, in); err != nil {
-		return err
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
 	}
-	return out.Close()
+	return closeErr
 }
 
 // handleSearchKey processes key presses while in search mode.

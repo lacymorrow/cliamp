@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"cliamp/player"
 	"cliamp/playlist"
@@ -201,13 +202,19 @@ type ytdlFullEntry struct {
 }
 
 // ytdlTempDirs tracks temp directories created by ResolveYTDLTrack for cleanup.
-var ytdlTempDirs []string
+var (
+	ytdlTempDirs []string
+	ytdlMu       sync.Mutex
+)
 
 // CleanupYTDL removes all temp files created by yt-dlp downloads.
 func CleanupYTDL() {
+	ytdlMu.Lock()
+	defer ytdlMu.Unlock()
 	for _, d := range ytdlTempDirs {
 		os.RemoveAll(d)
 	}
+	ytdlTempDirs = nil
 }
 
 // resolveYTDL uses yt-dlp --flat-playlist to quickly enumerate tracks.
@@ -215,7 +222,7 @@ func CleanupYTDL() {
 // Use ResolveYTDLTrack to lazily resolve individual tracks before playback.
 func resolveYTDL(pageURL string) ([]playlist.Track, error) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
-		return nil, fmt.Errorf("yt-dlp not found in PATH — install it with: brew install yt-dlp")
+		return nil, fmt.Errorf("yt-dlp not found in PATH — see https://github.com/yt-dlp/yt-dlp#installation")
 	}
 
 	cmd := exec.Command("yt-dlp", "--flat-playlist", "-j", pageURL)
@@ -277,7 +284,9 @@ func ResolveYTDLTrack(pageURL string) (playlist.Track, error) {
 	if err != nil {
 		return playlist.Track{}, fmt.Errorf("creating temp dir: %w", err)
 	}
+	ytdlMu.Lock()
 	ytdlTempDirs = append(ytdlTempDirs, tmpDir)
+	ytdlMu.Unlock()
 
 	outTemplate := filepath.Join(tmpDir, "%(id)s.%(ext)s")
 	cmd := exec.Command("yt-dlp",
@@ -290,7 +299,6 @@ func ResolveYTDLTrack(pageURL string) (playlist.Track, error) {
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
 	if err != nil {
-		os.RemoveAll(tmpDir)
 		msg := strings.TrimSpace(stderr.String())
 		if msg != "" {
 			return playlist.Track{}, fmt.Errorf("yt-dlp: %s", msg)
@@ -309,7 +317,6 @@ func ResolveYTDLTrack(pageURL string) (playlist.Track, error) {
 		filePath = findFirstFile(tmpDir)
 	}
 	if filePath == "" {
-		os.RemoveAll(tmpDir)
 		return playlist.Track{}, fmt.Errorf("yt-dlp: no file downloaded for %s", pageURL)
 	}
 
