@@ -15,6 +15,7 @@ import (
 	"cliamp/player"
 	"cliamp/playlist"
 	"cliamp/resolve"
+	"cliamp/theme"
 	"cliamp/ui"
 )
 
@@ -56,10 +57,15 @@ Formats: mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)`)
 	cfg.ApplyPlayer(p)
 	cfg.ApplyPlaylist(pl)
 
-	m := ui.NewModel(p, pl, provider)
+	themes := theme.LoadAll()
+
+	m := ui.NewModel(p, pl, provider, themes)
 	m.SetPendingURLs(resolved.Pending)
 	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
 		m.SetEQPreset(cfg.EQPreset)
+	}
+	if cfg.Theme != "" {
+		m.SetTheme(cfg.Theme)
 	}
 
 	prog := tea.NewProgram(m, tea.WithAltScreen())
@@ -69,8 +75,21 @@ Formats: mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)`)
 		go prog.Send(mpris.InitMsg{Svc: svc})
 	}
 
-	_, err = prog.Run()
-	return err
+	finalModel, err := prog.Run()
+	if err != nil {
+		return err
+	}
+
+	// Persist theme selection across restarts.
+	if fm, ok := finalModel.(ui.Model); ok {
+		cfg.Theme = fm.ThemeName()
+		if cfg.Theme == theme.DefaultName {
+			cfg.Theme = ""
+		}
+		_ = config.Save(cfg)
+	}
+
+	return nil
 }
 
 func main() {

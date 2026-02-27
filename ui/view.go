@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"cliamp/playlist"
+	"cliamp/theme"
 )
 
 // Pre-built styles for elements created per-render to avoid repeated allocation.
@@ -25,6 +26,10 @@ func (m Model) View() string {
 
 	if m.showKeymap {
 		return m.renderKeymapOverlay()
+	}
+
+	if m.showThemes {
+		return m.renderThemePicker()
 	}
 
 	sections := []string{
@@ -77,6 +82,7 @@ func (m Model) renderKeymapOverlay() string {
 		{"+ -", "Volume up/down"},
 		{"m", "Toggle mono"},
 		{"e", "Cycle EQ preset"},
+		{"t", "Choose theme"},
 		{"↑ ↓", "Playlist scroll / EQ adjust"},
 		{"h l", "EQ cursor left/right"},
 		{"Enter", "Play selected track"},
@@ -99,6 +105,53 @@ func (m Model) renderKeymapOverlay() string {
 		lines = append(lines, dimStyle.Render(line))
 	}
 	lines = append(lines, "", helpStyle.Render("Press any key to close"))
+
+	content := strings.Join(lines, "\n")
+	frame := frameStyle.Render(content)
+
+	frameW := lipgloss.Width(frame)
+	frameH := lipgloss.Height(frame)
+	padLeft := max(0, (m.width-frameW)/2)
+	padTop := max(0, (m.height-frameH)/2)
+
+	return strings.Repeat("\n", padTop) +
+		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+}
+
+func (m Model) renderThemePicker() string {
+	lines := []string{
+		titleStyle.Render("T H E M E S"),
+		"",
+	}
+
+	// Theme list: Default at index 0, then all loaded themes.
+	count := len(m.themes) + 1
+	maxVisible := 15
+	scroll := 0
+	if m.themeCursor >= maxVisible {
+		scroll = m.themeCursor - maxVisible + 1
+	}
+
+	for i := scroll; i < count && i < scroll+maxVisible; i++ {
+		var name string
+		if i == 0 {
+			name = theme.DefaultName
+		} else {
+			name = m.themes[i-1].Name
+		}
+
+		if i == m.themeCursor {
+			lines = append(lines, playlistSelectedStyle.Render("> "+name))
+		} else {
+			lines = append(lines, dimStyle.Render("  "+name))
+		}
+	}
+
+	if count > maxVisible {
+		lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d themes", m.themeCursor+1, count)))
+	}
+
+	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Select [Esc]Cancel"))
 
 	content := strings.Join(lines, "\n")
 	frame := frameStyle.Render(content)
@@ -276,7 +329,12 @@ func (m Model) renderPlaylistHeader() string {
 		queueStr = " " + activeToggle.Render(fmt.Sprintf("[Queue: %d]", qLen))
 	}
 
-	return dimStyle.Render("── Playlist ── ") + shuffle + " " + repeatStr + queueStr + " " + dimStyle.Render("──")
+	var themeStr string
+	if name := m.ThemeName(); name != theme.DefaultName {
+		themeStr = " " + activeToggle.Render("[Theme: "+name+"]")
+	}
+
+	return dimStyle.Render("── Playlist ── ") + shuffle + " " + repeatStr + queueStr + themeStr + " " + dimStyle.Render("──")
 }
 
 func (m Model) renderPlaylist() string {
@@ -425,7 +483,7 @@ func (m Model) renderHelp() string {
 		help += "[←→]Seek "
 	}
 
-	help += "[+-]Vol [m]Mono [e]EQ [a]Queue [/]Search "
+	help += "[+-]Vol [m]Mono [e]EQ [t]Theme [a]Queue [/]Search "
 
 	// Conditionally show the back button if a provider is configured
 	if m.provider != nil {
