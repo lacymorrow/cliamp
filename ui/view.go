@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -57,6 +58,9 @@ func (m Model) View() string {
 	if m.err != nil {
 		sections = append(sections, errorStyle.Render(fmt.Sprintf("ERR: %s", m.err)))
 	}
+	if m.saveMsg != "" {
+		sections = append(sections, statusStyle.Render(m.saveMsg))
+	}
 
 	content := strings.Join(sections, "\n")
 	frame := frameStyle.Render(content)
@@ -88,6 +92,7 @@ func (m Model) renderKeymapOverlay() string {
 		{"h l", "EQ cursor left/right"},
 		{"Enter", "Play selected track"},
 		{"a", "Toggle queue (play next)"},
+		{"S", "Save track to ~/Music"},
 		{"r", "Cycle repeat"},
 		{"z", "Toggle shuffle"},
 		{"/", "Search playlist"},
@@ -484,6 +489,9 @@ func (m Model) renderHelp() string {
 		help += "[←→]Seek "
 	}
 
+	if !track.Stream && strings.HasPrefix(track.Path, os.TempDir()) {
+		help += "[S]Save "
+	}
 	help += "[+-]Vol [m]Mono [e]EQ [t]Theme [v]Vis [a]Queue [/]Search "
 
 	// Conditionally show the back button if a provider is configured
