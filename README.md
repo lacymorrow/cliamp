@@ -84,6 +84,20 @@ Play any podcast by passing its RSS feed URL:
 
 Episode titles and the podcast name are extracted from the feed and shown in the playlist.
 
+## YouTube, SoundCloud & Bandcamp (yt-dlp)
+
+Play from YouTube, SoundCloud, and Bandcamp URLs if [yt-dlp](https://github.com/yt-dlp/yt-dlp) is installed:
+
+```sh
+./cliamp https://www.youtube.com/watch?v=dQw4w9WgXcQ
+./cliamp https://soundcloud.com/artist/track
+./cliamp https://artist.bandcamp.com/album/name
+```
+
+Playlists and albums are supported. Press `S` to save a downloaded track to `~/Music/cliamp/`.
+
+**Use at your own risk.** Downloading or streaming copyrighted content may violate the terms of service of these platforms. You are responsible for how you use this feature.
+
 ## Navidrome
 
 Connect to a [Navidrome](https://www.navidrome.org/) ([GitHub](https://github.com/navidrome/navidrome)) server via environment variables:
@@ -163,6 +177,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `e` | Cycle EQ preset |
 | `t` | Choose theme |
 | `v` | Cycle visualizer |
+| `S` | Save track to ~/Music |
 | `/` | Search playlist |
 | `a` | Toggle queue (play next) |
 | `r` | Cycle repeat (Off / All / One) |
