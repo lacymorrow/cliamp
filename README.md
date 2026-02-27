@@ -17,29 +17,6 @@ https://github.com/user-attachments/assets/da33abfd-91fb-42f9-8bff-45aa549e4b27
 curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
 ```
 
-## Ascii
-```
-╭──────────────────────────────────────────────────────────────────╮
-│                                                                  │
-│  C L I A M P                                                     │
-│  ♫ Artist - Song Title                                           │
-│  01:23 / 04:56                                    ▶ Playing      │
-│                                                                  │
-│  █████ ▇▇▇▇▇ ▅▅▅▅▅ █████ ▃▃▃▃▃ ▅▅▅▅▅ ▇▇▇▇▇ ▃▃▃▃▃ ▂▂▂▂▂ ▁▁▁▁▁     │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
-│                                                                  │
-│  VOL ██████████████████░░░░  +0.0dB                              │
-│  EQ  70 180 320 600 1k 3k 6k 12k 14k 16k                         │
-│                                                                  │
-│  ── Playlist ── [Shuffle] [Repeat: Off] ──                       │
-│  ▶ 1. Song One                                                   │
-│    2. Song Two                                                   │
-│                                                                  │
-│  [Spc]⏯ [<>]Trk [←→]Seek [+-]Vol [m]Mono [e]EQ [t]Theme [v]Vis [Q]Quit │
-│                                                                  │
-╰──────────────────────────────────────────────────────────────────╯
-```
-
 ## Build
 
 ```sh
