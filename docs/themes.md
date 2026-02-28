@@ -50,16 +50,6 @@ All values are hex strings (e.g. `"#ff5733"` or `"#F00"`).
 
 If your custom file has the same name as a built-in theme, yours takes priority. For example, creating `~/.config/cliamp/themes/catppuccin.toml` replaces the built-in catppuccin.
 
-## Using Omarchy themes
-
-If you use [Omarchy](https://github.com/nicholasgasior/omarchy), you can copy any `colors.toml` directly:
-
-```
-cp ~/.config/omarchy/themes/catppuccin/colors.toml ~/.config/cliamp/themes/my-catppuccin.toml
-```
-
-The file format is compatible. cliamp reads only the keys it needs and ignores the rest.
-
 ## Setting a default theme
 
 Add a `theme` line to `~/.config/cliamp/config.toml`:
