@@ -166,6 +166,22 @@ func New() *Playlist {
 	return &Playlist{queuedIdx: -1}
 }
 
+// Replace clears the playlist and loads the given tracks, resetting
+// position, queue, and shuffle order.
+func (p *Playlist) Replace(tracks []Track) {
+	p.tracks = tracks
+	p.order = make([]int, len(tracks))
+	for i := range tracks {
+		p.order[i] = i
+	}
+	p.pos = 0
+	p.queue = nil
+	p.queuedIdx = -1
+	if p.shuffle && len(tracks) > 0 {
+		p.doShuffle()
+	}
+}
+
 // Add appends tracks to the playlist.
 func (p *Playlist) Add(tracks ...Track) {
 	start := len(p.tracks)

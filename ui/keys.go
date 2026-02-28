@@ -477,11 +477,13 @@ func (m *Model) handlePlMgrTracksKey(msg tea.KeyMsg) tea.Cmd {
 			m.plMgrCursor++
 		}
 	case "enter":
-		// Load all tracks into the player and start playback.
+		// Replace playlist and start playback.
 		if len(m.plMgrTracks) > 0 {
-			m.playlist.Add(m.plMgrTracks...)
-			m.plCursor = m.playlist.Len() - len(m.plMgrTracks)
-			m.playlist.SetIndex(m.plCursor)
+			m.player.Stop()
+			m.player.ClearPreload()
+			m.playlist.Replace(m.plMgrTracks)
+			m.plCursor = 0
+			m.playlist.SetIndex(0)
 			m.adjustScroll()
 			m.showPlManager = false
 			m.focus = focusPlaylist
