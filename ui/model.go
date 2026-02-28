@@ -329,8 +329,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.preloadNext())
 			m.notifyMPRIS()
 		}
-		// Check if gapless drained (end of playlist, no preloaded next)
-		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() {
+		// Check if gapless drained (end of playlist, no preloaded next).
+		// Skip if already buffering a yt-dlp download to avoid advancing
+		// the playlist on every tick while waiting for the resolve.
+		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() && !m.buffering {
 			cmds = append(cmds, m.nextTrack())
 			m.notifyMPRIS()
 		}
