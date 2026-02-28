@@ -108,11 +108,11 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 
 	// Persist theme selection across restarts.
 	if fm, ok := finalModel.(ui.Model); ok {
-		cfg.Theme = fm.ThemeName()
-		if cfg.Theme == theme.DefaultName {
-			cfg.Theme = ""
+		themeName := fm.ThemeName()
+		if themeName == theme.DefaultName {
+			themeName = ""
 		}
-		_ = config.Save(cfg)
+		_ = config.Save("theme", fmt.Sprintf("%q", themeName))
 	}
 
 	return nil

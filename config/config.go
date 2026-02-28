@@ -116,8 +116,10 @@ func Load() (Config, error) {
 	return cfg, scanner.Err()
 }
 
-// Save writes the config to ~/.config/cliamp/config.toml.
-func Save(cfg Config) error {
+// Save updates only the given key in the existing config file, preserving
+// all other content, comments, and formatting. If the key doesn't exist,
+// it is appended. If no config file exists, one is created with just that key.
+func Save(key, value string) error {
 	path, err := configPath()
 	if err != nil {
 		return err
@@ -127,63 +129,34 @@ func Save(cfg Config) error {
 		return err
 	}
 
-	eqParts := make([]string, 10)
-	for i, v := range cfg.EQ {
-		eqParts[i] = strconv.FormatFloat(v, 'f', -1, 64)
+	line := fmt.Sprintf("%s = %s", key, value)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		// File doesn't exist — create with just this key.
+		return os.WriteFile(path, []byte(line+"\n"), 0o644)
 	}
 
-	content := fmt.Sprintf(`# CLIAMP configuration
+	// Scan existing lines and replace the matching key in-place.
+	lines := strings.Split(string(data), "\n")
+	found := false
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		k, _, ok := strings.Cut(trimmed, "=")
+		if ok && strings.TrimSpace(k) == key {
+			lines[i] = line
+			found = true
+			break
+		}
+	}
+	if !found {
+		lines = append(lines, line)
+	}
 
-# Default volume in dB (range: -30 to 6)
-volume = %s
-
-# Repeat mode: "off", "all", or "one"
-repeat = %q
-
-# Start with shuffle enabled
-shuffle = %t
-
-# Start with mono output (L+R downmix)
-mono = %t
-
-# Color theme name (e.g. "catppuccin", "dracula")
-# Leave empty for default ANSI terminal colors
-theme = %q
-
-# Output sample rate in Hz (22050, 44100, 48000, 96000, 192000)
-# Higher values preserve more detail from hi-res files but use more CPU
-sample_rate = %d
-
-# Speaker buffer size in milliseconds (50-500)
-# Lower = less latency, higher = more stable
-buffer_ms = %d
-
-# Resample quality (1-4, where 4 is best)
-# Only matters when a file's native rate differs from sample_rate
-resample_quality = %d
-
-# EQ preset name (e.g. "Rock", "Jazz", "Classical", "Bass Boost")
-# Leave empty or "Custom" to use the manual eq values below
-eq_preset = %q
-
-# 10-band EQ gains in dB (range: -12 to 12)
-# Bands: 70Hz, 180Hz, 320Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
-# Only used when eq_preset is "Custom" or empty
-eq = [%s]
-`,
-		strconv.FormatFloat(cfg.Volume, 'f', -1, 64),
-		cfg.Repeat,
-		cfg.Shuffle,
-		cfg.Mono,
-		cfg.Theme,
-		cfg.SampleRate,
-		cfg.BufferMs,
-		cfg.ResampleQuality,
-		cfg.EQPreset,
-		strings.Join(eqParts, ", "),
-	)
-
-	return os.WriteFile(path, []byte(content), 0o644)
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
 // PlayerConfig is the subset of player controls needed to apply config.
