@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLIAMP — Terminal Music Player</title>
+<meta name="description" content="A retro terminal music player inspired by Winamp 2.x. Plays MP3, WAV, FLAC, OGG, AAC, ALAC, Opus, and WMA with a spectrum visualizer and EQ.">
+<style>
+  /* ── Reset & Base ──────────────────────── */
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:#0a0a0a;
+    color:#999;
+    font-family:"SF Mono","Cascadia Code","Fira Code","JetBrains Mono","Consolas","Liberation Mono",monospace;
+    font-size:14px;
+    line-height:1.7;
+    overflow-x:hidden;
+  }
+  ::selection{background:#00ff00;color:#0a0a0a}
+
+  /* ── Scanline overlay on entire page ───── */
+  body::after{
+    content:"";
+    position:fixed;
+    inset:0;
+    background:repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,.08) 2px,
+      rgba(0,0,0,.08) 4px
+    );
+    pointer-events:none;
+    z-index:9999;
+  }
+
+  /* ── Layout ────────────────────────────── */
+  .wrap{max-width:760px;margin:0 auto;padding:0 28px}
+  section{padding:80px 0}
+  section + section{border-top:1px solid #141414}
+
+  /* ── Section Headers ───────────────────── */
+  .section-label{
+    color:#00ff00;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:4px;
+    text-transform:uppercase;
+    margin-bottom:32px;
+    display:flex;align-items:center;gap:14px;
+    text-shadow:0 0 10px rgba(0,255,0,.3);
+  }
+  .section-label::before{content:"//";color:#333}
+  .section-label::after{content:"";flex:1;height:1px;background:linear-gradient(to right,#1a2a1a,transparent)}
+
+  /* ── Links ─────────────────────────────── */
+  a{color:#00ff00;text-decoration:none;transition:all .2s}
+  a:hover{color:#ffff00;text-shadow:0 0 8px rgba(255,255,0,.3)}
+
+  /* ══════════════════════════════════════════
+     HERO
+     ══════════════════════════════════════════ */
+  .hero{
+    text-align:center;
+    padding:120px 0 80px;
+    position:relative;
+  }
+  .hero::before{
+    content:"";
+    position:absolute;
+    top:50%;left:50%;
+    width:600px;height:400px;
+    transform:translate(-50%,-60%);
+    background:radial-gradient(ellipse,rgba(0,255,0,.04) 0%,transparent 70%);
+    pointer-events:none;
+  }
+  .hero-badge{
+    display:inline-block;
+    font-size:10px;
+    letter-spacing:3px;
+    color:#555;
+    border:1px solid #1a1a1a;
+    padding:4px 14px;
+    border-radius:20px;
+    margin-bottom:28px;
+    text-transform:uppercase;
+  }
+  .hero-title{
+    font-size:clamp(40px,10vw,80px);
+    color:#00ff00;
+    letter-spacing:0.4em;
+    font-weight:700;
+    line-height:1;
+    text-shadow:
+      0 0 20px rgba(0,255,0,.3),
+      0 0 60px rgba(0,255,0,.1);
+    position:relative;
+  }
+  .hero-sub{
+    color:#444;
+    font-size:12px;
+    margin-top:16px;
+    letter-spacing:6px;
+    text-transform:uppercase;
+  }
+  .hero-desc{
+    color:#777;
+    font-size:14px;
+    margin-top:28px;
+    max-width:480px;
+    margin-left:auto;margin-right:auto;
+    line-height:1.8;
+  }
+  .hero-desc em{color:#ffff00;font-style:normal}
+
+  /* ── Spectrum Visualizer ───────────────── */
+  .visualizer{
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+    gap:3px;
+    height:56px;
+    margin:44px auto 0;
+    padding:0 4px;
+  }
+  .bar{
+    flex:0 0 6px;
+    border-radius:1px 1px 0 0;
+    background:linear-gradient(to top,#00cc00 0%,#00ff00 40%,#aaff00 70%,#ffff00 100%);
+    animation:eq 1.4s ease-in-out infinite alternate;
+    box-shadow:0 0 4px rgba(0,255,0,.2);
+  }
+  @keyframes eq{
+    0%{height:4px;opacity:.4}
+    50%{opacity:.8}
+    100%{height:52px;opacity:1}
+  }
+  .bar:nth-child(1) {animation-duration:1.1s;animation-delay:0s}
+  .bar:nth-child(2) {animation-duration:1.3s;animation-delay:.05s}
+  .bar:nth-child(3) {animation-duration:0.9s;animation-delay:.12s}
+  .bar:nth-child(4) {animation-duration:1.5s;animation-delay:.18s}
+  .bar:nth-child(5) {animation-duration:1.0s;animation-delay:.25s}
+  .bar:nth-child(6) {animation-duration:1.4s;animation-delay:.15s}
+  .bar:nth-child(7) {animation-duration:1.2s;animation-delay:.32s}
+  .bar:nth-child(8) {animation-duration:0.8s;animation-delay:.08s}
+  .bar:nth-child(9) {animation-duration:1.3s;animation-delay:.38s}
+  .bar:nth-child(10){animation-duration:1.1s;animation-delay:.22s}
+  .bar:nth-child(11){animation-duration:1.5s;animation-delay:.42s}
+  .bar:nth-child(12){animation-duration:0.9s;animation-delay:.28s}
+  .bar:nth-child(13){animation-duration:1.2s;animation-delay:.48s}
+  .bar:nth-child(14){animation-duration:1.4s;animation-delay:.35s}
+  .bar:nth-child(15){animation-duration:1.0s;animation-delay:.18s}
+  .bar:nth-child(16){animation-duration:1.3s;animation-delay:.52s}
+  .bar:nth-child(17){animation-duration:0.85s;animation-delay:.1s}
+  .bar:nth-child(18){animation-duration:1.5s;animation-delay:.4s}
+  .bar:nth-child(19){animation-duration:1.1s;animation-delay:.2s}
+  .bar:nth-child(20){animation-duration:1.35s;animation-delay:.45s}
+  .bar:nth-child(21){animation-duration:0.95s;animation-delay:.3s}
+  .bar:nth-child(22){animation-duration:1.25s;animation-delay:.55s}
+  .bar:nth-child(23){animation-duration:1.4s;animation-delay:.15s}
+  .bar:nth-child(24){animation-duration:1.05s;animation-delay:.38s}
+
+  /* ── CTA Buttons ───────────────────────── */
+  .hero-cta{
+    margin-top:44px;
+    display:flex;
+    gap:16px;
+    justify-content:center;
+    flex-wrap:wrap;
+  }
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:inherit;font-size:12px;
+    letter-spacing:1px;
+    padding:10px 24px;
+    border-radius:4px;
+    border:1px solid;
+    cursor:pointer;
+    transition:all .25s;
+    text-decoration:none;
+  }
+  .btn-primary{
+    background:#00ff00;
+    color:#0a0a0a;
+    border-color:#00ff00;
+    font-weight:700;
+  }
+  .btn-primary:hover{
+    background:#33ff33;
+    box-shadow:0 0 20px rgba(0,255,0,.3);
+    color:#0a0a0a;
+    text-shadow:none;
+  }
+  .btn-ghost{
+    background:transparent;
+    color:#666;
+    border-color:#222;
+  }
+  .btn-ghost:hover{
+    color:#00ff00;
+    border-color:#00ff00;
+    text-shadow:0 0 8px rgba(0,255,0,.2);
+  }
+
+  /* ══════════════════════════════════════════
+     INSTALL
+     ══════════════════════════════════════════ */
+  .install-box{
+    background:#0d0d0d;
+    border:1px solid #1a1a1a;
+    border-radius:6px;
+    padding:20px 24px;
+    position:relative;
+    overflow-x:auto;
+    transition:border-color .3s;
+  }
+  .install-box:hover{border-color:#1a3a1a}
+  .install-box code{
+    color:#00ff00;
+    font-size:13px;
+    white-space:nowrap;
+    text-shadow:0 0 6px rgba(0,255,0,.15);
+  }
+  .install-box .prompt{color:#444;user-select:none}
+  .install-box{cursor:pointer}
+  .install-box .copied-msg{
+    position:absolute;
+    top:50%;right:16px;
+    transform:translateY(-50%);
+    color:#ffff00;
+    font-size:11px;
+    opacity:0;
+    transition:opacity .2s;
+  }
+  .install-box .copied-msg.show{opacity:1}
+  .install-note{
+    margin-top:14px;
+    font-size:11px;
+    color:#444;
+    letter-spacing:0.5px;
+  }
+  .install-note a{color:#555}
+  .install-note a:hover{color:#00ff00}
+
+  /* ══════════════════════════════════════════
+     FEATURES
+     ══════════════════════════════════════════ */
+  .features-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:2px;
+  }
+  .feature{
+    background:#0d0d0d;
+    padding:24px;
+    position:relative;
+    transition:all .3s;
+    border:1px solid transparent;
+  }
+  .feature:hover{
+    background:#0f110f;
+    border-color:#1a2a1a;
+  }
+  .feature-icon{
+    font-size:16px;
+    color:#333;
+    margin-bottom:10px;
+    transition:color .3s;
+  }
+  .feature:hover .feature-icon{color:#00ff00}
+  .feature-name{
+    color:#ccc;
+    font-size:13px;
+    font-weight:600;
+    margin-bottom:6px;
+  }
+  .feature p{font-size:12px;color:#555;line-height:1.6}
+
+  /* ══════════════════════════════════════════
+     DEMO VIDEO
+     ══════════════════════════════════════════ */
+  .demo-video{
+    display:block;
+    width:100%;
+    height:auto;
+    border-radius:8px;
+    border:1px solid #1a1a1a;
+  }
+
+  /* ══════════════════════════════════════════
+     KEYBINDINGS
+     ══════════════════════════════════════════ */
+  .keys-wrap{
+    background:#0d0d0d;
+    border:1px solid #151515;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .keys-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+  }
+  .key-row{
+    display:flex;
+    gap:12px;
+    padding:10px 20px;
+    border-bottom:1px solid #111;
+    transition:background .2s;
+    align-items:baseline;
+  }
+  .key-row:hover{background:#0f110f}
+  .key-row kbd{
+    color:#00ff00;
+    font-family:inherit;
+    font-size:12px;
+    min-width:90px;
+    flex-shrink:0;
+    text-shadow:0 0 4px rgba(0,255,0,.1);
+  }
+  .key-row span{
+    color:#555;
+    font-size:12px;
+  }
+
+  /* ══════════════════════════════════════════
+     FOOTER
+     ══════════════════════════════════════════ */
+  footer{
+    text-align:center;
+    padding:60px 28px 80px;
+    border-top:1px solid #141414;
+  }
+  .footer-viz{
+    display:flex;
+    justify-content:center;
+    gap:2px;
+    margin-bottom:24px;
+    opacity:.3;
+  }
+  .footer-viz span{
+    display:block;
+    width:3px;height:8px;
+    background:#00ff00;
+    border-radius:1px;
+  }
+  .footer-viz span:nth-child(odd){height:12px}
+  .footer-viz span:nth-child(3n){height:5px}
+  .footer-links{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+  }
+  .footer-sep{color:#222;font-size:14px}
+  .footer-link{
+    font-size:13px;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .footer-link svg{width:14px;height:14px;fill:#555;transition:fill .2s}
+  .footer-link:hover svg{fill:#00ff00}
+  .footer-meta{
+    margin-top:12px;
+    font-size:11px;
+    color:#2a2a2a;
+    letter-spacing:1px;
+  }
+
+  /* ── Responsive ────────────────────────── */
+  @media(max-width:640px){
+    .hero{padding:80px 0 60px}
+    section{padding:56px 0}
+    .features-grid{grid-template-columns:1fr}
+    .keys-grid{grid-template-columns:1fr}
+    .term-body{font-size:10px;padding:16px;line-height:1.4}
+    .bar{flex:0 0 5px}
+    .hero-cta{flex-direction:column;align-items:center}
+    .btn{width:100%;max-width:280px;justify-content:center}
+    .key-row{padding:8px 16px}
+    .key-row kbd{min-width:70px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════ HERO ════════════════ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-title">CLIAMP</div>
+    <div class="hero-sub">terminal music player</div>
+    <div class="hero-desc">
+      A retro music player inspired by <em>Winamp</em> — built for the terminal.<br>
+      Spectrum visualizer, 10-band EQ, playlists, streaming, and more.
+    </div>
+    <div class="visualizer">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    </div>
+    <div class="hero-cta">
+      <a href="#install" class="btn btn-primary">Install</a>
+      <a href="https://github.com/bjarneo/cliamp" class="btn btn-ghost">GitHub &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ DEMO ════════════════ -->
+<section>
+  <div class="wrap">
+    <div class="section-label">Demo</div>
+    <video class="demo-video" autoplay loop muted playsinline>
+      <source src="https://github.com/user-attachments/assets/da33abfd-91fb-42f9-8bff-45aa549e4b27" type="video/mp4">
+    </video>
+  </div>
+</section>
+
+<!-- ════════════════ INSTALL ════════════════ -->
+<section id="install">
+  <div class="wrap">
+    <div class="section-label">Install</div>
+    <div class="install-box" onclick="navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh').then(()=>{var m=this.querySelector('.copied-msg');m.classList.add('show');setTimeout(()=>m.classList.remove('show'),1500)})">
+      <code><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh</code>
+      <span class="copied-msg">Copied!</span>
+    </div>
+    <div class="install-note">
+      Or build from source: <a href="https://github.com/bjarneo/cliamp">see the README</a>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ FEATURES ════════════════ -->
+<section>
+  <div class="wrap">
+    <div class="section-label">Features</div>
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">&#9835;</div>
+        <div class="feature-name">Audio Formats</div>
+        <p>MP3, WAV, FLAC, OGG, AAC, ALAC, Opus, and WMA</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9776;</div>
+        <div class="feature-name">10-Band Equalizer</div>
+        <p>Parametric EQ with presets: Rock, Jazz, Pop, Classical, and more</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9672;</div>
+        <div class="feature-name">Themes &amp; Visualizers</div>
+        <p>Multiple color themes and visualizer modes to match your vibe</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9776;</div>
+        <div class="feature-name">Playlists</div>
+        <p>TOML playlists, M3U/M3U8 support, built-in playlist manager</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#8594;</div>
+        <div class="feature-name">HTTP Streaming</div>
+        <p>Play from URLs, internet radio stations, and remote M3U playlists</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9654;</div>
+        <div class="feature-name">yt-dlp Integration</div>
+        <p>YouTube, SoundCloud, and Bandcamp playback via yt-dlp</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9688;</div>
+        <div class="feature-name">Podcasts</div>
+        <p>Pass an RSS feed URL and listen to any podcast in your terminal</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9729;</div>
+        <div class="feature-name">Navidrome</div>
+        <p>Browse and stream your self-hosted Navidrome music library</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ KEYBINDINGS ════════════════ -->
+<section>
+  <div class="wrap">
+    <div class="section-label">Keybindings</div>
+    <div class="keys-wrap">
+      <div class="keys-grid">
+        <div class="key-row"><kbd>Space</kbd><span>Play / Pause</span></div>
+        <div class="key-row"><kbd>s</kbd><span>Stop</span></div>
+        <div class="key-row"><kbd>> .</kbd><span>Next track</span></div>
+        <div class="key-row"><kbd>&lt; ,</kbd><span>Previous track</span></div>
+        <div class="key-row"><kbd>&larr; &rarr;</kbd><span>Seek &minus;/+5s</span></div>
+        <div class="key-row"><kbd>+ / &minus;</kbd><span>Volume up / down</span></div>
+        <div class="key-row"><kbd>m</kbd><span>Toggle mono</span></div>
+        <div class="key-row"><kbd>Tab</kbd><span>Focus: Playlist / EQ</span></div>
+        <div class="key-row"><kbd>j k</kbd><span>Scroll / adjust EQ</span></div>
+        <div class="key-row"><kbd>h l</kbd><span>EQ band left / right</span></div>
+        <div class="key-row"><kbd>Enter</kbd><span>Play selected</span></div>
+        <div class="key-row"><kbd>e</kbd><span>Cycle EQ preset</span></div>
+        <div class="key-row"><kbd>t</kbd><span>Choose theme</span></div>
+        <div class="key-row"><kbd>v</kbd><span>Cycle visualizer</span></div>
+        <div class="key-row"><kbd>/</kbd><span>Search playlist</span></div>
+        <div class="key-row"><kbd>x</kbd><span>Expand playlist</span></div>
+        <div class="key-row"><kbd>a</kbd><span>Queue (play next)</span></div>
+        <div class="key-row"><kbd>A</kbd><span>Queue manager</span></div>
+        <div class="key-row"><kbd>p</kbd><span>Playlist manager</span></div>
+        <div class="key-row"><kbd>r</kbd><span>Repeat: Off / All / One</span></div>
+        <div class="key-row"><kbd>z</kbd><span>Toggle shuffle</span></div>
+        <div class="key-row"><kbd>S</kbd><span>Save to ~/Music</span></div>
+        <div class="key-row"><kbd>Ctrl+K</kbd><span>Show keymap</span></div>
+        <div class="key-row"><kbd>q</kbd><span>Quit</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ FOOTER ════════════════ -->
+<footer>
+  <div class="footer-viz">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/bjarneo/cliamp" class="footer-link">
+      <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <span class="footer-sep">&middot;</span>
+    <a href="https://x.com/iamdothash" class="footer-link">
+      <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      @iamdothash
+    </a>
+  </div>
+  </div>
+</footer>
+
+</body>
+</html>
