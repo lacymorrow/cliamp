@@ -116,7 +116,7 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 	m := Model{
 		player:        p,
 		playlist:      pl,
-		vis:           NewVisualizer(44100),
+		vis:           NewVisualizer(float64(p.SampleRate())),
 		plVisible:     5,
 		eqPresetIdx:   -1, // custom until a preset is selected
 		themes:        themes,

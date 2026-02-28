@@ -94,7 +94,7 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 
 	var s beep.Streamer = decoder
 	if format.SampleRate != p.sr {
-		s = beep.Resample(4, format.SampleRate, p.sr, s)
+		s = beep.Resample(p.resampleQuality, format.SampleRate, p.sr, s)
 	}
 
 	return &trackPipeline{
@@ -110,7 +110,7 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 // Icecast OGG/Vorbis radio streams that re-initializes the decoder at each
 // logical bitstream boundary.
 func (p *Player) buildChainedOggPipeline(rc io.ReadCloser) (*trackPipeline, error) {
-	cs, format, err := newChainedOggStreamer(rc, p.sr)
+	cs, format, err := newChainedOggStreamer(rc, p.sr, p.resampleQuality)
 	if err != nil {
 		rc.Close()
 		return nil, fmt.Errorf("decode chained ogg: %w", err)

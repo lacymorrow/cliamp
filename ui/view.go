@@ -56,6 +56,7 @@ func (m Model) View() string {
 		// Controls
 		m.renderVolume(),
 		m.renderEQ(),
+		m.renderAudioInfo(),
 		"",
 		// Playlist
 		m.renderPlaylistHeader(),
@@ -491,6 +492,22 @@ func (m Model) renderEQ() string {
 	presetName := m.EQPresetName()
 	presetLabel := dimStyle.Render(" [") + activeToggle.Render(presetName) + dimStyle.Render("]")
 	return labelStyle.Render("EQ  ") + strings.Join(parts, " ") + presetLabel
+}
+
+func (m Model) renderAudioInfo() string {
+	sr := m.player.SampleRate()
+	rq := m.player.ResampleQuality()
+
+	var srStr string
+	if sr >= 1000 {
+		srStr = fmt.Sprintf("%gkHz", float64(sr)/1000)
+	} else {
+		srStr = fmt.Sprintf("%dHz", sr)
+	}
+
+	return labelStyle.Render("OUT ") +
+		dimStyle.Render("Rate ") + activeToggle.Render(srStr) +
+		dimStyle.Render("  Resample ") + activeToggle.Render(fmt.Sprintf("%d/4", rq))
 }
 
 func (m Model) renderPlaylistHeader() string {

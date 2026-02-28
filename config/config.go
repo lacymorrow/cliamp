@@ -23,19 +23,25 @@ func configPath() (string, error) {
 
 // Config holds user preferences loaded from the config file.
 type Config struct {
-	Volume   float64     // dB, range [-30, +6]
-	EQ       [10]float64 // per-band gain in dB, range [-12, +12]
-	EQPreset string      // preset name, or "" for custom
-	Repeat   string      // "off", "all", or "one"
-	Shuffle  bool
-	Mono     bool
-	Theme    string // theme name, or "" for ANSI default
+	Volume          float64     // dB, range [-30, +6]
+	EQ              [10]float64 // per-band gain in dB, range [-12, +12]
+	EQPreset        string      // preset name, or "" for custom
+	Repeat          string      // "off", "all", or "one"
+	Shuffle         bool
+	Mono            bool
+	Theme           string // theme name, or "" for ANSI default
+	SampleRate      int    // output sample rate: 22050, 44100, 48000, 96000, 192000
+	BufferMs        int    // speaker buffer in milliseconds (50–500)
+	ResampleQuality int    // beep resample quality factor (1–4)
 }
 
 // Default returns a Config with sensible defaults.
 func Default() Config {
 	return Config{
-		Repeat: "off",
+		Repeat:          "off",
+		SampleRate:      44100,
+		BufferMs:        100,
+		ResampleQuality: 4,
 	}
 }
 
@@ -92,6 +98,18 @@ func Load() (Config, error) {
 			cfg.EQPreset = strings.Trim(val, `"'`)
 		case "theme":
 			cfg.Theme = strings.Trim(val, `"'`)
+		case "sample_rate":
+			if v, err := strconv.Atoi(val); err == nil {
+				cfg.SampleRate = clampSampleRate(v)
+			}
+		case "buffer_ms":
+			if v, err := strconv.Atoi(val); err == nil {
+				cfg.BufferMs = max(min(v, 500), 50)
+			}
+		case "resample_quality":
+			if v, err := strconv.Atoi(val); err == nil {
+				cfg.ResampleQuality = max(min(v, 4), 1)
+			}
 		}
 	}
 
@@ -132,6 +150,18 @@ mono = %t
 # Leave empty for default ANSI terminal colors
 theme = "%s"
 
+# Output sample rate in Hz (22050, 44100, 48000, 96000, 192000)
+# Higher values preserve more detail from hi-res files but use more CPU
+sample_rate = %d
+
+# Speaker buffer size in milliseconds (50-500)
+# Lower = less latency, higher = more stable
+buffer_ms = %d
+
+# Resample quality (1-4, where 4 is best)
+# Only matters when a file's native rate differs from sample_rate
+resample_quality = %d
+
 # EQ preset name (e.g. "Rock", "Jazz", "Classical", "Bass Boost")
 # Leave empty or "Custom" to use the manual eq values below
 eq_preset = "%s"
@@ -146,6 +176,9 @@ eq = [%s]
 		cfg.Shuffle,
 		cfg.Mono,
 		cfg.Theme,
+		cfg.SampleRate,
+		cfg.BufferMs,
+		cfg.ResampleQuality,
 		cfg.EQPreset,
 		strings.Join(eqParts, ", "),
 	)
@@ -191,6 +224,27 @@ func (c Config) ApplyPlaylist(pl PlaylistConfig) {
 	if c.Shuffle {
 		pl.ToggleShuffle()
 	}
+}
+
+// clampSampleRate returns the nearest valid sample rate from the allowed set.
+func clampSampleRate(v int) int {
+	allowed := []int{22050, 44100, 48000, 96000, 192000}
+	best := allowed[0]
+	bestDist := abs(v - best)
+	for _, a := range allowed[1:] {
+		if d := abs(v - a); d < bestDist {
+			best = a
+			bestDist = d
+		}
+	}
+	return best
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // parseEQ parses a TOML-style array like [0, 1.5, -2, ...] into 10 bands.

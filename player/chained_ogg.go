@@ -25,25 +25,27 @@ func (noCloseReader) Close() error { return nil }
 // re-initializes the vorbis decoder on the same underlying reader to
 // continue with the next song — achieving seamless chain transitions.
 type chainedOggStreamer struct {
-	rc       io.ReadCloser         // underlying HTTP body (stays open across chains)
-	decoder  beep.StreamSeekCloser // current vorbis decoder
-	format   beep.Format
-	targetSR beep.SampleRate
-	stream   beep.Streamer // decoder + optional resample
-	err      error
+	rc              io.ReadCloser         // underlying HTTP body (stays open across chains)
+	decoder         beep.StreamSeekCloser // current vorbis decoder
+	format          beep.Format
+	targetSR        beep.SampleRate
+	resampleQuality int
+	stream          beep.Streamer // decoder + optional resample
+	err             error
 }
 
-func newChainedOggStreamer(rc io.ReadCloser, targetSR beep.SampleRate) (*chainedOggStreamer, beep.Format, error) {
+func newChainedOggStreamer(rc io.ReadCloser, targetSR beep.SampleRate, resampleQuality int) (*chainedOggStreamer, beep.Format, error) {
 	decoder, format, err := vorbis.Decode(noCloseReader{rc})
 	if err != nil {
 		return nil, beep.Format{}, err
 	}
 
 	cs := &chainedOggStreamer{
-		rc:       rc,
-		decoder:  decoder,
-		format:   format,
-		targetSR: targetSR,
+		rc:              rc,
+		decoder:         decoder,
+		format:          format,
+		targetSR:        targetSR,
+		resampleQuality: resampleQuality,
 	}
 	cs.stream = cs.buildStream(decoder, format)
 
@@ -53,7 +55,7 @@ func newChainedOggStreamer(rc io.ReadCloser, targetSR beep.SampleRate) (*chained
 // buildStream wraps a decoder with a resampler if needed.
 func (cs *chainedOggStreamer) buildStream(decoder beep.StreamSeekCloser, format beep.Format) beep.Streamer {
 	if format.SampleRate != cs.targetSR {
-		return beep.Resample(4, format.SampleRate, cs.targetSR, decoder)
+		return beep.Resample(cs.resampleQuality, format.SampleRate, cs.targetSR, decoder)
 	}
 	return decoder
 }

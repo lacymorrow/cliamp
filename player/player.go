@@ -9,8 +9,12 @@ import (
 	"github.com/gopxl/beep/v2/speaker"
 )
 
-// DefaultSampleRate is the CD-quality sample rate used for audio output.
-const DefaultSampleRate = 44100
+// Quality holds configurable audio output parameters.
+type Quality struct {
+	SampleRate      int // output sample rate in Hz (e.g. 44100, 48000)
+	BufferMs        int // speaker buffer in milliseconds
+	ResampleQuality int // beep resample quality factor (1–4)
+}
 
 // Player is the audio engine managing the playback pipeline:
 //
@@ -28,20 +32,22 @@ type Player struct {
 	ctrl         *beep.Ctrl
 	volume       float64 // dB, range [-30, +6]
 	eqBands      [10]float64
-	tap          *Tap
-	playing      bool
-	paused       bool
-	mono         bool
+	tap              *Tap
+	playing          bool
+	paused           bool
+	mono             bool
+	resampleQuality  int
 
 	gaplessAdvance atomic.Bool // set when gapless transition fires
 
 	streamTitle atomic.Value // stores string, set by ICY reader callback
 }
 
-// New creates a Player and initializes the speaker at the given sample rate.
-func New(sr beep.SampleRate) *Player {
-	speaker.Init(sr, sr.N(time.Second/10))
-	p := &Player{sr: sr}
+// New creates a Player and initializes the speaker with the given quality settings.
+func New(q Quality) *Player {
+	sr := beep.SampleRate(q.SampleRate)
+	speaker.Init(sr, sr.N(time.Duration(q.BufferMs)*time.Millisecond))
+	p := &Player{sr: sr, resampleQuality: q.ResampleQuality}
 	p.gapless = &gaplessStreamer{}
 	p.gapless.onSwap = func() {
 		// Called from audio thread (goroutine) when gapless transition occurs.
@@ -374,6 +380,16 @@ func (p *Player) Samples() []float64 {
 		return nil
 	}
 	return tap.Samples(2048)
+}
+
+// SampleRate returns the output sample rate in Hz.
+func (p *Player) SampleRate() int {
+	return int(p.sr)
+}
+
+// ResampleQuality returns the configured resample quality factor.
+func (p *Player) ResampleQuality() int {
+	return p.resampleQuality
 }
 
 // Close fully stops the speaker and cleans up all resources.

@@ -7,7 +7,6 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gopxl/beep/v2"
 
 	"cliamp/config"
 	"cliamp/external/local"
@@ -71,7 +70,11 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 	pl := playlist.New()
 	pl.Add(resolved.Tracks...)
 
-	p := player.New(beep.SampleRate(player.DefaultSampleRate))
+	p := player.New(player.Quality{
+		SampleRate:      cfg.SampleRate,
+		BufferMs:        cfg.BufferMs,
+		ResampleQuality: cfg.ResampleQuality,
+	})
 	defer p.Close()
 
 	cfg.ApplyPlayer(p)
