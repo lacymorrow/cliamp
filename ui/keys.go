@@ -319,9 +319,14 @@ func copyFile(src, dst string) error {
 	_, copyErr := io.Copy(out, in)
 	closeErr := out.Close()
 	if copyErr != nil {
+		os.Remove(dst) // clean up partial file
 		return copyErr
 	}
-	return closeErr
+	if closeErr != nil {
+		os.Remove(dst)
+		return closeErr
+	}
+	return nil
 }
 
 // handleSearchKey processes key presses while in search mode.

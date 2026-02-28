@@ -15,10 +15,15 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"cliamp/player"
 	"cliamp/playlist"
 )
+
+// httpClient is used for feed and M3U resolution. It has a generous but
+// finite timeout to prevent hanging on unresponsive servers.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // Result holds the output of Args: instantly-resolved tracks and
 // remote URLs (feeds, M3U) that need async HTTP fetching.
@@ -133,11 +138,15 @@ func collectAudioFiles(path string) ([]string, error) {
 
 // resolveFeed fetches a podcast RSS feed and returns tracks with metadata.
 func resolveFeed(feedURL string) ([]playlist.Track, error) {
-	resp, err := http.Get(feedURL)
+	resp, err := httpClient.Get(feedURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http status %s", resp.Status)
+	}
 
 	var rss struct {
 		Channel struct {
@@ -172,11 +181,15 @@ func resolveFeed(feedURL string) ([]playlist.Track, error) {
 
 // resolveM3U fetches an M3U playlist URL and returns tracks with EXTINF metadata.
 func resolveM3U(m3uURL string) ([]playlist.Track, error) {
-	resp, err := http.Get(m3uURL)
+	resp, err := httpClient.Get(m3uURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http status %s", resp.Status)
+	}
 
 	entries, err := parseM3U(resp.Body, "")
 	if err != nil {

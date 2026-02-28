@@ -13,6 +13,9 @@ import (
 	"cliamp/playlist"
 )
 
+// httpClient is used for all Navidrome API calls with a finite timeout.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // NavidromeClient implements playlist.Provider for a Navidrome/Subsonic server.
 type NavidromeClient struct {
 	url      string
@@ -60,11 +63,15 @@ func (c *NavidromeClient) buildURL(endpoint string, params url.Values) string {
 }
 
 func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
-	resp, err := http.Get(c.buildURL("getPlaylists", nil))
+	resp, err := httpClient.Get(c.buildURL("getPlaylists", nil))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("navidrome: http status %s", resp.Status)
+	}
 
 	var result struct {
 		SubsonicResponse struct {
@@ -93,11 +100,15 @@ func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
 }
 
 func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
-	resp, err := http.Get(c.buildURL("getPlaylist", url.Values{"id": {id}}))
+	resp, err := httpClient.Get(c.buildURL("getPlaylist", url.Values{"id": {id}}))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("navidrome: http status %s", resp.Status)
+	}
 
 	var result struct {
 		SubsonicResponse struct {

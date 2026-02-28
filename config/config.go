@@ -138,7 +138,7 @@ func Save(cfg Config) error {
 volume = %s
 
 # Repeat mode: "off", "all", or "one"
-repeat = "%s"
+repeat = %q
 
 # Start with shuffle enabled
 shuffle = %t
@@ -148,7 +148,7 @@ mono = %t
 
 # Color theme name (e.g. "catppuccin", "dracula")
 # Leave empty for default ANSI terminal colors
-theme = "%s"
+theme = %q
 
 # Output sample rate in Hz (22050, 44100, 48000, 96000, 192000)
 # Higher values preserve more detail from hi-res files but use more CPU
@@ -164,7 +164,7 @@ resample_quality = %d
 
 # EQ preset name (e.g. "Rock", "Jazz", "Classical", "Bass Boost")
 # Leave empty or "Custom" to use the manual eq values below
-eq_preset = "%s"
+eq_preset = %q
 
 # 10-band EQ gains in dB (range: -12 to 12)
 # Bands: 70Hz, 180Hz, 320Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz

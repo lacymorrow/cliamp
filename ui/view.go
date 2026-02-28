@@ -349,7 +349,7 @@ func (m Model) renderPlMgrNewName() []string {
 		dimStyle.Render("  Playlist name:"),
 		playlistSelectedStyle.Render("  " + m.plMgrNewName + "_"),
 		"",
-		helpKey("Enter", "Create & add track ")+helpKey("Esc", "Cancel"),
+		helpKey("Enter", "Create & add track ") + helpKey("Esc", "Cancel"),
 	}
 	return lines
 }

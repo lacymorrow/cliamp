@@ -117,7 +117,9 @@ func (p playerIface) Play() *dbus.Error {
 	return nil
 }
 
-func (p playerIface) Seek(offset int64) *dbus.Error {
+// DoSeek is exported to D-Bus as "Seek" via ExportWithMap (renamed to
+// avoid go vet's stdmethods check which expects io.Seeker's signature).
+func (p playerIface) DoSeek(offset int64) *dbus.Error {
 	p.svc.send(SeekMsg{Offset: offset})
 	return nil
 }
@@ -152,7 +154,9 @@ func New(send func(interface{})) (*Service, error) {
 
 	// Export method handlers.
 	conn.Export(root{svc}, path, "org.mpris.MediaPlayer2")
-	conn.Export(playerIface{svc}, path, "org.mpris.MediaPlayer2.Player")
+	conn.ExportWithMap(playerIface{svc}, map[string]string{
+		"DoSeek": "Seek",
+	}, path, "org.mpris.MediaPlayer2.Player")
 	conn.Export(introspect.Introspectable(introspectXML), path,
 		"org.freedesktop.DBus.Introspectable")
 
@@ -186,16 +190,16 @@ func New(send func(interface{})) (*Service, error) {
 				go svc.send(SetVolumeMsg{Volume: v})
 				return nil
 			}},
-			"Position":       {Value: int64(0), Writable: false, Emit: prop.EmitFalse},
-			"Rate":           {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
-			"MinimumRate":    {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
-			"MaximumRate":    {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
-			"CanControl":     {Value: true, Writable: false, Emit: prop.EmitTrue},
-			"CanPlay":        {Value: true, Writable: false, Emit: prop.EmitTrue},
-			"CanPause":       {Value: true, Writable: false, Emit: prop.EmitTrue},
-			"CanGoNext":      {Value: true, Writable: false, Emit: prop.EmitTrue},
-			"CanGoPrevious":  {Value: true, Writable: false, Emit: prop.EmitTrue},
-			"CanSeek":        {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"Position":      {Value: int64(0), Writable: false, Emit: prop.EmitFalse},
+			"Rate":          {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"MinimumRate":   {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"MaximumRate":   {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"CanControl":    {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"CanPlay":       {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"CanPause":      {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"CanGoNext":     {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"CanGoPrevious": {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"CanSeek":       {Value: true, Writable: false, Emit: prop.EmitTrue},
 		},
 	}
 

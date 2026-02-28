@@ -1,6 +1,7 @@
 package player
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,20 +24,20 @@ type Quality struct {
 //	     ├─ current: [Decode A] → [Resample A]
 //	     └─ next:    [Decode B] → [Resample B]  (preloaded)
 type Player struct {
-	mu           sync.Mutex
-	sr           beep.SampleRate
-	gapless      *gaplessStreamer
-	current      *trackPipeline // active track's resources
-	nextPipeline *trackPipeline // preloaded track's resources
-	started      bool           // true after first speaker.Play()
-	ctrl         *beep.Ctrl
-	volume       float64 // dB, range [-30, +6]
-	eqBands      [10]float64
-	tap              *Tap
-	playing          bool
-	paused           bool
-	mono             bool
-	resampleQuality  int
+	mu              sync.Mutex
+	sr              beep.SampleRate
+	gapless         *gaplessStreamer
+	current         *trackPipeline // active track's resources
+	nextPipeline    *trackPipeline // preloaded track's resources
+	started         bool           // true after first speaker.Play()
+	ctrl            *beep.Ctrl
+	volume          float64           // dB, range [-30, +6]
+	eqBands         [10]atomic.Uint64 // dB stored as math.Float64bits
+	tap             *Tap
+	playing         bool
+	paused          bool
+	mono            bool
+	resampleQuality int
 
 	gaplessAdvance atomic.Bool // set when gapless transition fires
 
@@ -104,6 +105,7 @@ func (p *Player) Play(path string) error {
 		for i := range 10 {
 			s = newBiquad(s, EQFreqs[i], 1.4, &p.eqBands[i], float64(p.sr))
 		}
+
 		s = &volumeStreamer{s: s, vol: &p.volume, mono: &p.mono, mu: &p.mu}
 		p.tap = NewTap(s, 4096)
 		p.ctrl = &beep.Ctrl{Streamer: p.tap}
@@ -309,16 +311,16 @@ func (p *Player) SetEQBand(band int, dB float64) {
 	if band < 0 || band >= 10 {
 		return
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.eqBands[band] = max(min(dB, 12), -12)
+	p.eqBands[band].Store(math.Float64bits(max(min(dB, 12), -12)))
 }
 
 // EQBands returns a copy of all 10 EQ band gains.
 func (p *Player) EQBands() [10]float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.eqBands
+	var bands [10]float64
+	for i := range 10 {
+		bands[i] = math.Float64frombits(p.eqBands[i].Load())
+	}
+	return bands
 }
 
 // IsPlaying returns true if a track is loaded and playing (possibly paused).

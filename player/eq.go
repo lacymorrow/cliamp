@@ -2,6 +2,7 @@ package player
 
 import (
 	"math"
+	"sync/atomic"
 
 	"github.com/gopxl/beep/v2"
 )
@@ -16,7 +17,7 @@ type biquad struct {
 	s    beep.Streamer
 	freq float64
 	q    float64
-	gain *float64 // points to Player.eqBands[i]
+	gain *atomic.Uint64 // points to Player.eqBands[i], stores Float64bits
 	sr   float64
 	// Per-channel filter state
 	x1, x2 [2]float64
@@ -27,7 +28,7 @@ type biquad struct {
 	inited             bool
 }
 
-func newBiquad(s beep.Streamer, freq, q float64, gain *float64, sr float64) *biquad {
+func newBiquad(s beep.Streamer, freq, q float64, gain *atomic.Uint64, sr float64) *biquad {
 	return &biquad{s: s, freq: freq, q: q, gain: gain, sr: sr}
 }
 
@@ -60,7 +61,7 @@ func (b *biquad) calcCoeffs(dB float64) {
 
 func (b *biquad) Stream(samples [][2]float64) (int, bool) {
 	n, ok := b.s.Stream(samples)
-	dB := *b.gain
+	dB := math.Float64frombits(b.gain.Load())
 
 	// Skip processing when gain is effectively zero
 	if dB > -0.1 && dB < 0.1 {
