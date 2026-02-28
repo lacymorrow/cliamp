@@ -225,6 +225,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "v":
 		m.vis.CycleMode()
 
+	case "x":
+		if m.focus == focusPlaylist {
+			if m.plVisible == 5 {
+				m.plVisible = 20
+			} else {
+				m.plVisible = 5
+			}
+			m.adjustScroll()
+		}
+
 	case "ctrl+k":
 		m.showKeymap = true
 	}
@@ -644,6 +654,7 @@ var keymapEntries = []keymapEntry{
 	{"S", "Save track to ~/Music"},
 	{"r", "Cycle repeat"},
 	{"z", "Toggle shuffle"},
+	{"x", "Expand/collapse playlist"},
 	{"/", "Search playlist"},
 	{"Tab", "Toggle focus"},
 	{"Esc", "Back to provider"},

@@ -195,6 +195,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `v` | Cycle visualizer |
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
+| `x` | Expand/collapse playlist |
 | `a` | Toggle queue (play next) |
 | `A` | Queue manager |
 | `p` | Playlist manager |
