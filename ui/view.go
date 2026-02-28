@@ -146,7 +146,7 @@ func (m Model) renderKeymapOverlay() string {
 	}
 
 	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d keys", len(visible), len(entries))))
-	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Type]Filter [Esc]Close"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Type", "Filter ")+helpKey("Esc", "Close"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
@@ -184,7 +184,7 @@ func (m Model) renderThemePicker() string {
 		lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d themes", m.themeCursor+1, count)))
 	}
 
-	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Select [Esc]Cancel"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter", "Select ")+helpKey("Esc", "Cancel"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
@@ -250,7 +250,7 @@ func (m Model) renderQueueOverlay() string {
 	}
 
 	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d queued", len(tracks))))
-	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [d]Remove [c]Clear [Esc]Close"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("d", "Remove ")+helpKey("c", "Clear ")+helpKey("Esc", "Close"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
@@ -292,7 +292,7 @@ func (m Model) renderPlMgrList() []string {
 		lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d playlists", m.plMgrCursor+1, count)))
 	}
 
-	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter/→]Open [a]Add track [d]Delete [Esc]Close"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter/→", "Open ")+helpKey("a", "Add track ")+helpKey("d", "Delete ")+helpKey("Esc", "Close"))
 
 	return lines
 }
@@ -306,7 +306,7 @@ func (m Model) renderPlMgrTracks() []string {
 
 	if len(m.plMgrTracks) == 0 {
 		lines = append(lines, dimStyle.Render("  (empty)"))
-		lines = append(lines, "", helpStyle.Render("[a]Add track [Esc]Back"))
+		lines = append(lines, "", helpKey("a", "Add track ")+helpKey("Esc", "Back"))
 		return lines
 	}
 
@@ -336,7 +336,7 @@ func (m Model) renderPlMgrTracks() []string {
 		lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d tracks", m.plMgrCursor+1, len(m.plMgrTracks))))
 	}
 
-	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Play all [a]Add track [d]Remove [Esc]Back"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter", "Play all ")+helpKey("a", "Add track ")+helpKey("d", "Remove ")+helpKey("Esc", "Back"))
 
 	return lines
 }
@@ -348,7 +348,7 @@ func (m Model) renderPlMgrNewName() []string {
 		dimStyle.Render("  Playlist name:"),
 		playlistSelectedStyle.Render("  " + m.plMgrNewName + "_"),
 		"",
-		helpStyle.Render("[Enter]Create & add track [Esc]Cancel"),
+		helpKey("Enter", "Create & add track ")+helpKey("Esc", "Cancel"),
 	}
 	return lines
 }
@@ -489,7 +489,7 @@ func (m Model) renderEQ() string {
 	}
 
 	presetName := m.EQPresetName()
-	presetLabel := dimStyle.Render(" [" + presetName + "]")
+	presetLabel := dimStyle.Render(" [") + activeToggle.Render(presetName) + dimStyle.Render("]")
 	return labelStyle.Render("EQ  ") + strings.Join(parts, " ") + presetLabel
 }
 
@@ -502,14 +502,17 @@ func (m Model) renderPlaylistHeader() string {
 	if m.playlist.Shuffled() {
 		shuffle = activeToggle.Render("[Shuffle]")
 	} else {
-		shuffle = dimStyle.Render("[Shuffle]")
+		shuffle = dimStyle.Render("[") + trackStyle.Render("Shuffle") + dimStyle.Render("]")
 	}
 
-	repeatStr := fmt.Sprintf("[Repeat: %s]", m.playlist.Repeat())
+	repeatVal := m.playlist.Repeat().String()
 	if m.playlist.Repeat() != 0 {
+		repeatStr := fmt.Sprintf("[Repeat: %s]", repeatVal)
 		repeatStr = activeToggle.Render(repeatStr)
+		shuffle += " " + repeatStr
 	} else {
-		repeatStr = dimStyle.Render(repeatStr)
+		repeatStr := dimStyle.Render("[") + trackStyle.Render("Repeat") + dimStyle.Render(": ") + dimStyle.Render(repeatVal) + dimStyle.Render("]")
+		shuffle += " " + repeatStr
 	}
 
 	var queueStr string
@@ -522,7 +525,7 @@ func (m Model) renderPlaylistHeader() string {
 		themeStr = " " + activeToggle.Render("[Theme: "+name+"]")
 	}
 
-	return dimStyle.Render("── Playlist ── ") + shuffle + " " + repeatStr + queueStr + themeStr + " " + dimStyle.Render("──")
+	return dimStyle.Render("── Playlist ── ") + shuffle + queueStr + themeStr + " " + dimStyle.Render("──")
 }
 
 func (m Model) renderPlaylist() string {
@@ -662,24 +665,29 @@ func (m Model) renderSearchOverlay() string {
 	}
 
 	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d found", len(m.searchResults))))
-	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Play [Ctrl+K]Keymap [Esc]Close"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter", "Play ")+helpKey("Ctrl+K", "Keymap ")+helpKey("Esc", "Close"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
 
+// helpKey renders a key in accent color inside dim brackets, followed by a dim label.
+func helpKey(key, label string) string {
+	return dimStyle.Render("[") + activeToggle.Render(key) + dimStyle.Render("]") + helpStyle.Render(label)
+}
+
 func (m Model) renderHelp() string {
 	if m.focus == focusProvider {
-		return helpStyle.Render("[↑↓]Navigate [Enter]Load [Tab]Focus [Q]Quit")
+		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
 	}
 
-	help := "[Spc]⏯ [<>]Trk "
+	parts := helpKey("Spc", "⏯ ") + helpKey("<>", "Trk ")
 
 	track, _ := m.playlist.Current()
 	if !track.Stream || m.player.Seekable() {
-		help += "[←→]Seek "
+		parts += helpKey("←→", "Seek ")
 	}
 
-	help += "[+-]Vol [/]Search [a]Queue [Tab]Focus [Ctrl+K]Keys [Q]Quit"
+	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
 
-	return helpStyle.Render(help)
+	return parts
 }
