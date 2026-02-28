@@ -102,6 +102,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		} else {
 			m.player.Seek(-5 * time.Second)
+			if m.mpris != nil {
+				m.mpris.EmitSeeked(m.player.Position().Microseconds())
+			}
 		}
 
 	case "right":
@@ -111,6 +114,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		} else {
 			m.player.Seek(5 * time.Second)
+			if m.mpris != nil {
+				m.mpris.EmitSeeked(m.player.Position().Microseconds())
+			}
 		}
 
 	case "up", "k":

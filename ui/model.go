@@ -485,6 +485,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notifyMPRIS()
 		return m, cmd
 
+	case mpris.SeekMsg:
+		offset := time.Duration(msg.Offset) * time.Microsecond
+		m.player.Seek(offset)
+		m.notifyMPRIS()
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+		return m, nil
+
 	case mpris.StopMsg:
 		m.player.Stop()
 		m.notifyMPRIS()
@@ -619,7 +628,8 @@ func (m *Model) notifyMPRIS() {
 			info.Title = m.streamTitle
 		}
 	}
-	m.mpris.Update(status, info, m.player.Volume())
+	m.mpris.Update(status, info, m.player.Volume(),
+		m.player.Position().Microseconds(), m.player.Seekable())
 }
 
 // togglePlayPause starts playback if stopped, or toggles pause if playing.

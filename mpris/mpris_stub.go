@@ -11,6 +11,7 @@ type (
 	PrevMsg      struct{}
 	StopMsg      struct{}
 	QuitMsg      struct{}
+	SeekMsg      struct{ Offset int64 } // microseconds (relative)
 	InitMsg      struct{ Svc *Service }
 )
 
@@ -30,7 +31,11 @@ func New(send func(interface{})) (*Service, error) {
 }
 
 // Update is a no-op on non-Linux platforms.
-func (s *Service) Update(status string, track TrackInfo, volumeDB float64) {}
+func (s *Service) Update(status string, track TrackInfo, volumeDB float64, positionUs int64, canSeek bool) {
+}
+
+// EmitSeeked is a no-op on non-Linux platforms.
+func (s *Service) EmitSeeked(positionUs int64) {}
 
 // Close is a no-op on non-Linux platforms.
 func (s *Service) Close() {}

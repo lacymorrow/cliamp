@@ -22,6 +22,7 @@ type (
 	PrevMsg      struct{}
 	StopMsg      struct{}
 	QuitMsg      struct{}
+	SeekMsg      struct{ Offset int64 } // microseconds (relative)
 	InitMsg      struct{ Svc *Service }
 )
 
@@ -54,6 +55,8 @@ const introspectXML = `
     <method name="PlayPause"/>
     <method name="Stop"/>
     <method name="Play"/>
+    <method name="Seek"><arg direction="in" type="x"/></method>
+    <signal name="Seeked"><arg type="x"/></signal>
   </interface>
 ` + introspect.IntrospectDataString + `</node>`
 
@@ -99,6 +102,11 @@ func (p playerIface) Play() *dbus.Error {
 	return nil
 }
 
+func (p playerIface) Seek(offset int64) *dbus.Error {
+	p.svc.send(SeekMsg{Offset: offset})
+	return nil
+}
+
 // New connects to the session D-Bus, claims the MPRIS bus name, and
 // exports the two required interfaces. send is used to inject messages
 // into the Bubbletea event loop (typically prog.Send).
@@ -140,11 +148,16 @@ func New(send func(interface{})) (*Service, error) {
 			"PlaybackStatus": {Value: "Stopped", Writable: false, Emit: prop.EmitTrue},
 			"Metadata":       {Value: makeMetadata(TrackInfo{}), Writable: false, Emit: prop.EmitTrue},
 			"Volume":         {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"Position":       {Value: int64(0), Writable: false, Emit: prop.EmitFalse},
+			"Rate":           {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"MinimumRate":    {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"MaximumRate":    {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
 			"CanControl":     {Value: true, Writable: false, Emit: prop.EmitTrue},
 			"CanPlay":        {Value: true, Writable: false, Emit: prop.EmitTrue},
 			"CanPause":       {Value: true, Writable: false, Emit: prop.EmitTrue},
 			"CanGoNext":      {Value: true, Writable: false, Emit: prop.EmitTrue},
 			"CanGoPrevious":  {Value: true, Writable: false, Emit: prop.EmitTrue},
+			"CanSeek":        {Value: true, Writable: false, Emit: prop.EmitTrue},
 		},
 	}
 
@@ -160,8 +173,10 @@ func New(send func(interface{})) (*Service, error) {
 
 // Update refreshes MPRIS properties when playback state changes.
 // status is "Playing", "Paused", or "Stopped". volumeDB is the
-// current volume in decibels (range [-30, +6]).
-func (s *Service) Update(status string, track TrackInfo, volumeDB float64) {
+// current volume in decibels (range [-30, +6]). positionUs is
+// the current playback position in microseconds. canSeek indicates
+// whether the current track supports seeking.
+func (s *Service) Update(status string, track TrackInfo, volumeDB float64, positionUs int64, canSeek bool) {
 	if s == nil {
 		return
 	}
@@ -190,9 +205,40 @@ func (s *Service) Update(status string, track TrackInfo, volumeDB float64) {
 	s.props.Set(iface, "Volume", dbus.MakeVariant(vol))
 	changed["Volume"] = dbus.MakeVariant(vol)
 
+	// Position uses EmitFalse — update silently (clients poll or use Seeked signal).
+	s.props.Set(iface, "Position", dbus.MakeVariant(positionUs))
+
+	// Only emit CanSeek change if the value actually changed.
+	if cur, err := s.props.Get(iface, "CanSeek"); err == nil {
+		if cur.Value() != canSeek {
+			s.props.Set(iface, "CanSeek", dbus.MakeVariant(canSeek))
+			changed["CanSeek"] = dbus.MakeVariant(canSeek)
+		}
+	}
+
 	if len(changed) > 0 {
 		s.emitPropertiesChanged(iface, changed)
 	}
+}
+
+// EmitSeeked sends the org.mpris.MediaPlayer2.Player.Seeked signal
+// with the absolute position in microseconds. Call after any seek
+// operation (D-Bus or keyboard) so desktop widgets can snap to the
+// new position.
+func (s *Service) EmitSeeked(positionUs int64) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conn == nil {
+		return
+	}
+	s.conn.Emit(
+		dbus.ObjectPath("/org/mpris/MediaPlayer2"),
+		"org.mpris.MediaPlayer2.Player.Seeked",
+		positionUs,
+	)
 }
 
 // Close releases the D-Bus connection.
