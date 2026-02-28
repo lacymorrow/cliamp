@@ -55,7 +55,7 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 	// continues across song boundaries instead of stopping at EOS.
 	ext := formatExt(path)
 	if isURL(path) && ext == ".ogg" {
-		return p.buildChainedOggPipeline(rc)
+		return p.buildChainedOggPipeline(rc, onMeta)
 	}
 
 	decoder, format, err := decode(rc, path, p.sr)
@@ -109,8 +109,8 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 // buildChainedOggPipeline creates a pipeline with a chainedOggStreamer for
 // Icecast OGG/Vorbis radio streams that re-initializes the decoder at each
 // logical bitstream boundary.
-func (p *Player) buildChainedOggPipeline(rc io.ReadCloser) (*trackPipeline, error) {
-	cs, format, err := newChainedOggStreamer(rc, p.sr, p.resampleQuality)
+func (p *Player) buildChainedOggPipeline(rc io.ReadCloser, onMeta func(string)) (*trackPipeline, error) {
+	cs, format, err := newChainedOggStreamer(rc, p.sr, p.resampleQuality, onMeta)
 	if err != nil {
 		rc.Close()
 		return nil, fmt.Errorf("decode chained ogg: %w", err)
