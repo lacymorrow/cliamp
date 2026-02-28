@@ -47,6 +47,14 @@ func Args(args []string) (Result, error) {
 			matches = []string{arg}
 		}
 		for _, path := range matches {
+			if playlist.IsLocalM3U(path) {
+				tracks, err := ResolveLocalM3U(path)
+				if err != nil {
+					return r, fmt.Errorf("loading m3u %s: %w", path, err)
+				}
+				r.Tracks = append(r.Tracks, tracks...)
+				continue
+			}
 			resolved, err := collectAudioFiles(path)
 			if err != nil {
 				return r, fmt.Errorf("scanning %s: %w", path, err)
@@ -79,13 +87,11 @@ func Remote(urls []string) ([]playlist.Track, error) {
 			}
 			tracks = append(tracks, t...)
 		case playlist.IsM3U(u):
-			streams, err := resolveM3U(u)
+			t, err := resolveM3U(u)
 			if err != nil {
 				return nil, fmt.Errorf("resolving m3u %s: %w", u, err)
 			}
-			for _, s := range streams {
-				tracks = append(tracks, playlist.TrackFromPath(s))
-			}
+			tracks = append(tracks, t...)
 		}
 	}
 	return tracks, nil
@@ -164,24 +170,19 @@ func resolveFeed(feedURL string) ([]playlist.Track, error) {
 	return tracks, nil
 }
 
-// resolveM3U fetches an M3U playlist URL and returns the stream URLs it contains.
-func resolveM3U(m3uURL string) ([]string, error) {
+// resolveM3U fetches an M3U playlist URL and returns tracks with EXTINF metadata.
+func resolveM3U(m3uURL string) ([]playlist.Track, error) {
 	resp, err := http.Get(m3uURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var urls []string
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		urls = append(urls, line)
+	entries, err := parseM3U(resp.Body, "")
+	if err != nil {
+		return nil, err
 	}
-	return urls, scanner.Err()
+	return entriesToTracks(entries), nil
 }
 
 // ytdlFlatEntry holds JSON fields from yt-dlp --flat-playlist output.

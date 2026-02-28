@@ -42,17 +42,23 @@ func IsURL(path string) bool {
 	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
-// IsM3U reports whether the URL points to an M3U playlist file.
+// IsM3U reports whether the path points to an M3U playlist file (URL or local).
 func IsM3U(path string) bool {
-	if !IsURL(path) {
-		return false
+	if IsURL(path) {
+		u, err := url.Parse(path)
+		if err != nil {
+			return false
+		}
+		ext := strings.ToLower(filepath.Ext(u.Path))
+		return ext == ".m3u" || ext == ".m3u8"
 	}
-	u, err := url.Parse(path)
-	if err != nil {
-		return false
-	}
-	ext := strings.ToLower(filepath.Ext(u.Path))
+	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".m3u" || ext == ".m3u8"
+}
+
+// IsLocalM3U reports whether the path is a local (non-URL) M3U file.
+func IsLocalM3U(path string) bool {
+	return !IsURL(path) && IsM3U(path)
 }
 
 // IsYTDL reports whether the URL points to a site supported by yt-dlp

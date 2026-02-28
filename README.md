@@ -51,6 +51,45 @@ Play audio directly from URLs or M3U playlists:
 
 For non-seekable HTTP streams, the UI shows `● Streaming` with a static seek bar, and seek keys are silently ignored.
 
+## M3U Playlists
+
+Load local or remote `.m3u`/`.m3u8` files with full EXTINF metadata support:
+
+```sh
+./cliamp ~/radio-stations.m3u
+./cliamp http://radio.example.com/streams.m3u
+./cliamp ~/music.m3u local.mp3   # mix M3U with other files
+```
+
+Titles from `#EXTINF` lines are displayed in the playlist. Relative paths in local M3U files resolve against the file's directory.
+
+## Local Playlists
+
+Create your own playlists as `.toml` files in `~/.config/cliamp/playlists/`:
+
+```toml
+# ~/.config/cliamp/playlists/radio-stations.toml
+
+[[track]]
+path = "http://station-1.com/stream"
+title = "Radio Station 1"
+
+[[track]]
+path = "/home/user/Music/song.mp3"
+title = "My Song"
+artist = "My Artist"
+```
+
+Run `cliamp` without arguments to browse and play your playlists:
+
+```sh
+./cliamp                           # opens playlist browser
+```
+
+Use arrow keys to navigate, Enter to load a playlist. Press `Esc`/`b` during playback to return to the browser and pick another. Press `p` to open the playlist manager — browse playlists, add/remove tracks, and delete playlists.
+
+See [docs/playlists.md](docs/playlists.md) for the full guide.
+
 ## Podcasts
 
 Play any podcast by passing its RSS feed URL:
@@ -157,10 +196,11 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
 | `a` | Toggle queue (play next) |
+| `p` | Playlist manager |
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |
 | `Ctrl+K` | Show keymap |
-| `b` `Esc` | Back to provider (Navidrome) |
+| `b` `Esc` | Back to provider |
 | `q` | Quit |
 
 ## Author

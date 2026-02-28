@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"cliamp/external/local"
 	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
@@ -21,6 +22,14 @@ const (
 	focusEQ
 	focusSearch
 	focusProvider
+)
+
+type plMgrScreenType int
+
+const (
+	plMgrScreenList plMgrScreenType = iota
+	plMgrScreenTracks
+	plMgrScreenNewName
 )
 
 type tickMsg time.Time
@@ -42,6 +51,7 @@ type Model struct {
 	height    int
 
 	provider      playlist.Provider
+	localProvider *local.Provider // direct ref for write operations (add-to-playlist)
 	providerLists []playlist.PlaylistInfo
 	provCursor    int
 	provLoading   bool
@@ -76,28 +86,38 @@ type Model struct {
 	mpris *mpris.Service
 
 	// Theme state: -1 = Default (ANSI), 0+ = index into themes
-	themes       []theme.Theme
-	themeIdx     int
-	showThemes   bool // theme picker overlay visible
-	themeCursor  int  // cursor in theme picker (0 = Default, 1+ = themes[i-1])
-	themeSavedIdx int // themeIdx before opening picker, for cancel/restore
+	themes        []theme.Theme
+	themeIdx      int
+	showThemes    bool // theme picker overlay visible
+	themeCursor   int  // cursor in theme picker (0 = Default, 1+ = themes[i-1])
+	themeSavedIdx int  // themeIdx before opening picker, for cancel/restore
+
+	// Playlist manager overlay (browse, add, remove, delete playlists)
+	showPlManager    bool // overlay visible
+	plMgrScreen      plMgrScreenType
+	plMgrCursor      int
+	plMgrPlaylists   []playlist.PlaylistInfo
+	plMgrSelPlaylist string           // playlist name open in screen 1
+	plMgrTracks      []playlist.Track // tracks in the selected playlist
+	plMgrNewName     string
+	plMgrConfirmDel  bool
 }
 
 // NewModel creates a Model wired to the given player and playlist.
-func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, themes []theme.Theme) Model {
+// localProv is an optional direct reference to the local provider for write ops.
+func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, localProv *local.Provider, themes []theme.Theme) Model {
 	m := Model{
-		player:      p,
-		playlist:    pl,
-		vis:         NewVisualizer(44100),
-		plVisible:   5,
-		eqPresetIdx: -1, // custom until a preset is selected
-		themes:      themes,
-		themeIdx:    -1, // Default (ANSI)
+		player:        p,
+		playlist:      pl,
+		vis:           NewVisualizer(44100),
+		plVisible:     5,
+		eqPresetIdx:   -1, // custom until a preset is selected
+		themes:        themes,
+		themeIdx:      -1, // Default (ANSI)
+		localProvider: localProv,
 	}
 	if prov != nil {
 		m.provider = prov
-		m.focus = focusProvider
-		m.provLoading = true
 	}
 	return m
 }
@@ -164,6 +184,46 @@ func (m *Model) themePickerCancel() {
 		applyTheme(m.themes[m.themeIdx])
 	}
 	m.showThemes = false
+}
+
+// openPlaylistManager loads playlist metadata and opens the manager overlay.
+func (m *Model) openPlaylistManager() {
+	m.plMgrRefreshList()
+	m.plMgrScreen = plMgrScreenList
+	m.plMgrConfirmDel = false
+	m.showPlManager = true
+}
+
+// plMgrEnterTrackList loads the tracks for a playlist and switches to screen 1.
+func (m *Model) plMgrEnterTrackList(name string) {
+	tracks, _ := m.localProvider.Tracks(name)
+	m.plMgrSelPlaylist = name
+	m.plMgrTracks = tracks
+	m.plMgrScreen = plMgrScreenTracks
+	m.plMgrCursor = 0
+	m.plMgrConfirmDel = false
+}
+
+// plMgrRefreshList reloads playlist names and counts from disk and clamps the cursor.
+func (m *Model) plMgrRefreshList() {
+	m.plMgrPlaylists, _ = m.localProvider.Playlists()
+	// +1 for the "+ New Playlist..." entry
+	total := len(m.plMgrPlaylists) + 1
+	if m.plMgrCursor >= total {
+		m.plMgrCursor = total - 1
+	}
+	if m.plMgrCursor < 0 {
+		m.plMgrCursor = 0
+	}
+}
+
+// StartInProvider configures the model to begin in the provider browse view.
+// Call this from main when no CLI tracks or pending URLs were given.
+func (m *Model) StartInProvider() {
+	if m.provider != nil {
+		m.focus = focusProvider
+		m.provLoading = true
+	}
 }
 
 // SetPendingURLs stores remote URLs (feeds, M3U) for async resolution after Init.

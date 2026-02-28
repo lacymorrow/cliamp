@@ -33,6 +33,10 @@ func (m Model) View() string {
 		return m.renderThemePicker()
 	}
 
+	if m.showPlManager {
+		return m.renderPlaylistManager()
+	}
+
 	sections := []string{
 		// Now playing
 		m.renderTitle(),
@@ -76,6 +80,15 @@ func (m Model) View() string {
 		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
 }
 
+// centerOverlay wraps content in a frame and centers it in the terminal.
+func (m Model) centerOverlay(content string) string {
+	frame := frameStyle.Render(content)
+	padLeft := max(0, (m.width-lipgloss.Width(frame))/2)
+	padTop := max(0, (m.height-lipgloss.Height(frame))/2)
+	return strings.Repeat("\n", padTop) +
+		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+}
+
 func (m Model) renderKeymapOverlay() string {
 	keys := []struct{ key, action string }{
 		{"Space", "Play / Pause"},
@@ -92,6 +105,7 @@ func (m Model) renderKeymapOverlay() string {
 		{"h l", "EQ cursor left/right"},
 		{"Enter", "Play selected track"},
 		{"a", "Toggle queue (play next)"},
+		{"p", "Playlist manager"},
 		{"S", "Save track to ~/Music"},
 		{"r", "Cycle repeat"},
 		{"z", "Toggle shuffle"},
@@ -112,16 +126,7 @@ func (m Model) renderKeymapOverlay() string {
 	}
 	lines = append(lines, "", helpStyle.Render("Press any key to close"))
 
-	content := strings.Join(lines, "\n")
-	frame := frameStyle.Render(content)
-
-	frameW := lipgloss.Width(frame)
-	frameH := lipgloss.Height(frame)
-	padLeft := max(0, (m.width-frameW)/2)
-	padTop := max(0, (m.height-frameH)/2)
-
-	return strings.Repeat("\n", padTop) +
-		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+	return m.centerOverlay(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderThemePicker() string {
@@ -159,16 +164,123 @@ func (m Model) renderThemePicker() string {
 
 	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Select [Esc]Cancel"))
 
-	content := strings.Join(lines, "\n")
-	frame := frameStyle.Render(content)
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
 
-	frameW := lipgloss.Width(frame)
-	frameH := lipgloss.Height(frame)
-	padLeft := max(0, (m.width-frameW)/2)
-	padTop := max(0, (m.height-frameH)/2)
+func (m Model) renderPlaylistManager() string {
+	var lines []string
+	switch m.plMgrScreen {
+	case plMgrScreenList:
+		lines = m.renderPlMgrList()
+	case plMgrScreenTracks:
+		lines = m.renderPlMgrTracks()
+	case plMgrScreenNewName:
+		lines = m.renderPlMgrNewName()
+	}
 
-	return strings.Repeat("\n", padTop) +
-		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+	if m.saveMsg != "" {
+		lines = append(lines, "", statusStyle.Render(m.saveMsg))
+	}
+
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderPlMgrList() []string {
+	lines := []string{
+		titleStyle.Render("P L A Y L I S T S"),
+		"",
+	}
+
+	count := len(m.plMgrPlaylists) + 1 // +1 for "+ New Playlist..."
+	maxVisible := 12
+	scroll := 0
+	if m.plMgrCursor >= maxVisible {
+		scroll = m.plMgrCursor - maxVisible + 1
+	}
+
+	for i := scroll; i < count && i < scroll+maxVisible; i++ {
+		var label string
+		if i < len(m.plMgrPlaylists) {
+			pl := m.plMgrPlaylists[i]
+			label = fmt.Sprintf("%s (%d tracks)", pl.Name, pl.TrackCount)
+		} else {
+			label = "+ New Playlist..."
+		}
+
+		if i == m.plMgrCursor {
+			if m.plMgrConfirmDel && i < len(m.plMgrPlaylists) {
+				lines = append(lines, playlistSelectedStyle.Render("> Delete \""+m.plMgrPlaylists[i].Name+"\"? [y/n]"))
+			} else {
+				lines = append(lines, playlistSelectedStyle.Render("> "+label))
+			}
+		} else {
+			lines = append(lines, dimStyle.Render("  "+label))
+		}
+	}
+
+	if count > maxVisible {
+		lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d playlists", m.plMgrCursor+1, count)))
+	}
+
+	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter/→]Open [a]Add track [d]Delete [Esc]Close"))
+
+	return lines
+}
+
+func (m Model) renderPlMgrTracks() []string {
+	title := fmt.Sprintf("P L A Y L I S T : %s", m.plMgrSelPlaylist)
+	lines := []string{
+		titleStyle.Render(title),
+		"",
+	}
+
+	if len(m.plMgrTracks) == 0 {
+		lines = append(lines, dimStyle.Render("  (empty)"))
+		lines = append(lines, "", helpStyle.Render("[a]Add track [Esc]Back"))
+		return lines
+	}
+
+	maxVisible := 12
+	scroll := 0
+	if m.plMgrCursor >= maxVisible {
+		scroll = m.plMgrCursor - maxVisible + 1
+	}
+
+	for i := scroll; i < len(m.plMgrTracks) && i < scroll+maxVisible; i++ {
+		name := m.plMgrTracks[i].DisplayName()
+		maxW := panelWidth - 8
+		nameRunes := []rune(name)
+		if len(nameRunes) > maxW {
+			name = string(nameRunes[:maxW-1]) + "…"
+		}
+		label := fmt.Sprintf("%d. %s", i+1, name)
+
+		if i == m.plMgrCursor {
+			lines = append(lines, playlistSelectedStyle.Render("> "+label))
+		} else {
+			lines = append(lines, dimStyle.Render("  "+label))
+		}
+	}
+
+	if len(m.plMgrTracks) > maxVisible {
+		lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d tracks", m.plMgrCursor+1, len(m.plMgrTracks))))
+	}
+
+	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Play all [a]Add track [d]Remove [Esc]Back"))
+
+	return lines
+}
+
+func (m Model) renderPlMgrNewName() []string {
+	lines := []string{
+		titleStyle.Render("N E W  P L A Y L I S T"),
+		"",
+		dimStyle.Render("  Playlist name:"),
+		playlistSelectedStyle.Render("  " + m.plMgrNewName + "_"),
+		"",
+		helpStyle.Render("[Enter]Create & add track [Esc]Cancel"),
+	}
+	return lines
 }
 
 func (m Model) renderTitle() string {
@@ -349,7 +461,7 @@ func (m Model) renderPlaylist() string {
 			return dimStyle.Render(fmt.Sprintf("  Loading %s...", m.provider.Name()))
 		}
 		if len(m.providerLists) == 0 {
-			return dimStyle.Render("  No playlists found.")
+			return dimStyle.Render("  No playlists found.\n  Add playlists to ~/.config/cliamp/playlists/")
 		}
 
 		visible := min(m.plVisible, len(m.providerLists))
@@ -491,6 +603,9 @@ func (m Model) renderHelp() string {
 
 	if !track.Stream && strings.HasPrefix(track.Path, os.TempDir()) {
 		help += "[S]Save "
+	}
+	if m.localProvider != nil {
+		help += "[p]Playlists "
 	}
 	help += "[+-]Vol [m]Mono [e]EQ [t]Theme [v]Vis [a]Queue [/]Search "
 

@@ -10,6 +10,7 @@ import (
 	"github.com/gopxl/beep/v2"
 
 	"cliamp/config"
+	"cliamp/external/local"
 	"cliamp/external/navidrome"
 	"cliamp/mpris"
 	"cliamp/player"
@@ -25,9 +26,20 @@ func run() error {
 		return fmt.Errorf("config: %w", err)
 	}
 
-	var provider playlist.Provider
+	var navProv playlist.Provider
 	if c := navidrome.NewFromEnv(); c != nil {
-		provider = c
+		navProv = c
+	}
+	localProv := local.New()
+	var localAsProvider playlist.Provider
+	if localProv != nil {
+		if pls, _ := localProv.Playlists(); len(pls) > 0 {
+			localAsProvider = localProv
+		}
+	}
+	var provider playlist.Provider
+	if cp := playlist.NewComposite(navProv, localAsProvider); cp != nil {
+		provider = cp
 	}
 
 	defer resolve.CleanupYTDL()
@@ -41,6 +53,7 @@ func run() error {
 		return errors.New(`usage: cliamp <file|folder|url> [...]
 
   Local files     cliamp track.mp3 song.flac ~/Music
+  Local M3U       cliamp ~/radio-stations.m3u
   HTTP stream     cliamp https://example.com/song.mp3
   Radio / M3U     cliamp http://radio.example.com/stream.m3u
   Podcast feed    cliamp https://example.com/podcast/feed.xml
@@ -49,6 +62,7 @@ func run() error {
   Bandcamp        cliamp https://artist.bandcamp.com/album/...
 
   Navidrome       Set NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
+  Playlists       ~/.config/cliamp/playlists/*.toml
 
 Formats: mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)
 SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
@@ -65,8 +79,11 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 
 	themes := theme.LoadAll()
 
-	m := ui.NewModel(p, pl, provider, themes)
+	m := ui.NewModel(p, pl, provider, localProv, themes)
 	m.SetPendingURLs(resolved.Pending)
+	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 {
+		m.StartInProvider()
+	}
 	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
 		m.SetEQPreset(cfg.EQPreset)
 	}

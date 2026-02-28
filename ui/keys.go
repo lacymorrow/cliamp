@@ -25,6 +25,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleThemeKey(msg)
 	}
 
+	// Playlist manager overlay (browse, add, remove, delete)
+	if m.showPlManager {
+		return m.handlePlaylistManagerKey(msg)
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -200,6 +205,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.prevFocus = m.focus
 		m.focus = focusSearch
 
+	case "p":
+		if m.localProvider != nil {
+			m.openPlaylistManager()
+		}
+
 	case "t":
 		m.openThemePicker()
 
@@ -335,6 +345,200 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	return nil
+}
+
+// handlePlaylistManagerKey dispatches keys to the active manager screen.
+func (m *Model) handlePlaylistManagerKey(msg tea.KeyMsg) tea.Cmd {
+	switch m.plMgrScreen {
+	case plMgrScreenList:
+		return m.handlePlMgrListKey(msg)
+	case plMgrScreenTracks:
+		return m.handlePlMgrTracksKey(msg)
+	case plMgrScreenNewName:
+		return m.handlePlMgrNewNameKey(msg)
+	}
+	return nil
+}
+
+// handlePlMgrListKey handles keys on screen 0 (playlist list).
+func (m *Model) handlePlMgrListKey(msg tea.KeyMsg) tea.Cmd {
+	// If waiting for delete confirmation, only accept y/n.
+	if m.plMgrConfirmDel {
+		switch msg.String() {
+		case "y", "Y":
+			if m.plMgrCursor < len(m.plMgrPlaylists) {
+				name := m.plMgrPlaylists[m.plMgrCursor].Name
+				if err := m.localProvider.DeletePlaylist(name); err != nil {
+					m.saveMsg = fmt.Sprintf("Delete failed: %s", err)
+					m.saveMsgTTL = 60
+				} else {
+					m.saveMsg = fmt.Sprintf("Deleted \"%s\"", name)
+					m.saveMsgTTL = 60
+				}
+				m.plMgrRefreshList()
+			}
+			m.plMgrConfirmDel = false
+		default:
+			m.plMgrConfirmDel = false
+		}
+		return nil
+	}
+
+	count := len(m.plMgrPlaylists) + 1 // +1 for "+ New Playlist..."
+	switch msg.String() {
+	case "ctrl+c":
+		m.showPlManager = false
+		m.player.Close()
+		m.quitting = true
+		return tea.Quit
+	case "up", "k":
+		if m.plMgrCursor > 0 {
+			m.plMgrCursor--
+		}
+	case "down", "j":
+		if m.plMgrCursor < count-1 {
+			m.plMgrCursor++
+		}
+	case "enter", "l", "right":
+		if m.plMgrCursor < len(m.plMgrPlaylists) {
+			m.plMgrEnterTrackList(m.plMgrPlaylists[m.plMgrCursor].Name)
+		} else {
+			// "+ New Playlist..." selected
+			m.plMgrScreen = plMgrScreenNewName
+			m.plMgrNewName = ""
+		}
+	case "a":
+		// Quick-add current track to the highlighted playlist.
+		if m.plMgrCursor < len(m.plMgrPlaylists) {
+			m.addToPlaylist(m.plMgrPlaylists[m.plMgrCursor].Name)
+			m.plMgrRefreshList()
+		}
+	case "d":
+		if m.plMgrCursor < len(m.plMgrPlaylists) {
+			m.plMgrConfirmDel = true
+		}
+	case "esc", "p":
+		m.showPlManager = false
+	}
+	return nil
+}
+
+// handlePlMgrTracksKey handles keys on screen 1 (track list inside a playlist).
+func (m *Model) handlePlMgrTracksKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "ctrl+c":
+		m.showPlManager = false
+		m.player.Close()
+		m.quitting = true
+		return tea.Quit
+	case "up", "k":
+		if m.plMgrCursor > 0 {
+			m.plMgrCursor--
+		}
+	case "down", "j":
+		if m.plMgrCursor < len(m.plMgrTracks)-1 {
+			m.plMgrCursor++
+		}
+	case "enter":
+		// Load all tracks into the player and start playback.
+		if len(m.plMgrTracks) > 0 {
+			m.playlist.Add(m.plMgrTracks...)
+			m.plCursor = m.playlist.Len() - len(m.plMgrTracks)
+			m.playlist.SetIndex(m.plCursor)
+			m.adjustScroll()
+			m.showPlManager = false
+			m.focus = focusPlaylist
+			cmd := m.playCurrentTrack()
+			m.notifyMPRIS()
+			return cmd
+		}
+	case "a":
+		// Add current playing track to this playlist.
+		m.addToPlaylist(m.plMgrSelPlaylist)
+		// Refresh the track list to show the new track.
+		tracks, _ := m.localProvider.Tracks(m.plMgrSelPlaylist)
+		m.plMgrTracks = tracks
+	case "d":
+		// Remove highlighted track.
+		if len(m.plMgrTracks) > 0 && m.plMgrCursor < len(m.plMgrTracks) {
+			err := m.localProvider.RemoveTrack(m.plMgrSelPlaylist, m.plMgrCursor)
+			if err != nil {
+				m.saveMsg = fmt.Sprintf("Remove failed: %s", err)
+				m.saveMsgTTL = 60
+			} else {
+				m.saveMsg = "Track removed"
+				m.saveMsgTTL = 60
+			}
+			// Reload tracks (or go back if playlist was deleted).
+			tracks, err := m.localProvider.Tracks(m.plMgrSelPlaylist)
+			if err != nil || len(tracks) == 0 {
+				// Playlist was auto-deleted (empty). Return to list.
+				m.plMgrRefreshList()
+				m.plMgrScreen = plMgrScreenList
+				m.plMgrCursor = 0
+				return nil
+			}
+			m.plMgrTracks = tracks
+			if m.plMgrCursor >= len(m.plMgrTracks) {
+				m.plMgrCursor = len(m.plMgrTracks) - 1
+			}
+		}
+	case "esc", "backspace", "h", "left":
+		// Go back to playlist list.
+		m.plMgrRefreshList()
+		m.plMgrScreen = plMgrScreenList
+		// Try to position cursor on the playlist we just left.
+		for i, pl := range m.plMgrPlaylists {
+			if pl.Name == m.plMgrSelPlaylist {
+				m.plMgrCursor = i
+				break
+			}
+		}
+		m.plMgrConfirmDel = false
+	}
+	return nil
+}
+
+// handlePlMgrNewNameKey handles keys on screen 2 (new playlist name input).
+func (m *Model) handlePlMgrNewNameKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.plMgrScreen = plMgrScreenList
+	case tea.KeyEnter:
+		name := strings.TrimSpace(m.plMgrNewName)
+		if name != "" {
+			m.addToPlaylist(name)
+			m.plMgrRefreshList()
+			m.plMgrScreen = plMgrScreenList
+		}
+	case tea.KeyBackspace:
+		if len(m.plMgrNewName) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.plMgrNewName)
+			m.plMgrNewName = m.plMgrNewName[:len(m.plMgrNewName)-size]
+		}
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.plMgrNewName += string(msg.Runes)
+		}
+	}
+	return nil
+}
+
+// addToPlaylist appends the current track to a local playlist and shows a status message.
+func (m *Model) addToPlaylist(name string) {
+	track, idx := m.playlist.Current()
+	if idx < 0 {
+		m.saveMsg = "No track to add"
+		m.saveMsgTTL = 40
+		return
+	}
+	if err := m.localProvider.AddTrack(name, track); err != nil {
+		m.saveMsg = fmt.Sprintf("Failed: %s", err)
+		m.saveMsgTTL = 60
+		return
+	}
+	m.saveMsg = fmt.Sprintf("Added to \"%s\"", name)
+	m.saveMsgTTL = 60 // ~3s
 }
 
 // handleThemeKey processes key presses while the theme picker is open.
