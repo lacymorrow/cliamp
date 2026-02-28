@@ -18,9 +18,10 @@ const (
 type VisMode int
 
 const (
-	VisBars   VisMode = iota // smooth fractional blocks
-	VisBricks                // solid bricks with gaps
-	visCount                 // sentinel for cycling
+	VisBars    VisMode = iota // smooth fractional blocks
+	VisBricks                 // solid bricks with gaps
+	VisColumns                // many thin columns
+	visCount                  // sentinel for cycling
 )
 
 // Unicode block elements for bar height (9 levels including space)
@@ -62,6 +63,8 @@ func (v *Visualizer) ModeName() string {
 	switch v.Mode {
 	case VisBricks:
 		return "Bricks"
+	case VisColumns:
+		return "Columns"
 	default:
 		return "Bars"
 	}
@@ -139,6 +142,8 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 	switch v.Mode {
 	case VisBricks:
 		return v.renderBricks(bands)
+	case VisColumns:
+		return v.renderColumns(bands)
 	default:
 		return v.renderBars(bands)
 	}
@@ -209,6 +214,63 @@ func (v *Visualizer) renderBricks(bands [numBands]float64) string {
 				sb.WriteString(blank)
 			}
 			if i < numBands-1 {
+				sb.WriteString(pad)
+			}
+		}
+		lines[row] = sb.String()
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderColumns draws many thin single-character-wide columns, interpolating
+// between bands so adjacent columns vary slightly for a dense, organic look.
+func (v *Visualizer) renderColumns(bands [numBands]float64) string {
+	const (
+		height  = 5
+		colsPer = 5 // thin columns per band
+		gap     = 1 // space between band groups
+	)
+
+	// Build per-column levels by interpolating between neighboring bands.
+	totalCols := numBands * colsPer
+	cols := make([]float64, totalCols)
+	for b, level := range bands {
+		nextLevel := level
+		if b+1 < numBands {
+			nextLevel = bands[b+1]
+		}
+		for c := range colsPer {
+			t := float64(c) / float64(colsPer)
+			cols[b*colsPer+c] = level*(1-t) + nextLevel*t
+		}
+	}
+
+	lines := make([]string, height)
+	pad := strings.Repeat(" ", gap)
+
+	for row := range height {
+		var sb strings.Builder
+		rowBottom := float64(height-1-row) / float64(height)
+		rowTop := float64(height-row) / float64(height)
+
+		for b := range numBands {
+			for c := range colsPer {
+				level := cols[b*colsPer+c]
+				var block string
+				if level >= rowTop {
+					block = "█"
+				} else if level > rowBottom {
+					frac := (level - rowBottom) / (rowTop - rowBottom)
+					idx := int(frac * float64(len(barBlocks)-1))
+					idx = max(0, min(idx, len(barBlocks)-1))
+					block = barBlocks[idx]
+				} else {
+					block = " "
+				}
+				sb.WriteString(specStyle(rowBottom).Render(block))
+			}
+			if b < numBands-1 {
 				sb.WriteString(pad)
 			}
 		}
