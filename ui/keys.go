@@ -301,6 +301,13 @@ func copyFile(src, dst string) error {
 
 // handleSearchKey processes key presses while in search mode.
 func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
+	// Allow opening overlays during search (ctrl combos don't conflict with text input).
+	switch msg.String() {
+	case "ctrl+k":
+		m.showKeymap = true
+		return nil
+	}
+
 	switch msg.Type {
 	case tea.KeyEscape:
 		m.searching = false

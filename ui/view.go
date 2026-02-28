@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"cliamp/playlist"
 	"cliamp/theme"
 )
 
@@ -35,6 +34,10 @@ func (m Model) View() string {
 
 	if m.showPlManager {
 		return m.renderPlaylistManager()
+	}
+
+	if m.searching {
+		return m.renderSearchOverlay()
 	}
 
 	sections := []string{
@@ -488,10 +491,6 @@ func (m Model) renderPlaylist() string {
 		return dimStyle.Render("  No tracks loaded")
 	}
 
-	if m.searching {
-		return m.renderSearchResults(tracks)
-	}
-
 	currentIdx := m.playlist.Index()
 	visible := min(m.plVisible, len(tracks))
 
@@ -538,57 +537,70 @@ func (m Model) renderPlaylist() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderSearchResults(tracks []playlist.Track) string {
+func (m Model) renderSearchOverlay() string {
+	lines := []string{
+		titleStyle.Render("S E A R C H"),
+		"",
+		playlistSelectedStyle.Render("  / " + m.searchQuery + "_"),
+		"",
+	}
+
+	tracks := m.playlist.Tracks()
+	maxVisible := 12
+	rendered := 0
+
 	if len(m.searchResults) == 0 {
 		if m.searchQuery != "" {
-			return dimStyle.Render("  No matches")
+			lines = append(lines, dimStyle.Render("  No matches"))
+		} else {
+			lines = append(lines, dimStyle.Render("  Type to search…"))
 		}
-		return dimStyle.Render("  Type to search…")
+		rendered = 1
+	} else {
+		currentIdx := m.playlist.Index()
+		scroll := 0
+		if m.searchCursor >= maxVisible {
+			scroll = m.searchCursor - maxVisible + 1
+		}
+
+		for j := scroll; j < scroll+maxVisible && j < len(m.searchResults); j++ {
+			i := m.searchResults[j]
+			prefix := "  "
+			style := dimStyle
+
+			if i == currentIdx && m.player.IsPlaying() {
+				prefix = "▶ "
+				style = playlistActiveStyle
+			}
+
+			if j == m.searchCursor {
+				style = playlistSelectedStyle
+			}
+
+			name := tracks[i].DisplayName()
+			maxW := panelWidth - 8
+			nameRunes := []rune(name)
+			if len(nameRunes) > maxW {
+				name = string(nameRunes[:maxW-1]) + "…"
+			}
+
+			lines = append(lines, style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name)))
+			rendered++
+		}
 	}
 
-	currentIdx := m.playlist.Index()
-	visible := min(m.plVisible, len(m.searchResults))
-
-	// Scroll the search results so the cursor is always visible
-	scroll := 0
-	if m.searchCursor >= visible {
-		scroll = m.searchCursor - visible + 1
+	// Pad to fixed height so the overlay doesn't shift.
+	for range maxVisible - rendered {
+		lines = append(lines, "")
 	}
 
-	lines := make([]string, 0, visible)
-	for j := scroll; j < scroll+visible && j < len(m.searchResults); j++ {
-		i := m.searchResults[j]
-		prefix := "  "
-		style := playlistItemStyle
+	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d found", len(m.searchResults))))
+	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Enter]Play [Ctrl+K]Keymap [Esc]Close"))
 
-		if i == currentIdx && m.player.IsPlaying() {
-			prefix = "▶ "
-			style = playlistActiveStyle
-		}
-
-		if j == m.searchCursor {
-			style = playlistSelectedStyle
-		}
-
-		name := tracks[i].DisplayName()
-		maxW := panelWidth - 6
-		nameRunes := []rune(name)
-		if len(nameRunes) > maxW {
-			name = string(nameRunes[:maxW-1]) + "…"
-		}
-
-		lines = append(lines, style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name)))
-	}
-
-	return strings.Join(lines, "\n")
+	return m.centerOverlay(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderHelp() string {
-	if m.searching {
-		query := m.searchQuery
-		count := len(m.searchResults)
-		return helpStyle.Render(fmt.Sprintf("/ %s  (%d found)  [↑↓]Navigate [Enter]Play [Esc]Cancel", query, count))
-	}
 	if m.focus == focusProvider {
 		return helpStyle.Render("[↑↓]Navigate  [Enter]Load Playlist  [Tab]Focus  [Q]Quit")
 	}
