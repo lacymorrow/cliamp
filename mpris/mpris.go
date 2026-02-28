@@ -17,19 +17,23 @@ import (
 
 // Message types injected into the Bubbletea event loop.
 type (
-	PlayPauseMsg struct{}
-	NextMsg      struct{}
-	PrevMsg      struct{}
-	StopMsg      struct{}
-	QuitMsg      struct{}
-	SeekMsg      struct{ Offset int64 } // microseconds (relative)
-	InitMsg      struct{ Svc *Service }
+	PlayPauseMsg   struct{}
+	NextMsg        struct{}
+	PrevMsg        struct{}
+	StopMsg        struct{}
+	QuitMsg        struct{}
+	SeekMsg        struct{ Offset int64 }   // microseconds (relative)
+	SetPositionMsg struct{ Position int64 } // microseconds (absolute)
+	SetVolumeMsg   struct{ Volume float64 } // linear 0.0–1.0
+	InitMsg        struct{ Svc *Service }
 )
 
 // TrackInfo carries metadata for the currently playing track.
 type TrackInfo struct {
 	Title  string
 	Artist string
+	Album  string
+	URL    string
 	Length int64 // microseconds
 }
 
@@ -39,6 +43,16 @@ type Service struct {
 	props *prop.Properties
 	send  func(interface{})
 	mu    sync.Mutex
+
+	// Cached values from the last Update call.  We compare against
+	// these instead of reading back from the prop library, because
+	// D-Bus clients can write Volume between ticks, and reading the
+	// prop value would cause Update to overwrite the D-Bus change
+	// before the event loop handles it.
+	lastStatus  string
+	lastTrack   TrackInfo
+	lastVol     float64
+	lastCanSeek bool
 }
 
 // introspection XML for the two MPRIS interfaces.
@@ -56,6 +70,7 @@ const introspectXML = `
     <method name="Stop"/>
     <method name="Play"/>
     <method name="Seek"><arg direction="in" type="x"/></method>
+    <method name="SetPosition"><arg direction="in" type="o"/><arg direction="in" type="x"/></method>
     <signal name="Seeked"><arg type="x"/></signal>
   </interface>
 ` + introspect.IntrospectDataString + `</node>`
@@ -107,6 +122,11 @@ func (p playerIface) Seek(offset int64) *dbus.Error {
 	return nil
 }
 
+func (p playerIface) SetPosition(trackID dbus.ObjectPath, position int64) *dbus.Error {
+	p.svc.send(SetPositionMsg{Position: position})
+	return nil
+}
+
 // New connects to the session D-Bus, claims the MPRIS bus name, and
 // exports the two required interfaces. send is used to inject messages
 // into the Bubbletea event loop (typically prog.Send).
@@ -147,7 +167,25 @@ func New(send func(interface{})) (*Service, error) {
 		"org.mpris.MediaPlayer2.Player": {
 			"PlaybackStatus": {Value: "Stopped", Writable: false, Emit: prop.EmitTrue},
 			"Metadata":       {Value: makeMetadata(TrackInfo{}), Writable: false, Emit: prop.EmitTrue},
-			"Volume":         {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
+			"Volume": {Value: 1.0, Writable: true, Emit: prop.EmitTrue, Callback: func(c *prop.Change) *dbus.Error {
+				v, ok := c.Value.(float64)
+				if !ok {
+					return nil
+				}
+				if v < 0 {
+					v = 0
+				}
+				if v > 1 {
+					v = 1
+				}
+				// Must use a goroutine: this callback runs inside
+				// Properties.Set which holds p.mut.  prog.Send blocks
+				// on an unbuffered channel until the event loop reads,
+				// but the event loop may be in Update→SetMust waiting
+				// for p.mut — deadlock without the goroutine.
+				go svc.send(SetVolumeMsg{Volume: v})
+				return nil
+			}},
 			"Position":       {Value: int64(0), Writable: false, Emit: prop.EmitFalse},
 			"Rate":           {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
 			"MinimumRate":    {Value: 1.0, Writable: false, Emit: prop.EmitTrue},
@@ -176,6 +214,10 @@ func New(send func(interface{})) (*Service, error) {
 // current volume in decibels (range [-30, +6]). positionUs is
 // the current playback position in microseconds. canSeek indicates
 // whether the current track supports seeking.
+//
+// We use SetMust (not Set) because Set rejects writes on read-only
+// properties and triggers callbacks on writable ones — both wrong
+// for internal updates.
 func (s *Service) Update(status string, track TrackInfo, volumeDB float64, positionUs int64, canSeek bool) {
 	if s == nil {
 		return
@@ -188,36 +230,28 @@ func (s *Service) Update(status string, track TrackInfo, volumeDB float64, posit
 
 	iface := "org.mpris.MediaPlayer2.Player"
 
-	changed := make(map[string]dbus.Variant)
-
-	if cur, err := s.props.Get(iface, "PlaybackStatus"); err == nil {
-		if cur.Value() != status {
-			s.props.Set(iface, "PlaybackStatus", dbus.MakeVariant(status))
-			changed["PlaybackStatus"] = dbus.MakeVariant(status)
-		}
+	if status != s.lastStatus {
+		s.props.SetMust(iface, "PlaybackStatus", status)
+		s.lastStatus = status
 	}
 
-	meta := makeMetadata(track)
-	s.props.Set(iface, "Metadata", dbus.MakeVariant(meta))
-	changed["Metadata"] = dbus.MakeVariant(meta)
+	if track != s.lastTrack {
+		s.props.SetMust(iface, "Metadata", makeMetadata(track))
+		s.lastTrack = track
+	}
 
 	vol := dbToLinear(volumeDB)
-	s.props.Set(iface, "Volume", dbus.MakeVariant(vol))
-	changed["Volume"] = dbus.MakeVariant(vol)
-
-	// Position uses EmitFalse — update silently (clients poll or use Seeked signal).
-	s.props.Set(iface, "Position", dbus.MakeVariant(positionUs))
-
-	// Only emit CanSeek change if the value actually changed.
-	if cur, err := s.props.Get(iface, "CanSeek"); err == nil {
-		if cur.Value() != canSeek {
-			s.props.Set(iface, "CanSeek", dbus.MakeVariant(canSeek))
-			changed["CanSeek"] = dbus.MakeVariant(canSeek)
-		}
+	if vol != s.lastVol {
+		s.props.SetMust(iface, "Volume", vol)
+		s.lastVol = vol
 	}
 
-	if len(changed) > 0 {
-		s.emitPropertiesChanged(iface, changed)
+	// Position uses EmitFalse — update silently (clients poll or use Seeked signal).
+	s.props.SetMust(iface, "Position", positionUs)
+
+	if canSeek != s.lastCanSeek {
+		s.props.SetMust(iface, "CanSeek", canSeek)
+		s.lastCanSeek = canSeek
 	}
 }
 
@@ -251,17 +285,6 @@ func (s *Service) Close() {
 	}
 }
 
-// emitPropertiesChanged sends the standard D-Bus PropertiesChanged signal.
-func (s *Service) emitPropertiesChanged(iface string, changed map[string]dbus.Variant) {
-	s.conn.Emit(
-		dbus.ObjectPath("/org/mpris/MediaPlayer2"),
-		"org.freedesktop.DBus.Properties.PropertiesChanged",
-		iface,
-		changed,
-		[]string{},
-	)
-}
-
 // makeMetadata builds an MPRIS metadata map from TrackInfo.
 func makeMetadata(t TrackInfo) map[string]dbus.Variant {
 	m := map[string]dbus.Variant{
@@ -272,6 +295,12 @@ func makeMetadata(t TrackInfo) map[string]dbus.Variant {
 	}
 	if t.Artist != "" {
 		m["xesam:artist"] = dbus.MakeVariant([]string{t.Artist})
+	}
+	if t.Album != "" {
+		m["xesam:album"] = dbus.MakeVariant(t.Album)
+	}
+	if t.URL != "" {
+		m["xesam:url"] = dbus.MakeVariant(t.URL)
 	}
 	if t.Length > 0 {
 		m["mpris:length"] = dbus.MakeVariant(t.Length)
@@ -289,4 +318,20 @@ func dbToLinear(db float64) float64 {
 		return 1.0
 	}
 	return math.Pow(10, db/20) / math.Pow(10, 6.0/20)
+}
+
+// LinearToDb converts a 0.0–1.0 linear volume to dB (range [-30, +6]).
+// This is the inverse of dbToLinear.
+func LinearToDb(v float64) float64 {
+	if v <= 0 {
+		return -30
+	}
+	if v >= 1 {
+		return 6
+	}
+	db := 20*math.Log10(v) + 6
+	if db < -30 {
+		return -30
+	}
+	return db
 }

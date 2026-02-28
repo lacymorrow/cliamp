@@ -494,6 +494,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case mpris.SetPositionMsg:
+		pos := time.Duration(msg.Position) * time.Microsecond
+		m.player.Seek(pos - m.player.Position())
+		m.notifyMPRIS()
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+		return m, nil
+
+	case mpris.SetVolumeMsg:
+		m.player.SetVolume(mpris.LinearToDb(msg.Volume))
+		m.notifyMPRIS()
+		return m, nil
+
 	case mpris.StopMsg:
 		m.player.Stop()
 		m.notifyMPRIS()
@@ -617,6 +631,8 @@ func (m *Model) notifyMPRIS() {
 	info := mpris.TrackInfo{
 		Title:  track.Title,
 		Artist: track.Artist,
+		Album:  track.Album,
+		URL:    track.Path,
 		Length: m.player.Duration().Microseconds(),
 	}
 	// Override with ICY stream title for radio streams (format: "Artist - Title").
