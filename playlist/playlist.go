@@ -318,6 +318,25 @@ func (p *Playlist) QueuePosition(trackIdx int) int {
 // QueueLen returns the number of tracks in the queue.
 func (p *Playlist) QueueLen() int { return len(p.queue) }
 
+// QueueTracks returns copies of the tracks in queue order.
+func (p *Playlist) QueueTracks() []Track {
+	out := make([]Track, len(p.queue))
+	for i, idx := range p.queue {
+		out[i] = p.tracks[idx]
+	}
+	return out
+}
+
+// ClearQueue removes all entries from the play-next queue.
+func (p *Playlist) ClearQueue() { p.queue = nil }
+
+// RemoveQueueAt removes the entry at the given 0-based queue position.
+func (p *Playlist) RemoveQueueAt(pos int) {
+	if pos >= 0 && pos < len(p.queue) {
+		p.queue = slices.Delete(p.queue, pos, pos+1)
+	}
+}
+
 // SetTrack replaces the track at index i.
 func (p *Playlist) SetTrack(i int, t Track) {
 	if i >= 0 && i < len(p.tracks) {

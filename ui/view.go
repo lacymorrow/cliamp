@@ -36,6 +36,10 @@ func (m Model) View() string {
 		return m.renderPlaylistManager()
 	}
 
+	if m.showQueue {
+		return m.renderQueueOverlay()
+	}
+
 	if m.searching {
 		return m.renderSearchOverlay()
 	}
@@ -108,6 +112,7 @@ func (m Model) renderKeymapOverlay() string {
 		{"h l", "EQ cursor left/right"},
 		{"Enter", "Play selected track"},
 		{"a", "Toggle queue (play next)"},
+		{"A", "Queue manager"},
 		{"p", "Playlist manager"},
 		{"S", "Save track to ~/Music"},
 		{"r", "Cycle repeat"},
@@ -184,6 +189,54 @@ func (m Model) renderPlaylistManager() string {
 	if m.saveMsg != "" {
 		lines = append(lines, "", statusStyle.Render(m.saveMsg))
 	}
+
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderQueueOverlay() string {
+	lines := []string{
+		titleStyle.Render("Q U E U E"),
+		"",
+	}
+
+	tracks := m.playlist.QueueTracks()
+	maxVisible := 12
+	rendered := 0
+
+	if len(tracks) == 0 {
+		lines = append(lines, dimStyle.Render("  (empty)"))
+		rendered = 1
+	} else {
+		scroll := 0
+		if m.queueCursor >= maxVisible {
+			scroll = m.queueCursor - maxVisible + 1
+		}
+
+		for i := scroll; i < len(tracks) && i < scroll+maxVisible; i++ {
+			name := tracks[i].DisplayName()
+			maxW := panelWidth - 8
+			nameRunes := []rune(name)
+			if len(nameRunes) > maxW {
+				name = string(nameRunes[:maxW-1]) + "…"
+			}
+			label := fmt.Sprintf("%d. %s", i+1, name)
+
+			if i == m.queueCursor {
+				lines = append(lines, playlistSelectedStyle.Render("> "+label))
+			} else {
+				lines = append(lines, dimStyle.Render("  "+label))
+			}
+			rendered++
+		}
+	}
+
+	// Pad to fixed height so the overlay doesn't shift.
+	for range maxVisible - rendered {
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d queued", len(tracks))))
+	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [d]Remove [c]Clear [Esc]Close"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }

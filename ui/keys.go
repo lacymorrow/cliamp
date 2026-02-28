@@ -30,6 +30,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handlePlaylistManagerKey(msg)
 	}
 
+	// Queue manager overlay
+	if m.showQueue {
+		return m.handleQueueKey(msg)
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -189,6 +194,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if !m.playlist.Dequeue(m.plCursor) {
 				m.playlist.Queue(m.plCursor)
 			}
+		}
+
+	case "A":
+		if m.focus == focusPlaylist {
+			m.showQueue = true
+			m.queueCursor = 0
 		}
 
 	case "S":
@@ -571,6 +582,42 @@ func (m *Model) handleThemeKey(msg tea.KeyMsg) tea.Cmd {
 		m.themePickerSelect()
 	case "esc", "q", "t":
 		m.themePickerCancel()
+	}
+	return nil
+}
+
+// handleQueueKey processes key presses while the queue manager overlay is open.
+func (m *Model) handleQueueKey(msg tea.KeyMsg) tea.Cmd {
+	qLen := m.playlist.QueueLen()
+
+	switch msg.String() {
+	case "ctrl+c":
+		m.showQueue = false
+		m.player.Close()
+		m.quitting = true
+		return tea.Quit
+	case "ctrl+k":
+		m.showKeymap = true
+	case "up", "k":
+		if m.queueCursor > 0 {
+			m.queueCursor--
+		}
+	case "down", "j":
+		if m.queueCursor < qLen-1 {
+			m.queueCursor++
+		}
+	case "d":
+		if qLen > 0 {
+			m.playlist.RemoveQueueAt(m.queueCursor)
+			if m.queueCursor >= m.playlist.QueueLen() && m.queueCursor > 0 {
+				m.queueCursor--
+			}
+		}
+	case "c":
+		m.playlist.ClearQueue()
+		m.showQueue = false
+	case "esc", "A":
+		m.showQueue = false
 	}
 	return nil
 }
