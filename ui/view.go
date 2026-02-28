@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -97,42 +96,57 @@ func (m Model) centerOverlay(content string) string {
 }
 
 func (m Model) renderKeymapOverlay() string {
-	keys := []struct{ key, action string }{
-		{"Space", "Play / Pause"},
-		{"s", "Stop"},
-		{"> .", "Next track"},
-		{"< ,", "Previous track"},
-		{"← →", "Seek ±5s"},
-		{"+ -", "Volume up/down"},
-		{"m", "Toggle mono"},
-		{"e", "Cycle EQ preset"},
-		{"t", "Choose theme"},
-		{"v", "Cycle visualizer"},
-		{"↑ ↓", "Playlist scroll / EQ adjust"},
-		{"h l", "EQ cursor left/right"},
-		{"Enter", "Play selected track"},
-		{"a", "Toggle queue (play next)"},
-		{"A", "Queue manager"},
-		{"p", "Playlist manager"},
-		{"S", "Save track to ~/Music"},
-		{"r", "Cycle repeat"},
-		{"z", "Toggle shuffle"},
-		{"/", "Search playlist"},
-		{"Tab", "Toggle focus"},
-		{"Esc", "Back to provider"},
-		{"Ctrl+K", "This keymap"},
-		{"q", "Quit"},
-	}
-
 	lines := []string{
 		titleStyle.Render("K E Y M A P"),
 		"",
 	}
-	for _, k := range keys {
-		line := fmt.Sprintf("  %-10s %s", k.key, k.action)
-		lines = append(lines, dimStyle.Render(line))
+
+	if m.keymapSearch != "" {
+		lines = append(lines, playlistSelectedStyle.Render("  / "+m.keymapSearch+"_"), "")
+	} else {
+		lines = append(lines, dimStyle.Render("  Type to filter…"), "")
 	}
-	lines = append(lines, "", helpStyle.Render("Press any key to close"))
+
+	// Build visible entries (filtered or all).
+	entries := keymapEntries
+	var visible []keymapEntry
+	if m.keymapSearch != "" {
+		for _, i := range m.keymapFiltered {
+			visible = append(visible, entries[i])
+		}
+	} else {
+		visible = entries
+	}
+
+	maxVisible := 12
+	rendered := 0
+
+	if len(visible) == 0 {
+		lines = append(lines, dimStyle.Render("  No matches"))
+		rendered = 1
+	} else {
+		scroll := 0
+		if m.keymapCursor >= maxVisible {
+			scroll = m.keymapCursor - maxVisible + 1
+		}
+
+		for i := scroll; i < len(visible) && i < scroll+maxVisible; i++ {
+			line := fmt.Sprintf("%-10s %s", visible[i].key, visible[i].action)
+			if i == m.keymapCursor {
+				lines = append(lines, playlistSelectedStyle.Render("> "+line))
+			} else {
+				lines = append(lines, dimStyle.Render("  "+line))
+			}
+			rendered++
+		}
+	}
+
+	for range maxVisible - rendered {
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d/%d keys", len(visible), len(entries))))
+	lines = append(lines, "", helpStyle.Render("[↑↓]Navigate [Type]Filter [Esc]Close"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
@@ -655,31 +669,17 @@ func (m Model) renderSearchOverlay() string {
 
 func (m Model) renderHelp() string {
 	if m.focus == focusProvider {
-		return helpStyle.Render("[↑↓]Navigate  [Enter]Load Playlist  [Tab]Focus  [Q]Quit")
+		return helpStyle.Render("[↑↓]Navigate [Enter]Load [Tab]Focus [Q]Quit")
 	}
 
-	help := "[Spc]⏯  [<>]Trk "
+	help := "[Spc]⏯ [<>]Trk "
 
-	// Hide seek hint for non-seekable streams
 	track, _ := m.playlist.Current()
 	if !track.Stream || m.player.Seekable() {
 		help += "[←→]Seek "
 	}
 
-	if !track.Stream && strings.HasPrefix(track.Path, os.TempDir()) {
-		help += "[S]Save "
-	}
-	if m.localProvider != nil {
-		help += "[p]Playlists "
-	}
-	help += "[+-]Vol [m]Mono [e]EQ [t]Theme [v]Vis [a]Queue [/]Search "
-
-	// Conditionally show the back button if a provider is configured
-	if m.provider != nil {
-		help += "[Esc]Back "
-	}
-
-	help += "[Tab]Focus [Q]Quit"
+	help += "[+-]Vol [/]Search [a]Queue [Tab]Focus [Ctrl+K]Keys [Q]Quit"
 
 	return helpStyle.Render(help)
 }

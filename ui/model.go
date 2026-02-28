@@ -59,7 +59,10 @@ type Model struct {
 	eqPresetIdx int
 
 	// Keymap overlay
-	showKeymap bool
+	showKeymap     bool
+	keymapCursor   int
+	keymapSearch   string
+	keymapFiltered []int // indices into keymapEntries
 
 	// Search mode state
 	searching     bool

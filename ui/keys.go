@@ -14,10 +14,8 @@ import (
 
 // handleKey processes a single key press and returns an optional command.
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
-	// Dismiss keymap overlay on any key
 	if m.showKeymap {
-		m.showKeymap = false
-		return nil
+		return m.handleKeymapKey(msg)
 	}
 
 	// Theme picker overlay — interactive navigation
@@ -620,4 +618,94 @@ func (m *Model) handleQueueKey(msg tea.KeyMsg) tea.Cmd {
 		m.showQueue = false
 	}
 	return nil
+}
+
+// keymapEntry is a key-action pair for the keymap overlay.
+type keymapEntry struct{ key, action string }
+
+// keymapEntries is the full list of keybindings shown in the keymap overlay.
+var keymapEntries = []keymapEntry{
+	{"Space", "Play / Pause"},
+	{"s", "Stop"},
+	{"> .", "Next track"},
+	{"< ,", "Previous track"},
+	{"← →", "Seek ±5s"},
+	{"+ -", "Volume up/down"},
+	{"m", "Toggle mono"},
+	{"e", "Cycle EQ preset"},
+	{"t", "Choose theme"},
+	{"v", "Cycle visualizer"},
+	{"↑ ↓", "Playlist scroll / EQ adjust"},
+	{"h l", "EQ cursor left/right"},
+	{"Enter", "Play selected track"},
+	{"a", "Toggle queue (play next)"},
+	{"A", "Queue manager"},
+	{"p", "Playlist manager"},
+	{"S", "Save track to ~/Music"},
+	{"r", "Cycle repeat"},
+	{"z", "Toggle shuffle"},
+	{"/", "Search playlist"},
+	{"Tab", "Toggle focus"},
+	{"Esc", "Back to provider"},
+	{"Ctrl+K", "This keymap"},
+	{"q", "Quit"},
+}
+
+// handleKeymapKey processes key presses while the keymap overlay is open.
+func (m *Model) handleKeymapKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.showKeymap = false
+		m.keymapSearch = ""
+		m.keymapFiltered = nil
+		m.keymapCursor = 0
+	case tea.KeyUp:
+		if m.keymapCursor > 0 {
+			m.keymapCursor--
+		}
+	case tea.KeyDown:
+		count := len(keymapEntries)
+		if m.keymapSearch != "" {
+			count = len(m.keymapFiltered)
+		}
+		if m.keymapCursor < count-1 {
+			m.keymapCursor++
+		}
+	case tea.KeyBackspace:
+		if len(m.keymapSearch) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.keymapSearch)
+			m.keymapSearch = m.keymapSearch[:len(m.keymapSearch)-size]
+			m.updateKeymapFilter()
+		}
+	default:
+		switch msg.String() {
+		case "ctrl+c":
+			m.showKeymap = false
+			m.player.Close()
+			m.quitting = true
+			return tea.Quit
+		default:
+			if msg.Type == tea.KeyRunes {
+				m.keymapSearch += string(msg.Runes)
+				m.updateKeymapFilter()
+			}
+		}
+	}
+	return nil
+}
+
+// updateKeymapFilter rebuilds the filtered indices and clamps the cursor.
+func (m *Model) updateKeymapFilter() {
+	m.keymapFiltered = nil
+	m.keymapCursor = 0
+	if m.keymapSearch == "" {
+		return
+	}
+	query := strings.ToLower(m.keymapSearch)
+	for i, e := range keymapEntries {
+		if strings.Contains(strings.ToLower(e.key), query) ||
+			strings.Contains(strings.ToLower(e.action), query) {
+			m.keymapFiltered = append(m.keymapFiltered, i)
+		}
+	}
 }
