@@ -196,6 +196,7 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
 | `a` | Toggle queue (play next) |
+| `A` | Queue manager |
 | `p` | Playlist manager |
 | `r` | Cycle repeat (Off / All / One) |
 | `z` | Toggle shuffle |

@@ -92,6 +92,10 @@ type Model struct {
 	themeCursor   int  // cursor in theme picker (0 = Default, 1+ = themes[i-1])
 	themeSavedIdx int  // themeIdx before opening picker, for cancel/restore
 
+	// Queue manager overlay
+	showQueue   bool
+	queueCursor int
+
 	// Playlist manager overlay (browse, add, remove, delete playlists)
 	showPlManager    bool // overlay visible
 	plMgrScreen      plMgrScreenType
