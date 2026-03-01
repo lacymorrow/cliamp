@@ -39,6 +39,10 @@ func (m Model) View() string {
 		return m.renderQueueOverlay()
 	}
 
+	if m.showInfo {
+		return m.renderInfoOverlay()
+	}
+
 	if m.searching {
 		return m.renderSearchOverlay()
 	}
@@ -256,6 +260,37 @@ func (m Model) renderQueueOverlay() string {
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
 
+func (m Model) renderInfoOverlay() string {
+	track, _ := m.playlist.Current()
+
+	lines := []string{
+		titleStyle.Render("T R A C K  I N F O"),
+		"",
+	}
+
+	field := func(label, value string) {
+		if value != "" {
+			lines = append(lines, dimStyle.Render("  "+label+": ")+trackStyle.Render(value))
+		}
+	}
+
+	field("Title", track.Title)
+	field("Artist", track.Artist)
+	field("Album", track.Album)
+	field("Genre", track.Genre)
+	if track.Year != 0 {
+		field("Year", fmt.Sprintf("%d", track.Year))
+	}
+	if track.TrackNumber != 0 {
+		field("Track", fmt.Sprintf("%d", track.TrackNumber))
+	}
+	field("Path", track.Path)
+
+	lines = append(lines, "", helpKey("Esc/i", "Close"))
+
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
+
 func (m Model) renderPlMgrList() []string {
 	lines := []string{
 		titleStyle.Render("P L A Y L I S T S"),
@@ -372,21 +407,36 @@ func (m Model) renderTrackInfo() string {
 	maxW := panelWidth - 4
 	runes := []rune(name)
 
+	var titleLine string
 	if len(runes) <= maxW {
-		return trackStyle.Render("♫ " + name)
+		titleLine = trackStyle.Render("♫ " + name)
+	} else {
+		// Cyclic scrolling for long titles
+		sep := []rune("   ♫   ")
+		padded := append(runes, sep...)
+		total := len(padded)
+		off := m.titleOff % total
+
+		display := make([]rune, maxW)
+		for i := range maxW {
+			display[i] = padded[(off+i)%total]
+		}
+		titleLine = trackStyle.Render("♫ " + string(display))
 	}
 
-	// Cyclic scrolling for long titles
-	sep := []rune("   ♫   ")
-	padded := append(runes, sep...)
-	total := len(padded)
-	off := m.titleOff % total
-
-	display := make([]rune, maxW)
-	for i := range maxW {
-		display[i] = padded[(off+i)%total]
+	// Show album subtitle when available.
+	album := track.Album
+	if m.streamTitle != "" && track.Stream {
+		album = "" // no album for live streams
 	}
-	return trackStyle.Render("♫ " + string(display))
+	if album != "" {
+		albumRunes := []rune(album)
+		if len(albumRunes) > maxW {
+			album = string(albumRunes[:maxW-1]) + "…"
+		}
+		return titleLine + "\n" + dimStyle.Render("  "+album)
+	}
+	return titleLine
 }
 
 func (m Model) renderTimeStatus() string {

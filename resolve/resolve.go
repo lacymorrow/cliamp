@@ -68,9 +68,7 @@ func Args(args []string) (Result, error) {
 		}
 	}
 
-	for _, f := range files {
-		r.Tracks = append(r.Tracks, playlist.TrackFromPath(f))
-	}
+	r.Tracks = append(r.Tracks, scanTracks(files)...)
 	return r, nil
 }
 
@@ -134,6 +132,32 @@ func collectAudioFiles(path string) ([]string, error) {
 
 	slices.Sort(files)
 	return files, nil
+}
+
+// scanTracks converts file paths to Tracks concurrently, preserving order.
+func scanTracks(files []string) []playlist.Track {
+	if len(files) == 0 {
+		return nil
+	}
+	tracks := make([]playlist.Track, len(files))
+	workers := min(len(files), 8)
+	var wg sync.WaitGroup
+	ch := make(chan int, len(files))
+	for i := range files {
+		ch <- i
+	}
+	close(ch)
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for i := range ch {
+				tracks[i] = playlist.TrackFromPath(files[i])
+			}
+		}()
+	}
+	wg.Wait()
+	return tracks
 }
 
 // resolveFeed fetches a podcast RSS feed and returns tracks with metadata.

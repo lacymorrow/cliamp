@@ -30,11 +30,13 @@ type (
 
 // TrackInfo carries metadata for the currently playing track.
 type TrackInfo struct {
-	Title  string
-	Artist string
-	Album  string
-	URL    string
-	Length int64 // microseconds
+	Title       string
+	Artist      string
+	Album       string
+	Genre       string
+	TrackNumber int
+	URL         string
+	Length      int64 // microseconds
 }
 
 // Service manages the MPRIS2 D-Bus presence.
@@ -302,6 +304,12 @@ func makeMetadata(t TrackInfo) map[string]dbus.Variant {
 	}
 	if t.Album != "" {
 		m["xesam:album"] = dbus.MakeVariant(t.Album)
+	}
+	if t.Genre != "" {
+		m["xesam:genre"] = dbus.MakeVariant([]string{t.Genre})
+	}
+	if t.TrackNumber > 0 {
+		m["xesam:trackNumber"] = dbus.MakeVariant(t.TrackNumber)
 	}
 	if t.URL != "" {
 		m["xesam:url"] = dbus.MakeVariant(t.URL)

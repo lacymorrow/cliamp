@@ -95,6 +95,9 @@ type Model struct {
 	themeCursor   int  // cursor in theme picker (0 = Default, 1+ = themes[i-1])
 	themeSavedIdx int  // themeIdx before opening picker, for cancel/restore
 
+	// Track info overlay (metadata details)
+	showInfo bool
+
 	// Queue manager overlay
 	showQueue   bool
 	queueCursor int
@@ -633,11 +636,13 @@ func (m *Model) notifyMPRIS() {
 	}
 	track, _ := m.playlist.Current()
 	info := mpris.TrackInfo{
-		Title:  track.Title,
-		Artist: track.Artist,
-		Album:  track.Album,
-		URL:    track.Path,
-		Length: m.player.Duration().Microseconds(),
+		Title:       track.Title,
+		Artist:      track.Artist,
+		Album:       track.Album,
+		Genre:       track.Genre,
+		TrackNumber: track.TrackNumber,
+		URL:         track.Path,
+		Length:      m.player.Duration().Microseconds(),
 	}
 	// Override with ICY stream title for radio streams (format: "Artist - Title").
 	if m.streamTitle != "" && track.Stream {

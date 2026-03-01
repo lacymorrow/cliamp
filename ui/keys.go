@@ -33,6 +33,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleQueueKey(msg)
 	}
 
+	// Track info overlay
+	if m.showInfo {
+		switch msg.String() {
+		case "ctrl+c":
+			m.showInfo = false
+			m.player.Close()
+			m.quitting = true
+			return tea.Quit
+		case "esc", "i":
+			m.showInfo = false
+		}
+		return nil
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -227,6 +241,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "t":
 		m.openThemePicker()
+
+	case "i":
+		m.showInfo = true
 
 	case "v":
 		m.vis.CycleMode()
@@ -664,6 +681,7 @@ var keymapEntries = []keymapEntry{
 	{"a", "Toggle queue (play next)"},
 	{"A", "Queue manager"},
 	{"p", "Playlist manager"},
+	{"i", "Track info / metadata"},
 	{"S", "Save track to ~/Music"},
 	{"r", "Cycle repeat"},
 	{"z", "Toggle shuffle"},

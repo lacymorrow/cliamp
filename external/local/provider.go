@@ -142,6 +142,18 @@ func writeTrack(w io.Writer, t playlist.Track) {
 	if t.Artist != "" {
 		fmt.Fprintf(w, "artist = %q\n", t.Artist)
 	}
+	if t.Album != "" {
+		fmt.Fprintf(w, "album = %q\n", t.Album)
+	}
+	if t.Genre != "" {
+		fmt.Fprintf(w, "genre = %q\n", t.Genre)
+	}
+	if t.Year != 0 {
+		fmt.Fprintf(w, "year = %d\n", t.Year)
+	}
+	if t.TrackNumber != 0 {
+		fmt.Fprintf(w, "track_number = %d\n", t.TrackNumber)
+	}
 }
 
 // loadTOML parses a minimal TOML file with [[track]] sections.
@@ -193,6 +205,18 @@ func (p *Provider) loadTOML(path string) ([]playlist.Track, error) {
 			current.Title = val
 		case "artist":
 			current.Artist = val
+		case "album":
+			current.Album = val
+		case "genre":
+			current.Genre = val
+		case "year":
+			if n, err := strconv.Atoi(val); err == nil {
+				current.Year = n
+			}
+		case "track_number":
+			if n, err := strconv.Atoi(val); err == nil {
+				current.TrackNumber = n
+			}
 		}
 	}
 	if current != nil {

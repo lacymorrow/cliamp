@@ -31,11 +31,14 @@ func (r RepeatMode) String() string {
 
 // Track represents a single audio file or HTTP stream.
 type Track struct {
-	Path   string
-	Title  string
-	Artist string
-	Album  string
-	Stream bool // true for HTTP/HTTPS URLs
+	Path        string
+	Title       string
+	Artist      string
+	Album       string
+	Genre       string
+	Year        int
+	TrackNumber int
+	Stream      bool // true for HTTP/HTTPS URLs
 }
 
 // IsURL reports whether path is an HTTP or HTTPS URL.
@@ -102,18 +105,13 @@ func IsFeed(path string) bool {
 }
 
 // TrackFromPath creates a Track by parsing the filename or URL.
-// Supports "Artist - Title" format, otherwise uses the filename as title.
+// For local files, embedded tags (ID3v2, Vorbis, MP4) are tried first,
+// falling back to "Artist - Title" filename parsing.
 func TrackFromPath(path string) Track {
 	if IsURL(path) {
 		return trackFromURL(path)
 	}
-	base := filepath.Base(path)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
-	parts := strings.SplitN(name, " - ", 2)
-	if len(parts) == 2 {
-		return Track{Path: path, Artist: strings.TrimSpace(parts[0]), Title: strings.TrimSpace(parts[1])}
-	}
-	return Track{Path: path, Title: name}
+	return ReadTags(path)
 }
 
 // trackFromURL creates a Track from an HTTP/HTTPS URL, extracting a clean
