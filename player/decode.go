@@ -63,7 +63,7 @@ func openSource(path string, onMeta func(string)) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	req.Header.Set("User-Agent", "cliamp/1.0")
+	req.Header.Set("User-Agent", "cliamp/1.0 (https://github.com/bjarneo/cliamp)")
 	// Request ICY metadata — servers that don't support it simply ignore this header.
 	req.Header.Set("Icy-MetaData", "1")
 

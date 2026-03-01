@@ -23,7 +23,19 @@ import (
 
 // httpClient is used for feed and M3U resolution. It has a generous but
 // finite timeout to prevent hanging on unresponsive servers.
-var httpClient = &http.Client{Timeout: 30 * time.Second}
+var httpClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: &uaTransport{rt: http.DefaultTransport},
+}
+
+// uaTransport injects the cliamp User-Agent header into every request.
+type uaTransport struct{ rt http.RoundTripper }
+
+func (t *uaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("User-Agent", "cliamp/1.0 (https://github.com/bjarneo/cliamp)")
+	return t.rt.RoundTrip(req)
+}
 
 // Result holds the output of Args: instantly-resolved tracks and
 // remote URLs (feeds, M3U) that need async HTTP fetching.
