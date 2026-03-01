@@ -491,7 +491,7 @@ func (v *Visualizer) renderFlame(bands [numBands]float64) string {
 						tipNarrow := 1.0 - flameY/max(bands[b], 0.01)
 						flameWidth := (0.3 + 0.7*tipNarrow) * centerCol
 
-						dist := math.Abs(float64(dotCol)-centerCol+0.5-wobble) // distance from flame center
+						dist := math.Abs(float64(dotCol) - centerCol + 0.5 - wobble) // distance from flame center
 						if dist < flameWidth {
 							// Add flicker at the edges using hash.
 							edge := dist / flameWidth

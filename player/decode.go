@@ -40,7 +40,7 @@ var SupportedExts = map[string]bool{
 var httpClient = &http.Client{
 	Transport: &http.Transport{
 		ResponseHeaderTimeout: 30 * time.Second,
-		TLSNextProto:         make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+		TLSNextProto:          make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 	},
 }
 
