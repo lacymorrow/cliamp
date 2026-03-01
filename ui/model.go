@@ -692,9 +692,21 @@ func (m *Model) notifyMPRIS() {
 }
 
 // togglePlayPause starts playback if stopped, or toggles pause if playing.
+// For live streams, unpausing reconnects to get current audio instead of
+// playing stale data sitting in OS/decoder buffers from before the pause.
 func (m *Model) togglePlayPause() tea.Cmd {
+	if m.buffering {
+		return nil
+	}
 	if !m.player.IsPlaying() {
 		return m.playCurrentTrack()
+	}
+	if m.player.IsPaused() {
+		track, idx := m.playlist.Current()
+		if idx >= 0 && track.Stream {
+			m.player.Stop()
+			return m.playTrack(track)
+		}
 	}
 	m.player.TogglePause()
 	return nil
