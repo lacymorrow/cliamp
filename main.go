@@ -76,11 +76,14 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 	pl := playlist.New()
 	pl.Add(resolved.Tracks...)
 
-	p := player.New(player.Quality{
+	p, err := player.New(player.Quality{
 		SampleRate:      cfg.SampleRate,
 		BufferMs:        cfg.BufferMs,
 		ResampleQuality: cfg.ResampleQuality,
 	})
+	if err != nil {
+		return fmt.Errorf("player: %w", err)
+	}
 	defer p.Close()
 
 	cfg.ApplyPlayer(p)

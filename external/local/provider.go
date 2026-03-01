@@ -81,7 +81,7 @@ func (p *Provider) AddTrack(playlistName string, track playlist.Track) error {
 	defer f.Close()
 
 	// Add a blank line before the section if file is non-empty.
-	if info, _ := f.Stat(); info.Size() > 0 {
+	if info, err := f.Stat(); err == nil && info.Size() > 0 {
 		fmt.Fprintln(f)
 	}
 

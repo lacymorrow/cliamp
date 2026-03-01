@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	numBands = 10
-	fftSize  = 2048
+	numBands       = 10
+	fftSize        = 2048
+	defaultVisRows = 5
 )
 
 // VisMode selects the visualizer rendering style.
@@ -64,7 +65,7 @@ func NewVisualizer(sampleRate float64) *Visualizer {
 	return &Visualizer{
 		sr:   sampleRate,
 		buf:  make([]float64, fftSize),
-		Rows: 5,
+		Rows: defaultVisRows,
 	}
 }
 

@@ -383,6 +383,9 @@ func (p *Playlist) Tracks() []Track { return p.tracks }
 // Uses Fisher-Yates shuffle, preserving the current track at position 0.
 func (p *Playlist) ToggleShuffle() {
 	p.shuffle = !p.shuffle
+	if len(p.tracks) == 0 {
+		return
+	}
 	if p.shuffle {
 		p.doShuffle()
 		return

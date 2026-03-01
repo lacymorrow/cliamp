@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -215,7 +216,12 @@ func (m *Model) openPlaylistManager() {
 
 // plMgrEnterTrackList loads the tracks for a playlist and switches to screen 1.
 func (m *Model) plMgrEnterTrackList(name string) {
-	tracks, _ := m.localProvider.Tracks(name)
+	tracks, err := m.localProvider.Tracks(name)
+	if err != nil {
+		m.saveMsg = fmt.Sprintf("Load failed: %s", err)
+		m.saveMsgTTL = 60
+		return
+	}
 	m.plMgrSelPlaylist = name
 	m.plMgrTracks = tracks
 	m.plMgrScreen = plMgrScreenTracks
@@ -225,7 +231,12 @@ func (m *Model) plMgrEnterTrackList(name string) {
 
 // plMgrRefreshList reloads playlist names and counts from disk and clamps the cursor.
 func (m *Model) plMgrRefreshList() {
-	m.plMgrPlaylists, _ = m.localProvider.Playlists()
+	playlists, err := m.localProvider.Playlists()
+	if err != nil {
+		m.saveMsg = fmt.Sprintf("Load failed: %s", err)
+		m.saveMsgTTL = 60
+	}
+	m.plMgrPlaylists = playlists
 	// +1 for the "+ New Playlist..." entry
 	total := len(m.plMgrPlaylists) + 1
 	if m.plMgrCursor >= total {
@@ -393,7 +404,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.fullVis {
-			m.vis.Rows = max(5, (m.height-10)*3/5)
+			m.vis.Rows = max(defaultVisRows, (m.height-10)*3/5)
 		}
 
 	case tickMsg:

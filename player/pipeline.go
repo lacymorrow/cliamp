@@ -60,10 +60,14 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 
 	decoder, format, err := decode(rc, path, p.sr)
 	if err != nil {
+		rc.Close()
+		// If the format already required ffmpeg (e.g., .m4a), decode() already
+		// tried it — don't invoke ffmpeg a second time.
+		if needsFFmpeg(formatExt(path)) {
+			return nil, fmt.Errorf("decode: %w", err)
+		}
 		// Native decoder failed (e.g., IEEE float WAV). Fall back to ffmpeg,
 		// which reads from the path directly and handles more formats.
-		// Close rc first — it's partially consumed and ffmpeg doesn't need it.
-		rc.Close()
 		decoder, format, err = decodeFFmpeg(path, p.sr)
 		if err != nil {
 			return nil, fmt.Errorf("decode: %w", err)

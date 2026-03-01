@@ -88,7 +88,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "esc", "backspace", "b":
 		if m.fullVis {
 			m.fullVis = false
-			m.vis.Rows = 5
+			m.vis.Rows = defaultVisRows
 		} else if m.focus == focusPlaylist && m.provider != nil {
 			m.focus = focusProvider
 		}
@@ -126,7 +126,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "right":
 		if m.focus == focusEQ {
-			if m.eqCursor < 9 {
+			if m.eqCursor < numBands-1 {
 				m.eqCursor++
 			}
 		} else {
@@ -199,7 +199,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "l":
-		if m.focus == focusEQ && m.eqCursor < 9 {
+		if m.focus == focusEQ && m.eqCursor < numBands-1 {
 			m.eqCursor++
 		}
 
@@ -254,9 +254,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "V":
 		m.fullVis = !m.fullVis
 		if m.fullVis {
-			m.vis.Rows = max(5, (m.height-10)*3/5)
+			m.vis.Rows = max(defaultVisRows, (m.height-10)*3/5)
 		} else {
-			m.vis.Rows = 5
+			m.vis.Rows = defaultVisRows
 		}
 
 	case "x":
@@ -524,11 +524,10 @@ func (m *Model) handlePlMgrTracksKey(msg tea.KeyMsg) tea.Cmd {
 			return cmd
 		}
 	case "a":
-		// Add current playing track to this playlist.
 		m.addToPlaylist(m.plMgrSelPlaylist)
-		// Refresh the track list to show the new track.
-		tracks, _ := m.localProvider.Tracks(m.plMgrSelPlaylist)
-		m.plMgrTracks = tracks
+		if tracks, err := m.localProvider.Tracks(m.plMgrSelPlaylist); err == nil {
+			m.plMgrTracks = tracks
+		}
 	case "d":
 		// Remove highlighted track.
 		if len(m.plMgrTracks) > 0 && m.plMgrCursor < len(m.plMgrTracks) {

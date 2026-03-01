@@ -134,7 +134,9 @@ func Save(key, value string) error {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// File doesn't exist — create with just this key.
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		return os.WriteFile(path, []byte(line+"\n"), 0o644)
 	}
 

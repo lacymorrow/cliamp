@@ -42,7 +42,7 @@ func (c *CompositeProvider) Playlists() ([]PlaylistInfo, error) {
 	for i, p := range c.providers {
 		lists, err := p.Playlists()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("provider %s: playlists: %w", p.Name(), err)
 		}
 		for _, l := range lists {
 			if len(c.providers) > 1 {
@@ -59,7 +59,11 @@ func (c *CompositeProvider) Playlists() ([]PlaylistInfo, error) {
 // correct provider.
 func (c *CompositeProvider) Tracks(id string) ([]Track, error) {
 	if len(c.providers) == 1 {
-		return c.providers[0].Tracks(id)
+		tracks, err := c.providers[0].Tracks(id)
+		if err != nil {
+			return nil, fmt.Errorf("provider %s: tracks: %w", c.providers[0].Name(), err)
+		}
+		return tracks, nil
 	}
 
 	idx, realID, ok := strings.Cut(id, ":")
@@ -70,5 +74,9 @@ func (c *CompositeProvider) Tracks(id string) ([]Track, error) {
 	if err != nil || i < 0 || i >= len(c.providers) {
 		return nil, fmt.Errorf("invalid provider index in ID: %s", id)
 	}
-	return c.providers[i].Tracks(realID)
+	tracks, err := c.providers[i].Tracks(realID)
+	if err != nil {
+		return nil, fmt.Errorf("provider %s: tracks: %w", c.providers[i].Name(), err)
+	}
+	return tracks, nil
 }

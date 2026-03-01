@@ -1,6 +1,7 @@
 package player
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -45,9 +46,11 @@ type Player struct {
 }
 
 // New creates a Player and initializes the speaker with the given quality settings.
-func New(q Quality) *Player {
+func New(q Quality) (*Player, error) {
 	sr := beep.SampleRate(q.SampleRate)
-	speaker.Init(sr, sr.N(time.Duration(q.BufferMs)*time.Millisecond))
+	if err := speaker.Init(sr, sr.N(time.Duration(q.BufferMs)*time.Millisecond)); err != nil {
+		return nil, fmt.Errorf("speaker init: %w", err)
+	}
 	p := &Player{sr: sr, resampleQuality: q.ResampleQuality}
 	p.gapless = &gaplessStreamer{}
 	p.gapless.onSwap = func() {
@@ -63,7 +66,7 @@ func New(q Quality) *Player {
 		}
 		p.gaplessAdvance.Store(true)
 	}
-	return p
+	return p, nil
 }
 
 // Play opens and starts playing an audio file. On the first call it builds
@@ -178,10 +181,15 @@ func (p *Player) GaplessAdvanced() bool {
 // TogglePause toggles between paused and playing states.
 func (p *Player) TogglePause() {
 	speaker.Lock()
-	defer speaker.Unlock()
 	if p.ctrl != nil {
 		p.ctrl.Paused = !p.ctrl.Paused
-		p.paused = p.ctrl.Paused
+		paused := p.ctrl.Paused
+		speaker.Unlock()
+		p.mu.Lock()
+		p.paused = paused
+		p.mu.Unlock()
+	} else {
+		speaker.Unlock()
 	}
 }
 

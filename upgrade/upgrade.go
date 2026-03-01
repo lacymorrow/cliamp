@@ -109,7 +109,10 @@ func downloadAndReplace(url, destPath string) error {
 		os.Remove(tmpPath)
 		return fmt.Errorf("writing binary: %w", err)
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("writing binary: %w", err)
+	}
 
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		os.Remove(tmpPath)
