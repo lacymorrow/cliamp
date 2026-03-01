@@ -34,7 +34,7 @@ jobs:
           arch=('x86_64' 'aarch64')
           url='https://github.com/bjarneo/cliamp'
           license=('MIT')
-          depends=('alsa-lib')
+          depends=('alsa-lib' 'ffmpeg' 'yt-dlp')
           makedepends=('go')
           source=("${pkgname}-${pkgver}.tar.gz::https://github.com/bjarneo/cliamp/archive/refs/tags/v${pkgver}.tar.gz")
           sha256sums=('SHA256_PLACEHOLDER')
