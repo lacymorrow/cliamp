@@ -638,7 +638,30 @@ func (m Model) renderPlaylist() string {
 	scroll = max(0, scroll)
 
 	lines := make([]string, 0, visible)
-	for i := scroll; i < scroll+visible && i < len(tracks); i++ {
+	prevAlbum := ""
+	if scroll > 0 {
+		prevAlbum = tracks[scroll-1].Album
+	}
+	for i := scroll; i < len(tracks) && len(lines) < visible; i++ {
+		// Insert album separator when album changes
+		if album := tracks[i].Album; album != "" && album != prevAlbum {
+			label := "── " + album
+			if tracks[i].Year != 0 {
+				label += fmt.Sprintf(" (%d)", tracks[i].Year)
+			}
+			label += " "
+			pw := panelWidth
+			labelLen := len([]rune(label))
+			if labelLen < pw {
+				label += strings.Repeat("─", pw-labelLen)
+			}
+			lines = append(lines, dimStyle.Render(label))
+			if len(lines) >= visible {
+				break
+			}
+		}
+		prevAlbum = tracks[i].Album
+
 		prefix := "  "
 		style := playlistItemStyle
 
