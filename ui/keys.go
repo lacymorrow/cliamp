@@ -692,6 +692,7 @@ var keymapEntries = []keymapEntry{
 	{"e", "Cycle EQ preset"},
 	{"t", "Choose theme"},
 	{"v", "Cycle visualizer"},
+	{"V", "Full-screen visualizer"},
 	{"↑ ↓", "Playlist scroll / EQ adjust"},
 	{"h l", "EQ cursor left/right"},
 	{"Enter", "Play selected track"},
