@@ -391,6 +391,10 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 			m.updateSearch()
 		}
 
+	case tea.KeySpace:
+		m.searchQuery += " "
+		m.updateSearch()
+
 	default:
 		if msg.Type == tea.KeyRunes {
 			m.searchQuery += string(msg.Runes)
@@ -572,6 +576,8 @@ func (m *Model) handlePlMgrNewNameKey(msg tea.KeyMsg) tea.Cmd {
 			_, size := utf8.DecodeLastRuneInString(m.plMgrNewName)
 			m.plMgrNewName = m.plMgrNewName[:len(m.plMgrNewName)-size]
 		}
+	case tea.KeySpace:
+		m.plMgrNewName += " "
 	default:
 		if msg.Type == tea.KeyRunes {
 			m.plMgrNewName += string(msg.Runes)
@@ -719,6 +725,9 @@ func (m *Model) handleKeymapKey(msg tea.KeyMsg) tea.Cmd {
 			m.keymapSearch = m.keymapSearch[:len(m.keymapSearch)-size]
 			m.updateKeymapFilter()
 		}
+	case tea.KeySpace:
+		m.keymapSearch += " "
+		m.updateKeymapFilter()
 	default:
 		switch msg.String() {
 		case "ctrl+c":
