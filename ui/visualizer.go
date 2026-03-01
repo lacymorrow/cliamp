@@ -21,11 +21,22 @@ const (
 	VisBars    VisMode = iota // smooth fractional blocks
 	VisBricks                 // solid bricks with gaps
 	VisColumns                // many thin columns
+	VisWave                   // braille waveform oscilloscope
+	VisScatter                // braille particle sparkle
+	VisFlame                  // braille rising flame tendrils
 	visCount                  // sentinel for cycling
 )
 
 // Unicode block elements for bar height (9 levels including space)
 var barBlocks = []string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+
+// brailleBit maps (row, col) in a 4×2 Braille dot grid to its bit value.
+var brailleBit = [4][2]rune{
+	{0x01, 0x08}, // row 0
+	{0x02, 0x10}, // row 1
+	{0x04, 0x20}, // row 2
+	{0x40, 0x80}, // row 3
+}
 
 // Frequency edges for 10 spectrum bands (Hz)
 var bandEdges = [11]float64{20, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 16000, 20000}
@@ -39,10 +50,12 @@ var (
 
 // Visualizer performs FFT analysis and renders spectrum bars.
 type Visualizer struct {
-	prev [numBands]float64 // previous frame for temporal smoothing
-	sr   float64
-	buf  []float64 // reusable FFT buffer to avoid per-frame allocation
-	Mode VisMode
+	prev    [numBands]float64 // previous frame for temporal smoothing
+	sr      float64
+	buf     []float64 // reusable FFT buffer to avoid per-frame allocation
+	Mode    VisMode
+	waveBuf []float64 // raw samples for wave mode
+	frame   uint64    // frame counter for scatter animation
 }
 
 // NewVisualizer creates a Visualizer for the given sample rate.
@@ -65,6 +78,12 @@ func (v *Visualizer) ModeName() string {
 		return "Bricks"
 	case VisColumns:
 		return "Columns"
+	case VisWave:
+		return "Wave"
+	case VisScatter:
+		return "Scatter"
+	case VisFlame:
+		return "Flame"
 	default:
 		return "Bars"
 	}
@@ -72,6 +91,20 @@ func (v *Visualizer) ModeName() string {
 
 // Analyze runs FFT on raw audio samples and returns 10 normalized band levels (0-1).
 func (v *Visualizer) Analyze(samples []float64) [numBands]float64 {
+	v.frame++
+
+	// Store raw samples for wave mode.
+	if n := len(samples); n > 0 {
+		if cap(v.waveBuf) >= n {
+			v.waveBuf = v.waveBuf[:n]
+		} else {
+			v.waveBuf = make([]float64, n)
+		}
+		copy(v.waveBuf, samples)
+	} else {
+		v.waveBuf = v.waveBuf[:0]
+	}
+
 	var bands [numBands]float64
 	if len(samples) == 0 {
 		// Decay previous values when no audio data
@@ -144,6 +177,12 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 		return v.renderBricks(bands)
 	case VisColumns:
 		return v.renderColumns(bands)
+	case VisWave:
+		return v.renderWave()
+	case VisScatter:
+		return v.renderScatter(bands)
+	case VisFlame:
+		return v.renderFlame(bands)
 	default:
 		return v.renderBars(bands)
 	}
@@ -272,6 +311,206 @@ func (v *Visualizer) renderColumns(bands [numBands]float64) string {
 			}
 			if b < numBands-1 {
 				sb.WriteString(pad)
+			}
+		}
+		lines[row] = sb.String()
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderWave draws a Braille-character oscilloscope waveform from raw audio samples.
+// Each Braille character covers a 2×4 dot grid, giving smooth sub-cell resolution.
+func (v *Visualizer) renderWave() string {
+	const (
+		height   = 5
+		charCols = 69           // braille characters wide (matches band display width)
+		dotRows  = height * 4   // 20 vertical dot positions
+		dotCols  = charCols * 2 // 138 horizontal dot positions
+	)
+
+	samples := v.waveBuf
+	n := len(samples)
+
+	// Downsample audio to one y-position per horizontal dot column.
+	ypos := make([]int, dotCols)
+	for x := range dotCols {
+		var sample float64
+		if n > 0 {
+			idx := x * n / dotCols
+			if idx >= n {
+				idx = n - 1
+			}
+			sample = samples[idx]
+		}
+		// Map sample [-1, 1] to dot row [0, dotRows-1]; center is dotRows/2.
+		y := int((1.0 - sample) * float64(dotRows-1) / 2.0)
+		ypos[x] = max(0, min(dotRows-1, y))
+	}
+
+	lines := make([]string, height)
+	for row := range height {
+		var sb strings.Builder
+		dotRowStart := row * 4
+
+		for ch := range charCols {
+			var braille rune = '\u2800'
+			dotColStart := ch * 2
+
+			for dc := range 2 {
+				x := dotColStart + dc
+				y := ypos[x]
+
+				// Connect to previous point so the waveform is continuous.
+				prevY := y
+				if x > 0 {
+					prevY = ypos[x-1]
+				}
+				yMin := min(y, prevY)
+				yMax := max(y, prevY)
+
+				for dr := range 4 {
+					dotY := dotRowStart + dr
+					if dotY >= yMin && dotY <= yMax {
+						braille |= brailleBit[dr][dc]
+					}
+				}
+			}
+
+			style := specStyle(float64(height-1-row) / float64(height))
+			sb.WriteString(style.Render(string(braille)))
+		}
+		lines[row] = sb.String()
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderScatter draws a twinkling particle field using Braille dots.
+// Dot density per band is proportional to the squared energy level, with a
+// gravity bias that makes particles denser near the bottom.
+func (v *Visualizer) renderScatter(bands [numBands]float64) string {
+	const (
+		height       = 5
+		charsPerBand = 6
+		gap          = 1
+		dotRows      = height * 4 // 20 total vertical dot positions
+	)
+
+	lines := make([]string, height)
+
+	for row := range height {
+		var sb strings.Builder
+
+		for b := range numBands {
+			for c := range charsPerBand {
+				var braille rune = '\u2800'
+
+				for dr := range 4 {
+					for dc := range 2 {
+						dotRow := row*4 + dr
+						dotCol := c*2 + dc
+
+						h := scatterHash(b, dotRow, dotCol, v.frame)
+
+						// Gravity bias: more particles settle near the bottom.
+						heightFactor := 0.5 + 0.5*float64(dotRow)/float64(dotRows-1)
+						threshold := bands[b] * bands[b] * heightFactor
+
+						if h < threshold {
+							braille |= brailleBit[dr][dc]
+						}
+					}
+				}
+
+				rowNorm := float64(height-1-row) / float64(height)
+				style := specStyle(rowNorm)
+				sb.WriteString(style.Render(string(braille)))
+			}
+			if b < numBands-1 {
+				sb.WriteString(strings.Repeat(" ", gap))
+			}
+		}
+		lines[row] = sb.String()
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// scatterHash returns a pseudo-random value in [0, 1) for a given dot position
+// and frame. Dots persist for a few frames to create a twinkling effect.
+func scatterHash(band, row, col int, frame uint64) float64 {
+	// Stagger per-dot so they don't all change simultaneously.
+	f := (frame + uint64(row*3+col)) / 3
+	h := uint64(band)*7919 + uint64(row)*6271 + uint64(col)*3037 + f*104729
+	h ^= h >> 16
+	h *= 0x45d9f3b37197344b
+	h ^= h >> 16
+	return float64(h%10000) / 10000.0
+}
+
+// renderFlame draws rising flame tendrils using Braille dots. Each band produces
+// a column of flickering fire that rises proportionally to energy, with lateral
+// wobble driven by a sine-based displacement for an organic, dancing look.
+func (v *Visualizer) renderFlame(bands [numBands]float64) string {
+	const (
+		height       = 5
+		charsPerBand = 6
+		gap          = 1
+		dotRows      = height * 4 // 20 vertical dot positions
+		dotCols      = charsPerBand * 2
+	)
+
+	lines := make([]string, height)
+
+	for row := range height {
+		var sb strings.Builder
+
+		for b := range numBands {
+			for c := range charsPerBand {
+				var braille rune = '\u2800'
+
+				for dr := range 4 {
+					for dc := range 2 {
+						dotRow := row*4 + dr
+						dotCol := c*2 + dc
+
+						// Invert: flames rise from bottom, so row 0 = top of flame.
+						flameY := float64(dotRows-1-dotRow) / float64(dotRows-1)
+
+						// Flame reaches up to flameY proportional to band level.
+						if flameY > bands[b] {
+							continue
+						}
+
+						// Lateral wobble: sine wave displaced by height and time.
+						t := float64(v.frame) * 0.3
+						wobble := math.Sin(t+flameY*6.0+float64(b)*2.1) * 1.5
+						centerCol := float64(dotCols) / 2.0
+
+						// Flame narrows toward the tip.
+						tipNarrow := 1.0 - flameY/max(bands[b], 0.01)
+						flameWidth := (0.3 + 0.7*tipNarrow) * centerCol
+
+						dist := math.Abs(float64(dotCol)-centerCol+0.5-wobble) // distance from flame center
+						if dist < flameWidth {
+							// Add flicker at the edges using hash.
+							edge := dist / flameWidth
+							if edge < 0.7 || scatterHash(b, dotRow, dotCol, v.frame) < 0.6 {
+								braille |= brailleBit[dr][dc]
+							}
+						}
+					}
+				}
+
+				// Color: bottom rows (base) are red/hot, upper rows (tips) are green/cool.
+				// This inverts the normal spectrum coloring for a fire gradient effect.
+				rowNorm := float64(row) / float64(height)
+				style := specStyle(rowNorm)
+				sb.WriteString(style.Render(string(braille)))
+			}
+			if b < numBands-1 {
+				sb.WriteString(strings.Repeat(" ", gap))
 			}
 		}
 		lines[row] = sb.String()
