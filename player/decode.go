@@ -1,6 +1,7 @@
 package player
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,11 +35,12 @@ var SupportedExts = map[string]bool{
 
 // httpClient is used for all HTTP streaming. It sets a generous header
 // timeout but no overall timeout, so infinite live streams aren't killed.
-// ForceAttemptHTTP2 is left at its default (false) to avoid HTTP/2
-// framing issues with some podcast CDNs.
+// HTTP/2 is explicitly disabled via TLSNextProto because Icecast/SHOUTcast
+// servers don't support it — Go's default ALPN negotiation causes EOF.
 var httpClient = &http.Client{
 	Transport: &http.Transport{
 		ResponseHeaderTimeout: 30 * time.Second,
+		TLSNextProto:         make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 	},
 }
 
@@ -61,6 +63,7 @@ func openSource(path string, onMeta func(string)) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
+	req.Header.Set("User-Agent", "cliamp/1.0")
 	// Request ICY metadata — servers that don't support it simply ignore this header.
 	req.Header.Set("Icy-MetaData", "1")
 

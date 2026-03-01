@@ -56,9 +56,10 @@ func run() error {
 		return errors.New(`usage: cliamp <file|folder|url> [...]
 
   Local files     cliamp track.mp3 song.flac ~/Music
-  Local M3U       cliamp ~/radio-stations.m3u
+  Local M3U/PLS   cliamp ~/radio-stations.m3u stations.pls
   HTTP stream     cliamp https://example.com/song.mp3
   Radio / M3U     cliamp http://radio.example.com/stream.m3u
+  Radio / PLS     cliamp http://radio.example.com/listen.pls
   Podcast feed    cliamp https://example.com/podcast/feed.xml
   SoundCloud      cliamp https://soundcloud.com/user/sets/playlist
   YouTube         cliamp https://www.youtube.com/watch?v=...
@@ -133,9 +134,10 @@ Flags:
 
 Examples:
   cliamp track.mp3 song.flac ~/Music
-  cliamp ~/radio-stations.m3u
+  cliamp ~/radio-stations.m3u stations.pls
   cliamp https://example.com/song.mp3
   cliamp http://radio.example.com/stream.m3u
+  cliamp http://radio.example.com/listen.pls
   cliamp https://example.com/podcast/feed.xml
   cliamp https://soundcloud.com/user/sets/playlist
   cliamp https://www.youtube.com/watch?v=...

@@ -40,7 +40,7 @@ func Args(args []string) (Result, error) {
 
 	for _, arg := range args {
 		if playlist.IsURL(arg) {
-			if playlist.IsFeed(arg) || playlist.IsM3U(arg) || playlist.IsYTDL(arg) {
+			if playlist.IsFeed(arg) || playlist.IsM3U(arg) || playlist.IsPLS(arg) || playlist.IsYTDL(arg) {
 				r.Pending = append(r.Pending, arg)
 			} else {
 				files = append(files, arg)
@@ -56,6 +56,14 @@ func Args(args []string) (Result, error) {
 				tracks, err := ResolveLocalM3U(path)
 				if err != nil {
 					return r, fmt.Errorf("loading m3u %s: %w", path, err)
+				}
+				r.Tracks = append(r.Tracks, tracks...)
+				continue
+			}
+			if playlist.IsLocalPLS(path) {
+				tracks, err := ResolveLocalPLS(path)
+				if err != nil {
+					return r, fmt.Errorf("loading pls %s: %w", path, err)
 				}
 				r.Tracks = append(r.Tracks, tracks...)
 				continue
@@ -93,6 +101,12 @@ func Remote(urls []string) ([]playlist.Track, error) {
 			t, err := resolveM3U(u)
 			if err != nil {
 				return nil, fmt.Errorf("resolving m3u %s: %w", u, err)
+			}
+			tracks = append(tracks, t...)
+		case playlist.IsPLS(u):
+			t, err := resolvePLS(u)
+			if err != nil {
+				return nil, fmt.Errorf("resolving pls %s: %w", u, err)
 			}
 			tracks = append(tracks, t...)
 		}
@@ -220,6 +234,25 @@ func resolveM3U(m3uURL string) ([]playlist.Track, error) {
 		return nil, err
 	}
 	return entriesToTracks(entries), nil
+}
+
+// resolvePLS fetches a PLS playlist URL and returns tracks.
+func resolvePLS(plsURL string) ([]playlist.Track, error) {
+	resp, err := httpClient.Get(plsURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http status %s", resp.Status)
+	}
+
+	entries, err := parsePLS(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return plsEntriesToTracks(entries), nil
 }
 
 // ytdlFlatEntry holds JSON fields from yt-dlp --flat-playlist output.

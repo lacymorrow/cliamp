@@ -65,6 +65,23 @@ func IsLocalM3U(path string) bool {
 	return !IsURL(path) && IsM3U(path)
 }
 
+// IsPLS reports whether the path points to a PLS playlist file (URL or local).
+func IsPLS(path string) bool {
+	if IsURL(path) {
+		u, err := url.Parse(path)
+		if err != nil {
+			return false
+		}
+		return strings.ToLower(filepath.Ext(u.Path)) == ".pls"
+	}
+	return strings.ToLower(filepath.Ext(path)) == ".pls"
+}
+
+// IsLocalPLS reports whether the path is a local (non-URL) PLS file.
+func IsLocalPLS(path string) bool {
+	return !IsURL(path) && IsPLS(path)
+}
+
 // IsYTDL reports whether the URL points to a site supported by yt-dlp
 // (SoundCloud, YouTube, Bandcamp, etc.).
 func IsYTDL(path string) bool {
