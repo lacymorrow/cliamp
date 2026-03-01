@@ -31,6 +31,10 @@ func (m Model) View() string {
 		return m.renderThemePicker()
 	}
 
+	if m.showFileBrowser {
+		return m.renderFileBrowser()
+	}
+
 	if m.showPlManager {
 		return m.renderPlaylistManager()
 	}
