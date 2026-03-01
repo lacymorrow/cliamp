@@ -28,6 +28,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handlePlaylistManagerKey(msg)
 	}
 
+	// File browser overlay
+	if m.showFileBrowser {
+		return m.handleFileBrowserKey(msg)
+	}
+
 	// Queue manager overlay
 	if m.showQueue {
 		return m.handleQueueKey(msg)
@@ -76,6 +81,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.playlist.Len() > 0 {
 				m.focus = focusPlaylist
 			}
+		case "o":
+			m.openFileBrowser()
 		}
 		return nil
 	}
@@ -247,6 +254,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "i":
 		m.showInfo = true
+
+	case "o":
+		m.openFileBrowser()
 
 	case "v":
 		m.vis.CycleMode()
@@ -697,6 +707,7 @@ var keymapEntries = []keymapEntry{
 	{"Enter", "Play selected track"},
 	{"a", "Toggle queue (play next)"},
 	{"A", "Queue manager"},
+	{"o", "Open file browser"},
 	{"p", "Playlist manager"},
 	{"i", "Track info / metadata"},
 	{"S", "Save track to ~/Music"},

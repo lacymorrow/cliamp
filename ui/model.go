@@ -118,6 +118,14 @@ type Model struct {
 	plMgrConfirmDel  bool
 
 	autoPlay bool // start playing immediately on launch
+
+	// File browser overlay
+	showFileBrowser bool
+	fbDir           string
+	fbEntries       []fbEntry
+	fbCursor        int
+	fbSelected      map[string]bool
+	fbErr           string
 }
 
 // NewModel creates a Model wired to the given player and playlist.
@@ -468,6 +476,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.feedLoading = false
 		m.playlist.Add(msg...)
 		if m.playlist.Len() > 0 && !m.player.IsPlaying() {
+			cmd := m.playCurrentTrack()
+			m.notifyMPRIS()
+			return m, cmd
+		}
+		return m, nil
+
+	case fbTracksResolvedMsg:
+		if len(msg.tracks) == 0 {
+			m.saveMsg = "No audio files found"
+			m.saveMsgTTL = 60
+			return m, nil
+		}
+		if msg.replace {
+			m.player.Stop()
+			m.player.ClearPreload()
+			m.playlist.Replace(msg.tracks)
+			m.plCursor = 0
+			m.plScroll = 0
+		} else {
+			m.playlist.Add(msg.tracks...)
+		}
+		m.focus = focusPlaylist
+		m.saveMsg = fmt.Sprintf("Added %d track(s)", len(msg.tracks))
+		m.saveMsgTTL = 60
+		if !m.player.IsPlaying() && m.playlist.Len() > 0 {
+			if msg.replace {
+				m.playlist.SetIndex(0)
+			}
 			cmd := m.playCurrentTrack()
 			m.notifyMPRIS()
 			return m, cmd
