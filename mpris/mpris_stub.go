@@ -19,11 +19,13 @@ type (
 
 // TrackInfo carries metadata for the currently playing track.
 type TrackInfo struct {
-	Title  string
-	Artist string
-	Album  string
-	URL    string
-	Length int64 // microseconds
+	Title       string
+	Artist      string
+	Album       string
+	Genre       string
+	TrackNumber int
+	URL         string
+	Length      int64 // microseconds
 }
 
 // Service is a no-op stub on non-Linux platforms.
