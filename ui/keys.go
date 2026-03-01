@@ -86,7 +86,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.quitting = true
 		return tea.Quit
 	case "esc", "backspace", "b":
-		if m.focus == focusPlaylist && m.provider != nil {
+		if m.fullVis {
+			m.fullVis = false
+			m.vis.Rows = 5
+		} else if m.focus == focusPlaylist && m.provider != nil {
 			m.focus = focusProvider
 		}
 
@@ -247,6 +250,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "v":
 		m.vis.CycleMode()
+
+	case "V":
+		m.fullVis = !m.fullVis
+		if m.fullVis {
+			m.vis.Rows = max(5, (m.height-10)*3/5)
+		} else {
+			m.vis.Rows = 5
+		}
 
 	case "x":
 		if m.focus == focusPlaylist {

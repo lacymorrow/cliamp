@@ -47,6 +47,10 @@ func (m Model) View() string {
 		return m.renderSearchOverlay()
 	}
 
+	if m.fullVis {
+		return m.renderFullVisualizer()
+	}
+
 	sections := []string{
 		// Now playing
 		m.renderTitle(),
@@ -478,6 +482,32 @@ func (m Model) renderTimeStatus() string {
 func (m Model) renderSpectrum() string {
 	bands := m.vis.Analyze(m.player.Samples())
 	return m.vis.Render(bands)
+}
+
+// renderFullVisualizer renders a full-screen view showing only the visualizer
+// with minimal track info and a seek bar.
+func (m Model) renderFullVisualizer() string {
+	sections := []string{
+		m.renderTrackInfo(),
+		m.renderTimeStatus(),
+		"",
+		m.renderSpectrum(),
+		m.renderSeekBar(),
+		"",
+		helpKey("V", "Exit ") + helpKey("v", "Mode:"+m.vis.ModeName()+" ") + helpKey("Spc", "⏯ ") + helpKey("<>", "Trk ") + helpKey("+-", "Vol"),
+	}
+
+	content := strings.Join(sections, "\n")
+	frame := frameStyle.Render(content)
+
+	frameW := lipgloss.Width(frame)
+	frameH := lipgloss.Height(frame)
+
+	padLeft := max(0, (m.width-frameW)/2)
+	padTop := max(0, (m.height-frameH)/2)
+
+	return strings.Repeat("\n", padTop) +
+		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
 }
 
 func (m Model) renderSeekBar() string {

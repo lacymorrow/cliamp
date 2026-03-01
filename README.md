@@ -206,6 +206,7 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `e` | Cycle EQ preset |
 | `t` | Choose theme |
 | `v` | Cycle visualizer |
+| `V` | Full-screen visualizer |
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
 | `x` | Expand/collapse playlist |

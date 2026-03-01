@@ -54,6 +54,7 @@ type Visualizer struct {
 	sr      float64
 	buf     []float64 // reusable FFT buffer to avoid per-frame allocation
 	Mode    VisMode
+	Rows    int       // display height in terminal rows (default 5)
 	waveBuf []float64 // raw samples for wave mode
 	frame   uint64    // frame counter for scatter animation
 }
@@ -61,8 +62,9 @@ type Visualizer struct {
 // NewVisualizer creates a Visualizer for the given sample rate.
 func NewVisualizer(sampleRate float64) *Visualizer {
 	return &Visualizer{
-		sr:  sampleRate,
-		buf: make([]float64, fftSize),
+		sr:   sampleRate,
+		buf:  make([]float64, fftSize),
+		Rows: 5,
 	}
 }
 
@@ -190,10 +192,8 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 
 // renderBars is the default smooth spectrum with fractional Unicode blocks.
 func (v *Visualizer) renderBars(bands [numBands]float64) string {
-	const (
-		height = 5
-		bw     = 6 // character width per band
-	)
+	height := v.Rows
+	const bw = 6 // character width per band
 
 	lines := make([]string, height)
 
@@ -231,10 +231,10 @@ func (v *Visualizer) renderBars(bands [numBands]float64) string {
 // Uses half-height blocks (▄) so each brick is half a terminal row, with blank
 // gaps between them, keeping total height equal to the bars visualizer.
 func (v *Visualizer) renderBricks(bands [numBands]float64) string {
+	height := v.Rows
 	const (
-		height = 5
-		bw     = 6 // character width per band
-		gap    = 1 // space between bands
+		bw  = 6 // character width per band
+		gap = 1 // space between bands
 	)
 
 	lines := make([]string, height)
@@ -265,8 +265,8 @@ func (v *Visualizer) renderBricks(bands [numBands]float64) string {
 // renderColumns draws many thin single-character-wide columns, interpolating
 // between bands so adjacent columns vary slightly for a dense, organic look.
 func (v *Visualizer) renderColumns(bands [numBands]float64) string {
+	height := v.Rows
 	const (
-		height  = 5
 		colsPer = 5 // thin columns per band
 		gap     = 1 // space between band groups
 	)
@@ -322,12 +322,10 @@ func (v *Visualizer) renderColumns(bands [numBands]float64) string {
 // renderWave draws a Braille-character oscilloscope waveform from raw audio samples.
 // Each Braille character covers a 2×4 dot grid, giving smooth sub-cell resolution.
 func (v *Visualizer) renderWave() string {
-	const (
-		height   = 5
-		charCols = 69           // braille characters wide (matches band display width)
-		dotRows  = height * 4   // 20 vertical dot positions
-		dotCols  = charCols * 2 // 138 horizontal dot positions
-	)
+	height := v.Rows
+	const charCols = 69 // braille characters wide (matches band display width)
+	dotRows := height * 4
+	const dotCols = charCols * 2 // 138 horizontal dot positions
 
 	samples := v.waveBuf
 	n := len(samples)
@@ -390,12 +388,12 @@ func (v *Visualizer) renderWave() string {
 // Dot density per band is proportional to the squared energy level, with a
 // gravity bias that makes particles denser near the bottom.
 func (v *Visualizer) renderScatter(bands [numBands]float64) string {
+	height := v.Rows
 	const (
-		height       = 5
 		charsPerBand = 6
 		gap          = 1
-		dotRows      = height * 4 // 20 total vertical dot positions
 	)
+	dotRows := height * 4
 
 	lines := make([]string, height)
 
@@ -453,13 +451,13 @@ func scatterHash(band, row, col int, frame uint64) float64 {
 // a column of flickering fire that rises proportionally to energy, with lateral
 // wobble driven by a sine-based displacement for an organic, dancing look.
 func (v *Visualizer) renderFlame(bands [numBands]float64) string {
+	height := v.Rows
 	const (
-		height       = 5
 		charsPerBand = 6
 		gap          = 1
-		dotRows      = height * 4 // 20 vertical dot positions
 		dotCols      = charsPerBand * 2
 	)
+	dotRows := height * 4
 
 	lines := make([]string, height)
 

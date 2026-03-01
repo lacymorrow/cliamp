@@ -99,6 +99,9 @@ type Model struct {
 	// Track info overlay (metadata details)
 	showInfo bool
 
+	// Full-screen visualizer mode (Shift+V)
+	fullVis bool
+
 	// Queue manager overlay
 	showQueue   bool
 	queueCursor int
@@ -389,6 +392,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.fullVis {
+			m.vis.Rows = max(5, (m.height-10)*3/5)
+		}
 
 	case tickMsg:
 		// Expire temporary status messages.
