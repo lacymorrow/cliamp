@@ -457,7 +457,7 @@
       <div class="feature">
         <div class="feature-icon">&#9776;</div>
         <div class="feature-name">Playlists</div>
-        <p>TOML playlists, M3U/M3U8 support, built-in playlist manager</p>
+        <p>TOML playlists, M3U/M3U8/PLS support, built-in playlist manager</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#8594;</div>
@@ -503,6 +503,42 @@
         <div class="feature-icon">&#9998;</div>
         <div class="feature-name">Embedded Tag Reading</div>
         <p>ID3v2, Vorbis comments, and MP4 atoms &mdash; reads artist, album, genre, year, and track number from your files</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#9654;</div>
+        <div class="feature-name">CLI Flags</div>
+        <p>Override volume, shuffle, repeat, mono, theme, EQ, sample rate, and more per-session from the command line</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#8593;</div>
+        <div class="feature-name">Self-Update</div>
+        <p>Run <code style="color:#bae67e">--upgrade</code> to update to the latest release directly from your terminal</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ CLI FLAGS ════════════════ -->
+<section>
+  <div class="wrap">
+    <div class="section-label">CLI Flags</div>
+    <p style="color:#8a9199;font-size:13px;margin-bottom:24px;line-height:1.7">
+      Override any config option for a single session. Flags can appear before, after, or between file arguments.
+    </p>
+    <div class="keys-wrap">
+      <div class="keys-grid">
+        <div class="key-row"><kbd>--volume &lt;dB&gt;</kbd><span>Volume [-30, +6]</span></div>
+        <div class="key-row"><kbd>--shuffle</kbd><span>Enable shuffle</span></div>
+        <div class="key-row"><kbd>--repeat &lt;mode&gt;</kbd><span>off, all, or one</span></div>
+        <div class="key-row"><kbd>--mono / --no-mono</kbd><span>Mono downmix</span></div>
+        <div class="key-row"><kbd>--auto-play</kbd><span>Start playback immediately</span></div>
+        <div class="key-row"><kbd>--theme &lt;name&gt;</kbd><span>UI theme</span></div>
+        <div class="key-row"><kbd>--eq-preset &lt;name&gt;</kbd><span>EQ preset</span></div>
+        <div class="key-row"><kbd>--sample-rate &lt;Hz&gt;</kbd><span>Output sample rate</span></div>
+        <div class="key-row"><kbd>--buffer-ms &lt;ms&gt;</kbd><span>Speaker buffer (50&ndash;500)</span></div>
+        <div class="key-row"><kbd>--resample-quality &lt;n&gt;</kbd><span>Resample quality (1&ndash;4)</span></div>
+        <div class="key-row"><kbd>--upgrade</kbd><span>Update to latest release</span></div>
+        <div class="key-row"><kbd>--help / --version</kbd><span>Help &amp; version info</span></div>
       </div>
     </div>
   </div>
