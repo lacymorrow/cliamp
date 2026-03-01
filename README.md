@@ -175,6 +175,19 @@ eq_preset = "Flat"
 eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ```
 
+## CLI Flags
+
+Override config options for a single session:
+
+```sh
+cliamp --shuffle --volume -5 track.mp3
+cliamp track.mp3 --repeat all --mono
+cliamp --auto-play --theme "Amber CRT" ~/Music
+cliamp --sample-rate 48000 --buffer-ms 200 track.mp3
+```
+
+Flags can appear before, after, or between file arguments. See [docs/cli.md](docs/cli.md) for the full reference.
+
 ## Keys
 
 | Key | Action |

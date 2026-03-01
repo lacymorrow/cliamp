@@ -80,7 +80,7 @@ func Load() (Config, error) {
 		switch key {
 		case "volume":
 			if v, err := strconv.ParseFloat(val, 64); err == nil {
-				cfg.Volume = max(min(v, 6), -30)
+				cfg.Volume = v
 			}
 		case "repeat":
 			val = strings.Trim(val, `"'`)
@@ -100,19 +100,20 @@ func Load() (Config, error) {
 			cfg.Theme = strings.Trim(val, `"'`)
 		case "sample_rate":
 			if v, err := strconv.Atoi(val); err == nil {
-				cfg.SampleRate = clampSampleRate(v)
+				cfg.SampleRate = v
 			}
 		case "buffer_ms":
 			if v, err := strconv.Atoi(val); err == nil {
-				cfg.BufferMs = max(min(v, 500), 50)
+				cfg.BufferMs = v
 			}
 		case "resample_quality":
 			if v, err := strconv.Atoi(val); err == nil {
-				cfg.ResampleQuality = max(min(v, 4), 1)
+				cfg.ResampleQuality = v
 			}
 		}
 	}
 
+	cfg.clamp()
 	return cfg, scanner.Err()
 }
 
@@ -197,6 +198,14 @@ func (c Config) ApplyPlaylist(pl PlaylistConfig) {
 	if c.Shuffle {
 		pl.ToggleShuffle()
 	}
+}
+
+// clamp constrains all Config fields to their valid ranges.
+func (c *Config) clamp() {
+	c.Volume = max(min(c.Volume, 6), -30)
+	c.SampleRate = clampSampleRate(c.SampleRate)
+	c.BufferMs = max(min(c.BufferMs, 500), 50)
+	c.ResampleQuality = max(min(c.ResampleQuality, 4), 1)
 }
 
 // clampSampleRate returns the nearest valid sample rate from the allowed set.

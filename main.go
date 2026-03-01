@@ -23,11 +23,12 @@ import (
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
 var version string
 
-func run() error {
+func run(overrides config.Overrides, positional []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	overrides.Apply(&cfg)
 
 	var navProv playlist.Provider
 	if c := navidrome.NewFromEnv(); c != nil {
@@ -47,7 +48,7 @@ func run() error {
 
 	defer resolve.CleanupYTDL()
 
-	resolved, err := resolve.Args(os.Args[1:])
+	resolved, err := resolve.Args(positional)
 	if err != nil {
 		return err
 	}
@@ -98,6 +99,9 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 	if cfg.Theme != "" {
 		m.SetTheme(cfg.Theme)
 	}
+	if overrides.Play != nil && *overrides.Play {
+		m.SetAutoPlay(true)
+	}
 
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 
@@ -127,21 +131,37 @@ const helpText = `cliamp — retro terminal music player
 
 Usage: cliamp [flags] <file|folder|url> [...]
 
-Flags:
-  --help       Show this help message
-  --upgrade    Upgrade cliamp to the latest release
-  --version    Show the current version
+Playback:
+  --volume <dB>           Volume in dB, range [-30, +6] (e.g. --volume -5)
+  --shuffle
+  --repeat <off|all|one>
+  --mono / --no-mono
+  --auto-play             Start playback immediately
+
+Audio engine:
+  --sample-rate <Hz>      Output sample rate (22050, 44100, 48000, 96000, 192000)
+  --buffer-ms <ms>        Speaker buffer in milliseconds (50–500)
+  --resample-quality <n>  Resample quality factor (1–4)
+
+Appearance:
+  --theme <name>          UI theme name
+  --eq-preset <name>      EQ preset name (e.g. "Bass Boost")
+
+General:
+  -h, --help              Show this help message
+  -v, --version           Show the current version
+  --upgrade               Upgrade cliamp to the latest release
 
 Examples:
   cliamp track.mp3 song.flac ~/Music
-  cliamp ~/radio-stations.m3u stations.pls
+  cliamp --shuffle --volume -5 track.mp3
+  cliamp track.mp3 --repeat all --mono
+  cliamp --auto-play --shuffle ~/Music
+  cliamp --eq-preset "Bass Boost" ~/Music
   cliamp https://example.com/song.mp3
   cliamp http://radio.example.com/stream.m3u
-  cliamp http://radio.example.com/listen.pls
-  cliamp https://example.com/podcast/feed.xml
   cliamp https://soundcloud.com/user/sets/playlist
   cliamp https://www.youtube.com/watch?v=...
-  cliamp https://artist.bandcamp.com/album/...
 
 Environment:
   NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS   Navidrome server
@@ -151,28 +171,32 @@ Formats:   mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)
 SoundCloud/YouTube/Bandcamp require yt-dlp`
 
 func main() {
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--help", "-h":
-			fmt.Println(helpText)
-			return
-		case "--version", "-v":
-			if version == "" {
-				fmt.Println("cliamp (dev build)")
-			} else {
-				fmt.Printf("cliamp %s\n", version)
-			}
-			return
-		case "--upgrade":
-			if err := upgrade.Run(version); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			return
-		}
+	action, overrides, positional, err := config.ParseFlags(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
-	if err := run(); err != nil {
+	switch action {
+	case "help":
+		fmt.Println(helpText)
+		return
+	case "version":
+		if version == "" {
+			fmt.Println("cliamp (dev build)")
+		} else {
+			fmt.Printf("cliamp %s\n", version)
+		}
+		return
+	case "upgrade":
+		if err := upgrade.Run(version); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if err := run(overrides, positional); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

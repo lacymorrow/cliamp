@@ -33,6 +33,7 @@ const (
 )
 
 type tickMsg time.Time
+type autoPlayMsg struct{}
 
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
@@ -111,6 +112,8 @@ type Model struct {
 	plMgrTracks      []playlist.Track // tracks in the selected playlist
 	plMgrNewName     string
 	plMgrConfirmDel  bool
+
+	autoPlay bool // start playing immediately on launch
 }
 
 // NewModel creates a Model wired to the given player and playlist.
@@ -131,6 +134,9 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 	}
 	return m
 }
+
+// SetAutoPlay makes the player start playback immediately on Init.
+func (m *Model) SetAutoPlay(v bool) { m.autoPlay = v }
 
 // SetTheme finds a theme by name and applies it. Returns true if found.
 func (m *Model) SetTheme(name string) bool {
@@ -350,6 +356,9 @@ func (m Model) Init() tea.Cmd {
 	if len(m.pendingURLs) > 0 {
 		cmds = append(cmds, resolveRemoteCmd(m.pendingURLs))
 	}
+	if m.autoPlay && m.playlist.Len() > 0 {
+		cmds = append(cmds, func() tea.Msg { return autoPlayMsg{} })
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -368,6 +377,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, cmd
+
+	case autoPlayMsg:
+		if m.playlist.Len() > 0 && !m.player.IsPlaying() {
+			cmd := m.playCurrentTrack()
+			m.notifyMPRIS()
+			return m, cmd
+		}
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
