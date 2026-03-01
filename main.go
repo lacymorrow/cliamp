@@ -17,7 +17,11 @@ import (
 	"cliamp/resolve"
 	"cliamp/theme"
 	"cliamp/ui"
+	"cliamp/upgrade"
 )
+
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+var version string
 
 func run() error {
 	cfg, err := config.Load()
@@ -118,7 +122,54 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 	return nil
 }
 
+const helpText = `cliamp — retro terminal music player
+
+Usage: cliamp [flags] <file|folder|url> [...]
+
+Flags:
+  --help       Show this help message
+  --upgrade    Upgrade cliamp to the latest release
+  --version    Show the current version
+
+Examples:
+  cliamp track.mp3 song.flac ~/Music
+  cliamp ~/radio-stations.m3u
+  cliamp https://example.com/song.mp3
+  cliamp http://radio.example.com/stream.m3u
+  cliamp https://example.com/podcast/feed.xml
+  cliamp https://soundcloud.com/user/sets/playlist
+  cliamp https://www.youtube.com/watch?v=...
+  cliamp https://artist.bandcamp.com/album/...
+
+Environment:
+  NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS   Navidrome server
+
+Playlists: ~/.config/cliamp/playlists/*.toml
+Formats:   mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)
+SoundCloud/YouTube/Bandcamp require yt-dlp`
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--help", "-h":
+			fmt.Println(helpText)
+			return
+		case "--version", "-v":
+			if version == "" {
+				fmt.Println("cliamp (dev build)")
+			} else {
+				fmt.Printf("cliamp %s\n", version)
+			}
+			return
+		case "--upgrade":
+			if err := upgrade.Run(version); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
