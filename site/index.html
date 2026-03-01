@@ -366,6 +366,54 @@
     letter-spacing:1px;
   }
 
+  /* ══════════════════════════════════════════
+     THEMES
+     ══════════════════════════════════════════ */
+  .themes-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:10px;
+  }
+  .theme-card{
+    background:#232834;
+    border:1px solid #33415e;
+    border-radius:6px;
+    padding:16px;
+    transition:all .3s;
+  }
+  .theme-card:hover{
+    border-color:#ffcc66;
+    background:#2a3040;
+  }
+  .theme-card-name{
+    color:#cbccc6;
+    font-size:12px;
+    font-weight:600;
+    margin-bottom:12px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .theme-bars{
+    display:flex;
+    gap:4px;
+    height:28px;
+  }
+  .theme-bars span{
+    flex:1;
+    border-radius:3px;
+    transition:transform .2s;
+  }
+  .theme-card:hover .theme-bars span{
+    transform:scaleY(1.15);
+  }
+  .themes-note{
+    margin-top:16px;
+    font-size:11px;
+    color:#5c6773;
+    letter-spacing:0.5px;
+  }
+
   /* ── Responsive ────────────────────────── */
   @media(max-width:640px){
     .hero{padding:80px 0 60px}
@@ -379,6 +427,7 @@
     .key-row{padding:8px 16px}
     .key-row kbd{min-width:70px}
     .install-box code {white-space:pre-wrap;word-break:break-all;}
+    .themes-grid{grid-template-columns:repeat(2,1fr)}
   }
 </style>
 </head>
@@ -514,6 +563,227 @@
         <div class="feature-name">Self-Update</div>
         <p>Run <code style="color:#bae67e">--upgrade</code> to update to the latest release directly from your terminal</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ THEMES ════════════════ -->
+<section>
+  <div class="wrap">
+    <div class="section-label">Themes</div>
+    <p style="color:#8a9199;font-size:13px;margin-bottom:24px;line-height:1.7">
+      17 built-in themes. Press <kbd style="color:#ffcc66">t</kbd> to switch, or use <code style="color:#bae67e">--theme "name"</code> from the CLI.
+      Drop a <code style="color:#bae67e">.toml</code> file in <code style="color:#5c6773">~/.config/cliamp/themes/</code> to add your own.
+    </p>
+    <div class="themes-grid">
+
+      <div class="theme-card">
+        <div class="theme-card-name">Ayu Mirage Dark</div>
+        <div class="theme-bars">
+          <span style="background:#73d0ff"></span>
+          <span style="background:#f3f4f5"></span>
+          <span style="background:#cccac2"></span>
+          <span style="background:#d5ff80"></span>
+          <span style="background:#ffad66"></span>
+          <span style="background:#f28779"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Catppuccin</div>
+        <div class="theme-bars">
+          <span style="background:#89b4fa"></span>
+          <span style="background:#cdd6f4"></span>
+          <span style="background:#9399b2"></span>
+          <span style="background:#a6e3a1"></span>
+          <span style="background:#f9e2af"></span>
+          <span style="background:#f38ba8"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Catppuccin Latte</div>
+        <div class="theme-bars">
+          <span style="background:#1e66f5"></span>
+          <span style="background:#4c4f69"></span>
+          <span style="background:#8c8fa1"></span>
+          <span style="background:#40a02b"></span>
+          <span style="background:#df8e1d"></span>
+          <span style="background:#d20f39"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Ethereal</div>
+        <div class="theme-bars">
+          <span style="background:#7d82d9"></span>
+          <span style="background:#ffcead"></span>
+          <span style="background:#9a96a8"></span>
+          <span style="background:#92a593"></span>
+          <span style="background:#E9BB4F"></span>
+          <span style="background:#ED5B5A"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Everforest</div>
+        <div class="theme-bars">
+          <span style="background:#7fbbb3"></span>
+          <span style="background:#d3c6aa"></span>
+          <span style="background:#7a8478"></span>
+          <span style="background:#a7c080"></span>
+          <span style="background:#dbbc7f"></span>
+          <span style="background:#e67e80"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Flexoki Light</div>
+        <div class="theme-bars">
+          <span style="background:#205EA6"></span>
+          <span style="background:#100F0F"></span>
+          <span style="background:#6F6E69"></span>
+          <span style="background:#879A39"></span>
+          <span style="background:#D0A215"></span>
+          <span style="background:#D14D41"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Gruvbox</div>
+        <div class="theme-bars">
+          <span style="background:#7daea3"></span>
+          <span style="background:#d4be98"></span>
+          <span style="background:#a89984"></span>
+          <span style="background:#a9b665"></span>
+          <span style="background:#d8a657"></span>
+          <span style="background:#ea6962"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Hackerman</div>
+        <div class="theme-bars">
+          <span style="background:#82FB9C"></span>
+          <span style="background:#ddf7ff"></span>
+          <span style="background:#8e95b8"></span>
+          <span style="background:#4fe88f"></span>
+          <span style="background:#50f7d4"></span>
+          <span style="background:#50f872"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Kanagawa</div>
+        <div class="theme-bars">
+          <span style="background:#7e9cd8"></span>
+          <span style="background:#dcd7ba"></span>
+          <span style="background:#938aa9"></span>
+          <span style="background:#76946a"></span>
+          <span style="background:#c0a36e"></span>
+          <span style="background:#c34043"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Matte Black</div>
+        <div class="theme-bars">
+          <span style="background:#e68e0d"></span>
+          <span style="background:#bebebe"></span>
+          <span style="background:#777777"></span>
+          <span style="background:#FFC107"></span>
+          <span style="background:#b91c1c"></span>
+          <span style="background:#D35F5F"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Miasma</div>
+        <div class="theme-bars">
+          <span style="background:#78824b"></span>
+          <span style="background:#c2c2b0"></span>
+          <span style="background:#666666"></span>
+          <span style="background:#5f875f"></span>
+          <span style="background:#b36d43"></span>
+          <span style="background:#685742"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Nord</div>
+        <div class="theme-bars">
+          <span style="background:#81a1c1"></span>
+          <span style="background:#d8dee9"></span>
+          <span style="background:#8690a0"></span>
+          <span style="background:#a3be8c"></span>
+          <span style="background:#ebcb8b"></span>
+          <span style="background:#bf616a"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Osaka Jade</div>
+        <div class="theme-bars">
+          <span style="background:#509475"></span>
+          <span style="background:#F7E8B2"></span>
+          <span style="background:#C1C497"></span>
+          <span style="background:#549e6a"></span>
+          <span style="background:#459451"></span>
+          <span style="background:#FF5345"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Ristretto</div>
+        <div class="theme-bars">
+          <span style="background:#f38d70"></span>
+          <span style="background:#e6d9db"></span>
+          <span style="background:#948a8b"></span>
+          <span style="background:#adda78"></span>
+          <span style="background:#f9cc6c"></span>
+          <span style="background:#fd6883"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Ros&eacute; Pine</div>
+        <div class="theme-bars">
+          <span style="background:#56949f"></span>
+          <span style="background:#575279"></span>
+          <span style="background:#908caa"></span>
+          <span style="background:#286983"></span>
+          <span style="background:#ea9d34"></span>
+          <span style="background:#b4637a"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Tokyo Night</div>
+        <div class="theme-bars">
+          <span style="background:#7aa2f7"></span>
+          <span style="background:#cfc9c2"></span>
+          <span style="background:#737aa2"></span>
+          <span style="background:#9ece6a"></span>
+          <span style="background:#e0af68"></span>
+          <span style="background:#f7768e"></span>
+        </div>
+      </div>
+
+      <div class="theme-card">
+        <div class="theme-card-name">Vantablack</div>
+        <div class="theme-bars">
+          <span style="background:#8d8d8d"></span>
+          <span style="background:#ffffff"></span>
+          <span style="background:#8d8d8d"></span>
+          <span style="background:#b6b6b6"></span>
+          <span style="background:#cecece"></span>
+          <span style="background:#a4a4a4"></span>
+        </div>
+      </div>
+
+    </div>
+    <div class="themes-note">
+      Each bar represents: accent, bright foreground, foreground, green, yellow, red
     </div>
   </div>
 </section>
