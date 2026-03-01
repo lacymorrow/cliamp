@@ -36,8 +36,8 @@ type chainedOggStreamer struct {
 	format          beep.Format
 	targetSR        beep.SampleRate
 	resampleQuality int
-	stream          beep.Streamer  // raw or resampled (fed to gapless)
-	onMeta          func(string)   // called with "Artist - Title" on chain
+	stream          beep.Streamer // raw or resampled (fed to gapless)
+	onMeta          func(string)  // called with "Artist - Title" on chain
 	err             error
 }
 
