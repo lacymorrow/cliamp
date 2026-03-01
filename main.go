@@ -2,7 +2,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -53,24 +52,10 @@ func run(overrides config.Overrides, positional []string) error {
 		return err
 	}
 
-	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 && provider == nil {
-		return errors.New(`usage: cliamp <file|folder|url> [...]
-
-  Local files     cliamp track.mp3 song.flac ~/Music
-  Local M3U/PLS   cliamp ~/radio-stations.m3u stations.pls
-  HTTP stream     cliamp https://example.com/song.mp3
-  Radio / M3U     cliamp http://radio.example.com/stream.m3u
-  Radio / PLS     cliamp http://radio.example.com/listen.pls
-  Podcast feed    cliamp https://example.com/podcast/feed.xml
-  SoundCloud      cliamp https://soundcloud.com/user/sets/playlist
-  YouTube         cliamp https://www.youtube.com/watch?v=...
-  Bandcamp        cliamp https://artist.bandcamp.com/album/...
-
-  Navidrome       Set NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
-  Playlists       ~/.config/cliamp/playlists/*.toml
-
-Formats: mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)
-SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
+	// No args — stream the default radio.
+	defaultRadio := len(positional) == 0
+	if defaultRadio {
+		resolved.Pending = append(resolved.Pending, "http://cliamp.stream/public/iamdothash/playlist.pls")
 	}
 
 	pl := playlist.New()
@@ -93,9 +78,6 @@ SoundCloud/YouTube/Bandcamp require yt-dlp (brew install yt-dlp)`)
 
 	m := ui.NewModel(p, pl, provider, localProv, themes)
 	m.SetPendingURLs(resolved.Pending)
-	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 {
-		m.StartInProvider()
-	}
 	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
 		m.SetEQPreset(cfg.EQPreset)
 	}

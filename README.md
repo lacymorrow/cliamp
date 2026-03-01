@@ -4,6 +4,8 @@ A retro terminal music player inspired by Winamp 2.x. Plays MP3, WAV, FLAC, OGG,
 
 Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), and [Beep](https://github.com/gopxl/beep).
 
+Try it now: `cliamp http://cliamp.stream/public/iamdothash/playlist.pls`
+
 
 
 
