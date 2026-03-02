@@ -25,10 +25,10 @@ func ReadTags(path string) Track {
 
 	t := Track{
 		Path:   path,
-		Title:  strings.TrimSpace(m.Title()),
-		Artist: strings.TrimSpace(m.Artist()),
-		Album:  strings.TrimSpace(m.Album()),
-		Genre:  strings.TrimSpace(m.Genre()),
+		Title:  sanitizeTag(strings.TrimSpace(m.Title())),
+		Artist: sanitizeTag(strings.TrimSpace(m.Artist())),
+		Album:  sanitizeTag(strings.TrimSpace(m.Album())),
+		Genre:  sanitizeTag(strings.TrimSpace(m.Genre())),
 		Year:   m.Year(),
 	}
 	trackNum, _ := m.Track()
@@ -40,7 +40,7 @@ func ReadTags(path string) Track {
 // filename, or using the bare filename as the title.
 func trackFromFilename(path string) Track {
 	base := filepath.Base(path)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
+	name := sanitizeTag(strings.TrimSuffix(base, filepath.Ext(base)))
 	parts := strings.SplitN(name, " - ", 2)
 	if len(parts) == 2 {
 		return Track{Path: path, Artist: strings.TrimSpace(parts[0]), Title: strings.TrimSpace(parts[1])}
