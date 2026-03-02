@@ -152,6 +152,21 @@
   }
   .bar:nth-child(even){opacity:.7}
 
+  /* ── Radio Hint ── */
+  .radio-cmd{
+    margin-top:24px;
+    text-align:center;
+  }
+  .radio-cmd code{
+    color:#2a3050;font-size:11px;
+    transition:color .3s,text-shadow .3s;
+  }
+  .radio-cmd code:hover{
+    color:#5bf870;
+    text-shadow:0 0 8px rgba(91,248,112,.15);
+  }
+  .radio-cmd code .p{color:#1a1e2e;user-select:none}
+
   /* ── CTA Buttons ── */
   .hero-cta{
     margin-top:32px;
@@ -519,6 +534,10 @@
     <div class="hero-cta">
       <a href="#install" class="btn btn-primary">Install</a>
       <a href="https://github.com/bjarneo/cliamp" class="btn btn-ghost">GitHub &rarr;</a>
+    </div>
+
+    <div class="radio-cmd">
+      <code><span class="p">$ </span>cliamp http://cliamp.stream/public/iamdothash/playlist.pls</code>
     </div>
   </div>
 </section>
