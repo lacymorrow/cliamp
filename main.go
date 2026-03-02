@@ -52,8 +52,9 @@ func run(overrides config.Overrides, positional []string) error {
 		return err
 	}
 
-	// No args — stream the default radio.
-	defaultRadio := len(positional) == 0
+	// No args — stream the default radio (unless Navidrome is configured,
+	// in which case we open the provider browser instead).
+	defaultRadio := len(positional) == 0 && navProv == nil
 	if defaultRadio {
 		resolved.Pending = append(resolved.Pending, "http://cliamp.stream/public/iamdothash/playlist.pls")
 	}
@@ -78,6 +79,9 @@ func run(overrides config.Overrides, positional []string) error {
 
 	m := ui.NewModel(p, pl, provider, localProv, themes)
 	m.SetPendingURLs(resolved.Pending)
+	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 {
+		m.StartInProvider()
+	}
 	if cfg.EQPreset != "" && cfg.EQPreset != "Custom" {
 		m.SetEQPreset(cfg.EQPreset)
 	}
