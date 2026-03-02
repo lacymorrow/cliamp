@@ -642,7 +642,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.fullVis {
-			m.vis.Rows = max(defaultVisRows, (m.height-10)*3/5)
+			m.vis.Rows = max(defaultVisRows, (m.height-10)*4/5)
 		}
 
 	case tickMsg:

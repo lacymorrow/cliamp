@@ -282,7 +282,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "V":
 		m.fullVis = !m.fullVis
 		if m.fullVis {
-			m.vis.Rows = max(defaultVisRows, (m.height-10)*3/5)
+			m.vis.Rows = max(defaultVisRows, (m.height-10)*4/5)
 		} else {
 			m.vis.Rows = defaultVisRows
 		}
