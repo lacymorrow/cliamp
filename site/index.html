@@ -152,105 +152,6 @@
   }
   .bar:nth-child(even){opacity:.7}
 
-  /* ── Radio Player ── */
-  .radio-player{
-    margin-top:32px;
-    max-width:360px;
-    margin-left:auto;margin-right:auto;
-  }
-  .radio-card{
-    background:#0c0e17;
-    border:1px solid #1a1e2e;
-    border-radius:8px;
-    overflow:hidden;
-    transition:border-color .3s,box-shadow .3s;
-  }
-  .radio-card:hover{border-color:#1e2840}
-  .radio-card.playing{
-    border-color:#1a3028;
-    box-shadow:0 0 30px rgba(91,248,112,.04);
-  }
-  .radio-bar{
-    display:flex;align-items:center;gap:8px;
-    padding:8px 14px;
-    background:linear-gradient(180deg,#10131d 0%,#0c0e17 100%);
-    border-bottom:1px solid #141828;
-  }
-  .radio-bar-dot{width:6px;height:6px;border-radius:50%;background:#1e2233;transition:background .3s,box-shadow .3s}
-  .radio-card.playing .radio-bar-dot{background:#5bf870;box-shadow:0 0 6px rgba(91,248,112,.4)}
-  .radio-bar-title{flex:1;font-size:10px;color:#2a3050;letter-spacing:2px;text-transform:uppercase}
-  .radio-bar-live{
-    font-size:9px;letter-spacing:2px;text-transform:uppercase;
-    color:#2a3050;transition:color .3s;
-  }
-  .radio-card.playing .radio-bar-live{color:#5bf870;text-shadow:0 0 8px rgba(91,248,112,.2)}
-  .radio-body{
-    display:flex;align-items:center;gap:16px;
-    padding:18px 20px;
-  }
-  .radio-btn{
-    width:44px;height:44px;flex-shrink:0;
-    border-radius:50%;
-    background:rgba(91,248,112,.04);
-    border:1px solid #1a2a22;
-    cursor:pointer;
-    display:flex;align-items:center;justify-content:center;
-    transition:all .3s;
-    color:#3a5048;
-  }
-  .radio-btn:hover{
-    background:rgba(91,248,112,.08);
-    border-color:#2a4a38;
-    color:#5bf870;
-    box-shadow:0 0 20px rgba(91,248,112,.1);
-  }
-  .radio-card.playing .radio-btn{
-    background:rgba(91,248,112,.08);
-    border-color:#2a4a38;
-    color:#5bf870;
-    box-shadow:0 0 16px rgba(91,248,112,.08);
-  }
-  .radio-btn svg{width:16px;height:16px;fill:currentColor}
-  .radio-btn .icon-pause{display:none}
-  .radio-card.playing .radio-btn .icon-play{display:none}
-  .radio-card.playing .radio-btn .icon-pause{display:block}
-  .radio-info{flex:1;min-width:0}
-  .radio-station{
-    color:#b0b8c8;font-size:12px;font-weight:600;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  }
-  .radio-genre{
-    color:#3a4060;font-size:11px;margin-top:2px;
-  }
-  .radio-live-dot{
-    width:10px;height:10px;flex-shrink:0;
-    border-radius:50%;
-    background:#1e2233;
-    transition:background .4s,box-shadow .4s;
-  }
-  .radio-card.playing .radio-live-dot{
-    background:#5bf870;
-    box-shadow:0 0 8px rgba(91,248,112,.5),0 0 20px rgba(91,248,112,.25);
-    animation:live-glow 2s ease-in-out infinite;
-  }
-  @keyframes live-glow{
-    0%,100%{box-shadow:0 0 8px rgba(91,248,112,.5),0 0 20px rgba(91,248,112,.25)}
-    50%{box-shadow:0 0 12px rgba(91,248,112,.7),0 0 28px rgba(91,248,112,.35)}
-  }
-  .radio-cmd{
-    margin-top:10px;
-    text-align:center;
-  }
-  .radio-cmd code{
-    color:#2a3050;font-size:11px;
-    transition:color .3s,text-shadow .3s;
-  }
-  .radio-cmd code:hover{
-    color:#5bf870;
-    text-shadow:0 0 8px rgba(91,248,112,.15);
-  }
-  .radio-cmd code .p{color:#1a1e2e;user-select:none}
-
   /* ── CTA Buttons ── */
   .hero-cta{
     margin-top:32px;
@@ -519,7 +420,6 @@
   }
   .hero-title{animation:fade-up .6s ease-out both}
   .hero-cta{animation:fade-up .6s ease-out .15s both}
-  .radio-player{animation:fade-up .6s ease-out .25s both}
 
   /* Staggered bar animations */
   .bar:nth-child(1) {animation-duration:1.1s;animation-delay:0s}
@@ -572,8 +472,6 @@
   @media(max-width:480px){
     .themes-grid{grid-template-columns:1fr}
     .nav-links a:nth-child(n+4){display:none}
-    .radio-cmd code{font-size:10px}
-    .radio-player{max-width:100%}
   }
 </style>
 </head>
@@ -616,31 +514,6 @@
       <div class="bar"></div><div class="bar"></div><div class="bar"></div>
       <div class="bar"></div><div class="bar"></div><div class="bar"></div>
       <div class="bar"></div>
-    </div>
-
-    <div class="radio-player">
-      <div class="radio-card" id="radio-card">
-        <div class="radio-bar">
-          <span class="radio-bar-dot"></span>
-          <span class="radio-bar-title">cliamp radio</span>
-          <span class="radio-bar-live">LIVE</span>
-        </div>
-        <div class="radio-body">
-          <button class="radio-btn" onclick="toggleRadio()" aria-label="Play radio">
-            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            <svg class="icon-pause" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-          </button>
-          <div class="radio-info">
-            <div class="radio-station">Lo-Fi Radio</div>
-            <div class="radio-genre">chill / beats / ambient</div>
-          </div>
-          <span class="radio-live-dot"></span>
-        </div>
-      </div>
-      <div class="radio-cmd">
-        <code><span class="p">$ </span>cliamp http://cliamp.stream/public/iamdothash/playlist.pls</code>
-      </div>
-      <audio id="radio-stream" preload="none" src="http://cliamp.stream/listen/iamdothash/lofi.mp3"></audio>
     </div>
 
     <div class="hero-cta">
@@ -1108,17 +981,6 @@ function toggleSound(btn){
   btn.classList.toggle('unmuted',!vid.muted);
 }
 
-function toggleRadio(){
-  var audio=document.getElementById('radio-stream');
-  var card=document.getElementById('radio-card');
-  if(audio.paused){
-    audio.play();
-    card.classList.add('playing');
-  }else{
-    audio.pause();
-    card.classList.remove('playing');
-  }
-}
 </script>
 
 </body>
