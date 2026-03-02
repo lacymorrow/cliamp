@@ -91,24 +91,32 @@ func (m Model) View() string {
 	content := strings.Join(sections, "\n")
 	frame := frameStyle.Render(content)
 
-	// Center horizontally and vertically within the terminal
+	return m.centerFrame(frame)
+}
+
+// centerFrame centers a pre-rendered frame in the terminal using plain string
+// padding instead of allocating a new lipgloss.Style every render.
+func (m Model) centerFrame(frame string) string {
 	frameW := lipgloss.Width(frame)
 	frameH := lipgloss.Height(frame)
-
 	padLeft := max(0, (m.width-frameW)/2)
 	padTop := max(0, (m.height-frameH)/2)
 
-	return strings.Repeat("\n", padTop) +
-		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+	if padLeft == 0 {
+		return strings.Repeat("\n", padTop) + frame
+	}
+	// Indent every line by padLeft spaces.
+	prefix := strings.Repeat(" ", padLeft)
+	lines := strings.Split(frame, "\n")
+	for i, l := range lines {
+		lines[i] = prefix + l
+	}
+	return strings.Repeat("\n", padTop) + strings.Join(lines, "\n")
 }
 
 // centerOverlay wraps content in a frame and centers it in the terminal.
 func (m Model) centerOverlay(content string) string {
-	frame := frameStyle.Render(content)
-	padLeft := max(0, (m.width-lipgloss.Width(frame))/2)
-	padTop := max(0, (m.height-lipgloss.Height(frame))/2)
-	return strings.Repeat("\n", padTop) +
-		lipgloss.NewStyle().MarginLeft(padLeft).Render(frame)
+	return m.centerFrame(frameStyle.Render(content))
 }
 
 func (m Model) renderKeymapOverlay() string {
@@ -487,6 +495,9 @@ func (m Model) renderTimeStatus() string {
 }
 
 func (m Model) renderSpectrum() string {
+	if m.vis.Mode == VisNone {
+		return ""
+	}
 	bands := m.vis.Analyze(m.player.Samples())
 	return m.vis.Render(bands)
 }

@@ -57,6 +57,12 @@ const (
 type tickMsg time.Time
 type autoPlayMsg struct{}
 
+// Tick intervals: fast for visualizer animation, slow for time/seek display.
+const (
+	tickFast = 50 * time.Millisecond  // 20 FPS — visualizer active
+	tickSlow = 200 * time.Millisecond // 5 FPS — visualizer off or overlay
+)
+
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
 	player    *player.Player
@@ -223,6 +229,15 @@ func (m Model) ThemeName() string {
 		return theme.DefaultName
 	}
 	return m.themes[m.themeIdx].Name
+}
+
+// isOverlayActive reports whether a full-screen overlay is shown instead of
+// the main player view. When true, the visualizer is not visible and we can
+// use the slower tick rate.
+func (m *Model) isOverlayActive() bool {
+	return m.showKeymap || m.showThemes || m.showFileBrowser ||
+		m.showNavBrowser || m.showPlManager || m.showQueue ||
+		m.showInfo || m.searching
 }
 
 // openThemePicker re-loads themes from disk (picking up new user files)
@@ -596,7 +611,11 @@ func (m Model) Init() tea.Cmd {
 }
 
 func tickCmd() tea.Cmd {
-	return tea.Tick(time.Millisecond*50, func(t time.Time) tea.Msg {
+	return tickCmdAt(tickFast)
+}
+
+func tickCmdAt(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -662,7 +681,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.player.IsPlaying() && !m.player.IsPaused() {
 			m.titleOff++
 		}
-		cmds = append(cmds, tickCmd())
+
+		// Use fast ticks only when the visualizer is rendering; otherwise
+		// slow ticks are enough for time/seek updates and save significant
+		// GPU repaints in terminal emulators.
+		interval := tickSlow
+		if m.vis.Mode != VisNone && !m.isOverlayActive() {
+			interval = tickFast
+		}
+		cmds = append(cmds, tickCmdAt(interval))
 		return m, tea.Batch(cmds...)
 
 	case []playlist.PlaylistInfo:
