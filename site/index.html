@@ -6,294 +6,447 @@
 <title>CLIAMP — Terminal Music Player</title>
 <meta name="description" content="A retro terminal music player inspired by Winamp 2.x. Plays MP3, WAV, FLAC, OGG, AAC, ALAC, Opus, and WMA with a spectrum visualizer and EQ.">
 <style>
-  /* ── Reset & Base ──────────────────────── */
+  /* ═══ RESET ═══════════════════════════════ */
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
+
+  /* ═══ BASE ════════════════════════════════ */
   body{
-    background:#1f2430;
-    color:#cbccc6;
-    font-family:"SF Mono","Cascadia Code","Fira Code","JetBrains Mono","Consolas","Liberation Mono",monospace;
+    background:#08090f;
+    color:#b0b8c8;
+    font-family:"SF Mono","Cascadia Code","Fira Code","JetBrains Mono","IBM Plex Mono","Consolas","Liberation Mono",monospace;
     font-size:14px;
     line-height:1.7;
     overflow-x:hidden;
   }
-  ::selection{background:#33415e;color:#73d0ff}
+  ::selection{background:#2a3a5e;color:#73d0ff}
 
-  /* ── Scanline overlay on entire page ───── */
-  body::after{
-    content:"";
-    position:fixed;
-    inset:0;
-    background:repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0,0,0,.05) 2px,
-      rgba(0,0,0,.05) 4px
-    );
-    pointer-events:none;
-    z-index:9999;
+  /* ═══ CRT EFFECTS ═════════════════════════ */
+  /* Dot grid + scanlines + vignette */
+  .crt{
+    position:fixed;inset:0;pointer-events:none;z-index:9999;
+    background:
+      repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.035) 2px,rgba(0,0,0,.035) 4px),
+      radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(0,0,0,.55) 100%);
+  }
+  /* Dot grid on body */
+  body::before{
+    content:"";position:fixed;inset:0;
+    background-image:radial-gradient(rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:20px 20px;
+    pointer-events:none;z-index:0;
   }
 
-  /* ── Layout ────────────────────────────── */
-  .wrap{max-width:760px;margin:0 auto;padding:0 28px}
+  /* ═══ LAYOUT ══════════════════════════════ */
+  .wrap{max-width:840px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
   section{padding:80px 0}
-  section + section{border-top:1px solid #2a2f3a}
 
-  /* ── Section Headers ───────────────────── */
-  .section-label{
-    color:#ffcc66;
-    font-size:11px;
-    font-weight:600;
-    letter-spacing:4px;
-    text-transform:uppercase;
-    margin-bottom:32px;
-    display:flex;align-items:center;gap:14px;
-    text-shadow:0 0 10px rgba(255,204,102,.2);
+  /* ═══ NAV ══════════════════════════════════ */
+  .nav{
+    position:sticky;top:0;z-index:100;
+    background:rgba(8,9,15,.85);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid rgba(30,34,51,.6);
   }
-  .section-label::before{content:"//";color:#5c6773}
-  .section-label::after{content:"";flex:1;height:1px;background:linear-gradient(to right,#33415e,transparent)}
+  .nav-inner{
+    max-width:840px;margin:0 auto;padding:0 28px;
+    display:flex;align-items:center;justify-content:space-between;
+    height:44px;
+  }
+  .nav-brand{
+    color:#ffcc66;font-size:13px;font-weight:700;
+    letter-spacing:4px;text-decoration:none;
+    text-shadow:0 0 12px rgba(255,204,102,.25);
+    transition:text-shadow .3s;
+  }
+  .nav-brand:hover{text-shadow:0 0 20px rgba(255,204,102,.5);color:#ffcc66}
+  .nav-links{display:flex;gap:24px}
+  .nav-links a{
+    color:#4a5068;font-size:11px;letter-spacing:1.5px;
+    text-transform:uppercase;text-decoration:none;
+    transition:color .25s,text-shadow .25s;
+  }
+  .nav-links a:hover{color:#73d0ff;text-shadow:0 0 8px rgba(115,208,255,.2)}
 
-  /* ── Links ─────────────────────────────── */
-  a{color:#73d0ff;text-decoration:none;transition:all .2s}
-  a:hover{color:#ffcc66;text-shadow:0 0 8px rgba(255,204,102,.2)}
+  /* ═══ SECTION HEADERS ═════════════════════ */
+  .section-label{
+    font-size:11px;font-weight:600;
+    letter-spacing:5px;text-transform:uppercase;
+    margin-bottom:36px;
+    display:flex;align-items:center;gap:16px;
+  }
+  .section-label .label-text{
+    color:#ffcc66;
+    text-shadow:0 0 12px rgba(255,204,102,.2);
+    white-space:nowrap;
+  }
+  .section-label::before{content:"//";color:#2a3050;font-weight:400}
+  .section-label::after{
+    content:"";flex:1;height:1px;
+    background:linear-gradient(to right,#1e2233,transparent);
+  }
 
-  /* ══════════════════════════════════════════
-     HERO
-     ══════════════════════════════════════════ */
+  /* ═══ SECTION DIVIDER ═════════════════════ */
+  .divider{
+    text-align:center;color:#1a1e2e;font-size:13px;
+    letter-spacing:4px;padding:0;
+    user-select:none;
+  }
+  .divider span{color:#1e2233}
+
+  /* ═══ LINKS ═══════════════════════════════ */
+  a{color:#73d0ff;text-decoration:none;transition:all .25s}
+  a:hover{color:#ffcc66;text-shadow:0 0 8px rgba(255,204,102,.15)}
+
+  /* ═══ HERO ════════════════════════════════ */
   .hero{
     text-align:center;
-    padding:120px 0 80px;
+    padding:100px 0 40px;
     position:relative;
   }
   .hero::before{
-    content:"";
-    position:absolute;
-    top:50%;left:50%;
-    width:600px;height:400px;
-    transform:translate(-50%,-60%);
-    background:radial-gradient(ellipse,rgba(255,204,102,.04) 0%,transparent 70%);
+    content:"";position:absolute;
+    top:30%;left:50%;width:800px;height:500px;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(ellipse,rgba(255,204,102,.03) 0%,transparent 65%);
     pointer-events:none;
   }
-  .hero-badge{
-    display:inline-block;
-    font-size:10px;
-    letter-spacing:3px;
-    color:#555;
-    border:1px solid #1a1a1a;
-    padding:4px 14px;
-    border-radius:20px;
-    margin-bottom:28px;
-    text-transform:uppercase;
-  }
+
   .hero-title{
-    font-size:clamp(40px,10vw,80px);
+    font-size:clamp(44px,10vw,72px);
     color:#ffcc66;
-    letter-spacing:0.4em;
+    letter-spacing:0.45em;
+    padding-left:0.45em;
     font-weight:700;
     line-height:1;
     text-shadow:
-      0 0 20px rgba(255,204,102,.3),
-      0 0 60px rgba(255,204,102,.1);
-    position:relative;
+      0 0 30px rgba(255,204,102,.3),
+      0 0 80px rgba(255,204,102,.1),
+      0 0 120px rgba(255,204,102,.05);
+    animation:phosphor-pulse 6s ease-in-out infinite;
   }
   .hero-sub{
-    color:#5c6773;
-    font-size:12px;
-    margin-top:16px;
-    letter-spacing:6px;
-    text-transform:uppercase;
+    color:#3a4060;font-size:11px;margin-top:14px;
+    letter-spacing:7px;text-transform:uppercase;
   }
   .hero-desc{
-    color:#8a9199;
-    font-size:14px;
-    margin-top:28px;
-    max-width:480px;
-    margin-left:auto;margin-right:auto;
+    color:#6a7088;font-size:13px;margin-top:24px;
+    max-width:420px;margin-left:auto;margin-right:auto;
     line-height:1.8;
   }
   .hero-desc em{color:#ffa759;font-style:normal}
 
-  /* ── Spectrum Visualizer ───────────────── */
+  /* ── Spectrum Visualizer ── */
   .visualizer{
-    display:flex;
-    align-items:flex-end;
-    justify-content:center;
-    gap:3px;
-    height:56px;
-    margin:44px auto 0;
-    padding:0 4px;
+    display:flex;align-items:flex-end;justify-content:center;
+    gap:2px;height:52px;
+    margin:36px auto 0;
+    filter:drop-shadow(0 0 6px rgba(186,230,126,.1));
   }
   .bar{
-    flex:0 0 6px;
-    border-radius:1px 1px 0 0;
-    background:linear-gradient(to top,#bae67e 0%,#ffcc66 50%,#ffa759 100%);
+    flex:0 0 5px;border-radius:1px 1px 0 0;
+    background:linear-gradient(to top,#5bf870 0%,#bae67e 30%,#ffcc66 65%,#ff6b4a 100%);
     animation:eq 1.4s ease-in-out infinite alternate;
-    box-shadow:0 0 4px rgba(186,230,126,.2);
+    opacity:.85;
   }
-  @keyframes eq{
-    0%{height:4px;opacity:.4}
-    50%{opacity:.8}
-    100%{height:52px;opacity:1}
-  }
-  .bar:nth-child(1) {animation-duration:1.1s;animation-delay:0s}
-  .bar:nth-child(2) {animation-duration:1.3s;animation-delay:.05s}
-  .bar:nth-child(3) {animation-duration:0.9s;animation-delay:.12s}
-  .bar:nth-child(4) {animation-duration:1.5s;animation-delay:.18s}
-  .bar:nth-child(5) {animation-duration:1.0s;animation-delay:.25s}
-  .bar:nth-child(6) {animation-duration:1.4s;animation-delay:.15s}
-  .bar:nth-child(7) {animation-duration:1.2s;animation-delay:.32s}
-  .bar:nth-child(8) {animation-duration:0.8s;animation-delay:.08s}
-  .bar:nth-child(9) {animation-duration:1.3s;animation-delay:.38s}
-  .bar:nth-child(10){animation-duration:1.1s;animation-delay:.22s}
-  .bar:nth-child(11){animation-duration:1.5s;animation-delay:.42s}
-  .bar:nth-child(12){animation-duration:0.9s;animation-delay:.28s}
-  .bar:nth-child(13){animation-duration:1.2s;animation-delay:.48s}
-  .bar:nth-child(14){animation-duration:1.4s;animation-delay:.35s}
-  .bar:nth-child(15){animation-duration:1.0s;animation-delay:.18s}
-  .bar:nth-child(16){animation-duration:1.3s;animation-delay:.52s}
-  .bar:nth-child(17){animation-duration:0.85s;animation-delay:.1s}
-  .bar:nth-child(18){animation-duration:1.5s;animation-delay:.4s}
-  .bar:nth-child(19){animation-duration:1.1s;animation-delay:.2s}
-  .bar:nth-child(20){animation-duration:1.35s;animation-delay:.45s}
-  .bar:nth-child(21){animation-duration:0.95s;animation-delay:.3s}
-  .bar:nth-child(22){animation-duration:1.25s;animation-delay:.55s}
-  .bar:nth-child(23){animation-duration:1.4s;animation-delay:.15s}
-  .bar:nth-child(24){animation-duration:1.05s;animation-delay:.38s}
+  .bar:nth-child(even){opacity:.7}
 
-  /* ── CTA Buttons ───────────────────────── */
+  /* ── Radio Player ── */
+  .radio-player{
+    margin-top:32px;
+    max-width:360px;
+    margin-left:auto;margin-right:auto;
+  }
+  .radio-card{
+    background:#0c0e17;
+    border:1px solid #1a1e2e;
+    border-radius:8px;
+    overflow:hidden;
+    transition:border-color .3s,box-shadow .3s;
+  }
+  .radio-card:hover{border-color:#1e2840}
+  .radio-card.playing{
+    border-color:#1a3028;
+    box-shadow:0 0 30px rgba(91,248,112,.04);
+  }
+  .radio-bar{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 14px;
+    background:linear-gradient(180deg,#10131d 0%,#0c0e17 100%);
+    border-bottom:1px solid #141828;
+  }
+  .radio-bar-dot{width:6px;height:6px;border-radius:50%;background:#1e2233;transition:background .3s,box-shadow .3s}
+  .radio-card.playing .radio-bar-dot{background:#5bf870;box-shadow:0 0 6px rgba(91,248,112,.4)}
+  .radio-bar-title{flex:1;font-size:10px;color:#2a3050;letter-spacing:2px;text-transform:uppercase}
+  .radio-bar-live{
+    font-size:9px;letter-spacing:2px;text-transform:uppercase;
+    color:#2a3050;transition:color .3s;
+  }
+  .radio-card.playing .radio-bar-live{color:#5bf870;text-shadow:0 0 8px rgba(91,248,112,.2)}
+  .radio-body{
+    display:flex;align-items:center;gap:16px;
+    padding:18px 20px;
+  }
+  .radio-btn{
+    width:44px;height:44px;flex-shrink:0;
+    border-radius:50%;
+    background:rgba(91,248,112,.04);
+    border:1px solid #1a2a22;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:all .3s;
+    color:#3a5048;
+  }
+  .radio-btn:hover{
+    background:rgba(91,248,112,.08);
+    border-color:#2a4a38;
+    color:#5bf870;
+    box-shadow:0 0 20px rgba(91,248,112,.1);
+  }
+  .radio-card.playing .radio-btn{
+    background:rgba(91,248,112,.08);
+    border-color:#2a4a38;
+    color:#5bf870;
+    box-shadow:0 0 16px rgba(91,248,112,.08);
+  }
+  .radio-btn svg{width:16px;height:16px;fill:currentColor}
+  .radio-btn .icon-pause{display:none}
+  .radio-card.playing .radio-btn .icon-play{display:none}
+  .radio-card.playing .radio-btn .icon-pause{display:block}
+  .radio-info{flex:1;min-width:0}
+  .radio-station{
+    color:#b0b8c8;font-size:12px;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .radio-genre{
+    color:#3a4060;font-size:11px;margin-top:2px;
+  }
+  .radio-live-dot{
+    width:10px;height:10px;flex-shrink:0;
+    border-radius:50%;
+    background:#1e2233;
+    transition:background .4s,box-shadow .4s;
+  }
+  .radio-card.playing .radio-live-dot{
+    background:#5bf870;
+    box-shadow:0 0 8px rgba(91,248,112,.5),0 0 20px rgba(91,248,112,.25);
+    animation:live-glow 2s ease-in-out infinite;
+  }
+  @keyframes live-glow{
+    0%,100%{box-shadow:0 0 8px rgba(91,248,112,.5),0 0 20px rgba(91,248,112,.25)}
+    50%{box-shadow:0 0 12px rgba(91,248,112,.7),0 0 28px rgba(91,248,112,.35)}
+  }
+  .radio-cmd{
+    margin-top:10px;
+    text-align:center;
+  }
+  .radio-cmd code{
+    color:#2a3050;font-size:11px;
+    transition:color .3s,text-shadow .3s;
+  }
+  .radio-cmd code:hover{
+    color:#5bf870;
+    text-shadow:0 0 8px rgba(91,248,112,.15);
+  }
+  .radio-cmd code .p{color:#1a1e2e;user-select:none}
+
+  /* ── CTA Buttons ── */
   .hero-cta{
-    margin-top:44px;
-    display:flex;
-    gap:16px;
-    justify-content:center;
-    flex-wrap:wrap;
+    margin-top:32px;
+    display:flex;gap:14px;
+    justify-content:center;flex-wrap:wrap;
   }
   .btn{
     display:inline-flex;align-items:center;gap:8px;
-    font-family:inherit;font-size:12px;
-    letter-spacing:1px;
-    padding:10px 24px;
-    border-radius:4px;
-    border:1px solid;
-    cursor:pointer;
-    transition:all .25s;
-    text-decoration:none;
+    font-family:inherit;font-size:12px;letter-spacing:1.5px;
+    padding:11px 28px;border-radius:5px;
+    border:1px solid;cursor:pointer;
+    transition:all .3s;text-decoration:none;
+    text-transform:uppercase;
   }
   .btn-primary{
-    background:#ffcc66;
-    color:#1f2430;
-    border-color:#ffcc66;
+    background:linear-gradient(180deg,#ffcc66 0%,#f0b840 100%);
+    color:#0a0c13;border-color:#ffcc66;
     font-weight:700;
+    box-shadow:0 0 20px rgba(255,204,102,.15),0 2px 8px rgba(0,0,0,.3);
   }
   .btn-primary:hover{
-    background:#ffd580;
-    box-shadow:0 0 20px rgba(255,204,102,.3);
-    color:#1f2430;
-    text-shadow:none;
+    background:linear-gradient(180deg,#ffd580 0%,#ffcc66 100%);
+    box-shadow:0 0 30px rgba(255,204,102,.3),0 4px 16px rgba(0,0,0,.3);
+    color:#0a0c13;text-shadow:none;
+    transform:translateY(-1px);
   }
   .btn-ghost{
-    background:transparent;
-    color:#5c6773;
-    border-color:#33415e;
+    background:transparent;color:#4a5068;border-color:#1e2233;
   }
   .btn-ghost:hover{
-    color:#73d0ff;
-    border-color:#73d0ff;
-    text-shadow:0 0 8px rgba(115,208,255,.2);
+    color:#73d0ff;border-color:#2a4070;
+    text-shadow:0 0 10px rgba(115,208,255,.2);
+    box-shadow:0 0 20px rgba(115,208,255,.08);
   }
 
-  /* ══════════════════════════════════════════
-     INSTALL
-     ══════════════════════════════════════════ */
+  /* ═══ DEMO ════════════════════════════════ */
+  .demo-wrap{position:relative}
+  .demo-video{
+    display:block;width:100%;height:auto;
+    border-radius:8px;
+    border:1px solid #1a1e2e;
+    box-shadow:0 10px 40px rgba(0,0,0,.4);
+  }
+  .sound-toggle{
+    position:absolute;bottom:14px;right:14px;
+    width:36px;height:36px;border-radius:50%;
+    background:rgba(8,9,15,.75);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+    border:1px solid #1e2233;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    color:#4a5068;
+    transition:all .3s;
+  }
+  .sound-toggle:hover{border-color:#ffcc66;color:#ffcc66;box-shadow:0 0 12px rgba(255,204,102,.12)}
+  .sound-toggle.unmuted{border-color:#5bf870;color:#5bf870;box-shadow:0 0 12px rgba(91,248,112,.1)}
+  .sound-toggle svg{width:16px;height:16px;fill:currentColor}
+  .sound-toggle .icon-unmuted{display:none}
+  .sound-toggle.unmuted .icon-muted{display:none}
+  .sound-toggle.unmuted .icon-unmuted{display:block}
+
+  /* ═══ INSTALL ═════════════════════════════ */
+  .install-group{margin-top:24px}
+  .install-group:first-of-type{margin-top:0}
+  .install-platform{
+    color:#3a4060;font-size:10px;letter-spacing:3px;
+    text-transform:uppercase;margin-bottom:10px;
+    padding-left:2px;
+  }
   .install-box{
-    background:#232834;
-    border:1px solid #33415e;
+    background:#0c0e17;
+    border:1px solid #1a1e2e;
     border-radius:6px;
-    padding:20px 24px;
-    position:relative;
-    overflow:visible;
-    transition:border-color .3s;
+    padding:18px 22px;
+    position:relative;overflow:visible;
+    transition:border-color .3s,box-shadow .3s;
+    cursor:pointer;
   }
-  .install-box:hover{border-color:#ffcc66}
+  .install-box:hover{
+    border-color:#2a3a50;
+    box-shadow:0 0 20px rgba(91,248,112,.04);
+  }
   .install-box code{
-    color:#bae67e;
-    font-size:13px;
-    white-space:nowrap;
-    text-shadow:0 0 6px rgba(186,230,126,.1);
+    color:#5bf870;font-size:13px;white-space:nowrap;
+    text-shadow:0 0 8px rgba(91,248,112,.1);
   }
-  .install-box .prompt{color:#5c6773;user-select:none}
-  .install-box{cursor:pointer}
+  .install-box .prompt{color:#2a3050;user-select:none}
   .install-box .copied-msg{
-    position:absolute;
-    top:-28px;left:50%;
+    position:absolute;top:-26px;left:50%;
     transform:translateX(-50%);
-    color:#bae67e;
-    font-size:11px;
-    opacity:0;
-    transition:opacity .2s;
+    color:#5bf870;font-size:10px;letter-spacing:1px;
+    text-shadow:0 0 6px rgba(91,248,112,.3);
+    opacity:0;transition:opacity .25s;
   }
   .install-box .copied-msg.show{opacity:1}
   .install-note{
-    margin-top:14px;
-    font-size:11px;
-    color:#5c6773;
-    letter-spacing:0.5px;
+    margin-top:16px;font-size:11px;
+    color:#3a4060;letter-spacing:0.5px;
   }
-  .install-note a{color:#5c6773}
+  .install-note a{color:#3a4060}
   .install-note a:hover{color:#73d0ff}
 
-  /* ══════════════════════════════════════════
-     FEATURES
-     ══════════════════════════════════════════ */
+  /* ═══ FEATURES ════════════════════════════ */
   .features-grid{
     display:grid;
     grid-template-columns:repeat(2,1fr);
-    gap:2px;
+    gap:8px;
   }
   .feature{
-    background:#232834;
-    padding:24px;
-    position:relative;
+    background:#0c0e17;
+    border:1px solid #141828;
+    border-left:2px solid #1e2233;
+    padding:22px 24px;
+    border-radius:0 6px 6px 0;
     transition:all .3s;
-    border:1px solid transparent;
+    position:relative;
   }
   .feature:hover{
-    background:#2a3040;
-    border-color:#33415e;
+    background:#0e1019;
+    border-left-color:#ffcc66;
+    box-shadow:0 0 20px rgba(255,204,102,.03);
   }
   .feature-icon{
-    font-size:16px;
-    color:#5c6773;
-    margin-bottom:10px;
-    transition:color .3s;
+    font-size:14px;color:#2a3050;
+    margin-bottom:8px;
+    transition:color .3s,text-shadow .3s;
   }
-  .feature:hover .feature-icon{color:#ffcc66}
+  .feature:hover .feature-icon{
+    color:#ffcc66;
+    text-shadow:0 0 8px rgba(255,204,102,.3);
+  }
   .feature-name{
-    color:#cbccc6;
-    font-size:13px;
-    font-weight:600;
-    margin-bottom:6px;
+    color:#b0b8c8;font-size:13px;
+    font-weight:600;margin-bottom:5px;
   }
-  .feature p{font-size:12px;color:#5c6773;line-height:1.6}
+  .feature p{font-size:12px;color:#4a5068;line-height:1.6}
+  .feature p code{color:#5bf870;font-size:11px}
 
-  /* ══════════════════════════════════════════
-     DEMO VIDEO
-     ══════════════════════════════════════════ */
-  .demo-video{
-    display:block;
-    width:100%;
-    height:auto;
-    border-radius:8px;
-    border:1px solid #33415e;
+  /* ═══ THEMES ══════════════════════════════ */
+  .themes-intro{
+    color:#6a7088;font-size:13px;
+    margin-bottom:28px;line-height:1.7;
+  }
+  .themes-intro kbd{color:#ffcc66;font-family:inherit;text-shadow:0 0 6px rgba(255,204,102,.15)}
+  .themes-intro code{color:#5bf870;font-size:12px;text-shadow:0 0 6px rgba(91,248,112,.1)}
+  .themes-intro .path{color:#3a4060}
+
+  .themes-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+  }
+  .theme-card{
+    background:#0c0e17;
+    border:1px solid #141828;
+    border-radius:6px;
+    padding:14px 16px;
+    transition:all .3s;
+    cursor:default;
+  }
+  .theme-card:hover{
+    border-color:#2a3050;
+    background:#0e1019;
+    transform:translateY(-2px);
+    box-shadow:0 8px 24px rgba(0,0,0,.3);
+  }
+  .theme-card-name{
+    color:#6a7088;font-size:11px;font-weight:600;
+    margin-bottom:10px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    letter-spacing:0.5px;
+  }
+  .theme-card:hover .theme-card-name{color:#b0b8c8}
+  .theme-bars{display:flex;gap:3px;height:24px}
+  .theme-bars span{
+    flex:1;border-radius:2px;
+    transition:transform .25s,box-shadow .25s;
+  }
+  .theme-card:hover .theme-bars span{
+    transform:scaleY(1.2);
+    box-shadow:0 0 8px currentColor;
+  }
+  .themes-note{
+    margin-top:14px;font-size:10px;
+    color:#2a3050;letter-spacing:1px;
   }
 
-  /* ══════════════════════════════════════════
-     KEYBINDINGS
-     ══════════════════════════════════════════ */
+  /* ═══ TABLES (Keys / CLI) ═════════════════ */
+  .table-intro{
+    color:#6a7088;font-size:13px;
+    margin-bottom:24px;line-height:1.7;
+  }
   .keys-wrap{
-    background:#232834;
-    border:1px solid #33415e;
+    background:#0c0e17;
+    border:1px solid #141828;
     border-radius:8px;
     overflow:hidden;
   }
@@ -302,144 +455,154 @@
     grid-template-columns:repeat(2,1fr);
   }
   .key-row{
-    display:flex;
-    gap:12px;
-    padding:10px 20px;
-    border-bottom:1px solid #2a2f3a;
+    display:flex;gap:12px;
+    padding:9px 20px;
+    border-bottom:1px solid #0f1119;
     transition:background .2s;
     align-items:baseline;
   }
-  .key-row:hover{background:#2a3040}
+  .key-row:hover{background:rgba(255,204,102,.02)}
   .key-row kbd{
-    color:#ffcc66;
-    font-family:inherit;
-    font-size:12px;
-    min-width:90px;
-    flex-shrink:0;
-    text-shadow:0 0 4px rgba(255,204,102,.1);
+    color:#ffcc66;font-family:inherit;font-size:12px;
+    min-width:90px;flex-shrink:0;
+    text-shadow:0 0 6px rgba(255,204,102,.1);
   }
-  .key-row span{
-    color:#5c6773;
-    font-size:12px;
-  }
+  .key-row span{color:#3a4060;font-size:12px}
 
-  /* ══════════════════════════════════════════
-     FOOTER
-     ══════════════════════════════════════════ */
+  /* ═══ FOOTER ══════════════════════════════ */
   footer{
     text-align:center;
     padding:60px 28px 80px;
-    border-top:1px solid #2a2f3a;
+    border-top:1px solid #0f1119;
+    position:relative;z-index:1;
   }
   .footer-viz{
-    display:flex;
-    justify-content:center;
-    gap:2px;
-    margin-bottom:24px;
-    opacity:.3;
+    display:flex;justify-content:center;
+    gap:2px;margin-bottom:20px;opacity:.2;
   }
   .footer-viz span{
-    display:block;
-    width:3px;height:8px;
-    background:#ffcc66;
-    border-radius:1px;
+    display:block;width:3px;height:8px;
+    background:#ffcc66;border-radius:1px;
   }
-  .footer-viz span:nth-child(odd){height:12px}
+  .footer-viz span:nth-child(odd){height:14px}
   .footer-viz span:nth-child(3n){height:5px}
+  .footer-viz span:nth-child(5n){height:18px}
   .footer-links{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:16px;
+    display:flex;align-items:center;justify-content:center;gap:20px;
   }
-  .footer-sep{color:#33415e;font-size:14px}
+  .footer-sep{color:#1a1e2e;font-size:14px}
   .footer-link{
-    font-size:13px;
+    font-size:12px;color:#3a4060;
     display:inline-flex;align-items:center;gap:6px;
+    transition:color .25s;letter-spacing:0.5px;
   }
-  .footer-link svg{width:14px;height:14px;fill:#5c6773;transition:fill .2s}
-  .footer-link:hover svg{fill:#73d0ff}
-  .footer-meta{
-    margin-top:12px;
-    font-size:11px;
-    color:#2a2a2a;
-    letter-spacing:1px;
-  }
-
-  /* ══════════════════════════════════════════
-     THEMES
-     ══════════════════════════════════════════ */
-  .themes-grid{
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:10px;
-  }
-  .theme-card{
-    background:#232834;
-    border:1px solid #33415e;
-    border-radius:6px;
-    padding:16px;
-    transition:all .3s;
-  }
-  .theme-card:hover{
-    border-color:#ffcc66;
-    background:#2a3040;
-  }
-  .theme-card-name{
-    color:#cbccc6;
-    font-size:12px;
-    font-weight:600;
-    margin-bottom:12px;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-  }
-  .theme-bars{
-    display:flex;
-    gap:4px;
-    height:28px;
-  }
-  .theme-bars span{
-    flex:1;
-    border-radius:3px;
-    transition:transform .2s;
-  }
-  .theme-card:hover .theme-bars span{
-    transform:scaleY(1.15);
-  }
-  .themes-note{
-    margin-top:16px;
-    font-size:11px;
-    color:#5c6773;
-    letter-spacing:0.5px;
+  .footer-link:hover{color:#73d0ff}
+  .footer-link svg{width:14px;height:14px;fill:currentColor;transition:fill .25s}
+  .footer-note{
+    margin-top:16px;font-size:10px;
+    color:#1a1e2e;letter-spacing:2px;
   }
 
-  /* ── Responsive ────────────────────────── */
-  @media(max-width:640px){
-    .hero{padding:80px 0 60px}
+  /* ═══ ANIMATIONS ══════════════════════════ */
+  @keyframes eq{
+    0%{height:3px;opacity:.3}
+    50%{opacity:.7}
+    100%{height:48px;opacity:1}
+  }
+  @keyframes phosphor-pulse{
+    0%,100%{text-shadow:0 0 30px rgba(255,204,102,.3),0 0 80px rgba(255,204,102,.1),0 0 120px rgba(255,204,102,.05)}
+    50%{text-shadow:0 0 40px rgba(255,204,102,.35),0 0 90px rgba(255,204,102,.12),0 0 130px rgba(255,204,102,.06)}
+  }
+  @keyframes fade-up{
+    from{opacity:0;transform:translateY(16px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+  .hero-title{animation:fade-up .6s ease-out both}
+  .hero-cta{animation:fade-up .6s ease-out .15s both}
+  .radio-player{animation:fade-up .6s ease-out .25s both}
+
+  /* Staggered bar animations */
+  .bar:nth-child(1) {animation-duration:1.1s;animation-delay:0s}
+  .bar:nth-child(2) {animation-duration:1.3s;animation-delay:.05s}
+  .bar:nth-child(3) {animation-duration:0.9s;animation-delay:.12s}
+  .bar:nth-child(4) {animation-duration:1.5s;animation-delay:.18s}
+  .bar:nth-child(5) {animation-duration:1.0s;animation-delay:.25s}
+  .bar:nth-child(6) {animation-duration:1.4s;animation-delay:.15s}
+  .bar:nth-child(7) {animation-duration:1.2s;animation-delay:.32s}
+  .bar:nth-child(8) {animation-duration:0.85s;animation-delay:.08s}
+  .bar:nth-child(9) {animation-duration:1.3s;animation-delay:.38s}
+  .bar:nth-child(10){animation-duration:1.1s;animation-delay:.22s}
+  .bar:nth-child(11){animation-duration:1.5s;animation-delay:.42s}
+  .bar:nth-child(12){animation-duration:0.95s;animation-delay:.28s}
+  .bar:nth-child(13){animation-duration:1.2s;animation-delay:.48s}
+  .bar:nth-child(14){animation-duration:1.4s;animation-delay:.35s}
+  .bar:nth-child(15){animation-duration:1.0s;animation-delay:.18s}
+  .bar:nth-child(16){animation-duration:1.3s;animation-delay:.52s}
+  .bar:nth-child(17){animation-duration:0.88s;animation-delay:.1s}
+  .bar:nth-child(18){animation-duration:1.5s;animation-delay:.4s}
+  .bar:nth-child(19){animation-duration:1.1s;animation-delay:.2s}
+  .bar:nth-child(20){animation-duration:1.35s;animation-delay:.45s}
+  .bar:nth-child(21){animation-duration:0.92s;animation-delay:.3s}
+  .bar:nth-child(22){animation-duration:1.25s;animation-delay:.55s}
+  .bar:nth-child(23){animation-duration:1.4s;animation-delay:.15s}
+  .bar:nth-child(24){animation-duration:1.05s;animation-delay:.38s}
+  .bar:nth-child(25){animation-duration:1.2s;animation-delay:.1s}
+  .bar:nth-child(26){animation-duration:0.9s;animation-delay:.48s}
+  .bar:nth-child(27){animation-duration:1.35s;animation-delay:.25s}
+  .bar:nth-child(28){animation-duration:1.15s;animation-delay:.35s}
+
+  /* ═══ RESPONSIVE ══════════════════════════ */
+  @media(max-width:720px){
+    .hero{padding:70px 0 30px}
     section{padding:56px 0}
+
+    .hero-title{letter-spacing:.3em}
     .features-grid{grid-template-columns:1fr}
+    .themes-grid{grid-template-columns:repeat(2,1fr)}
     .keys-grid{grid-template-columns:1fr}
-    .term-body{font-size:10px;padding:16px;line-height:1.4}
-    .bar{flex:0 0 5px}
+    .bar{flex:0 0 4px}
     .hero-cta{flex-direction:column;align-items:center}
-    .btn{width:100%;max-width:280px;justify-content:center}
+    .btn{width:100%;max-width:260px;justify-content:center}
     .key-row{padding:8px 16px}
     .key-row kbd{min-width:70px}
-    .install-box code {white-space:pre-wrap;word-break:break-all;}
-    .themes-grid{grid-template-columns:repeat(2,1fr)}
+    .install-box code{white-space:pre-wrap;word-break:break-all}
+    .nav-links{gap:14px}
+    .nav-links a{font-size:10px;letter-spacing:1px}
+  }
+  @media(max-width:480px){
+    .themes-grid{grid-template-columns:1fr}
+    .nav-links a:nth-child(n+4){display:none}
+    .radio-cmd code{font-size:10px}
+    .radio-player{max-width:100%}
   }
 </style>
 </head>
 <body>
 
-<!-- ════════════════ HERO ════════════════ -->
+<!-- CRT overlay -->
+<div class="crt"></div>
+
+<!-- ═══ NAV ═══ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">CLIAMP</a>
+    <div class="nav-links">
+      <a href="#install">Install</a>
+      <a href="#features">Features</a>
+      <a href="#themes">Themes</a>
+      <a href="#keys">Keys</a>
+      <a href="https://github.com/bjarneo/cliamp">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══ HERO ═══ -->
 <section class="hero">
   <div class="wrap">
     <div class="hero-title">CLIAMP</div>
     <div class="hero-sub">terminal music player</div>
     <div class="hero-desc">
-      A retro music player inspired by <em>Winamp</em> — built for the terminal.<br>
+      A retro music player inspired by <em>Winamp</em> &mdash; built for the terminal.<br>
       Spectrum visualizer, 10-band EQ, playlists, streaming, and more.
     </div>
     <div class="visualizer">
@@ -451,11 +614,35 @@
       <div class="bar"></div><div class="bar"></div><div class="bar"></div>
       <div class="bar"></div><div class="bar"></div><div class="bar"></div>
       <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div>
     </div>
-    <div class="hero-desc" style="margin-top:16px">
-      <span style="color:#5c6773;font-size:12px">Listen to our radio channel:</span><br>
-      <code style="color:#bae67e;font-size:12px">cliamp http://cliamp.stream/public/iamdothash/playlist.pls</code>
+
+    <div class="radio-player">
+      <div class="radio-card" id="radio-card">
+        <div class="radio-bar">
+          <span class="radio-bar-dot"></span>
+          <span class="radio-bar-title">cliamp radio</span>
+          <span class="radio-bar-live">LIVE</span>
+        </div>
+        <div class="radio-body">
+          <button class="radio-btn" onclick="toggleRadio()" aria-label="Play radio">
+            <svg class="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="icon-pause" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="radio-info">
+            <div class="radio-station">Lo-Fi Radio</div>
+            <div class="radio-genre">chill / beats / ambient</div>
+          </div>
+          <span class="radio-live-dot"></span>
+        </div>
+      </div>
+      <div class="radio-cmd">
+        <code><span class="p">$ </span>cliamp http://cliamp.stream/public/iamdothash/playlist.pls</code>
+      </div>
+      <audio id="radio-stream" preload="none" src="http://cliamp.stream/listen/iamdothash/lofi.mp3"></audio>
     </div>
+
     <div class="hero-cta">
       <a href="#install" class="btn btn-primary">Install</a>
       <a href="https://github.com/bjarneo/cliamp" class="btn btn-ghost">GitHub &rarr;</a>
@@ -463,48 +650,61 @@
   </div>
 </section>
 
-<!-- ════════════════ DEMO ════════════════ -->
+<!-- ═══ DEMO ═══ -->
 <section>
   <div class="wrap">
-    <div class="section-label">Demo</div>
-    <video class="demo-video" autoplay loop muted playsinline>
-      <source src="https://github.com/user-attachments/assets/da33abfd-91fb-42f9-8bff-45aa549e4b27" type="video/mp4">
-    </video>
+    <div class="section-label"><span class="label-text">Demo</span></div>
+    <div class="demo-wrap">
+      <video id="demo-vid" class="demo-video" autoplay loop muted playsinline>
+        <source src="https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea" type="video/mp4">
+      </video>
+      <button class="sound-toggle" onclick="toggleSound(this)" aria-label="Toggle sound">
+        <svg class="icon-muted" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+        <svg class="icon-unmuted" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+    </div>
   </div>
 </section>
 
-<!-- ════════════════ INSTALL ════════════════ -->
+<!-- ═══ INSTALL ═══ -->
 <section id="install">
   <div class="wrap">
-    <div class="section-label">Install</div>
-    <div class="install-box" onclick="navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh').then(()=>{var m=this.querySelector('.copied-msg');m.classList.add('show');setTimeout(()=>m.classList.remove('show'),1500)})">
-      <code><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh</code>
-      <span class="copied-msg">Copied!</span>
+    <div class="section-label"><span class="label-text">Install</span></div>
+
+    <div class="install-group">
+      <div class="install-platform">Direct</div>
+      <div class="install-box" onclick="copyCmd(this,'curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh')">
+        <code><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh</code>
+        <span class="copied-msg">Copied!</span>
+      </div>
     </div>
-    <div style="margin-top:20px">
-      <div style="color:#5c6773;font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px">Homebrew (macOS / Linux)</div>
-      <div class="install-box" onclick="navigator.clipboard.writeText('brew install bjarneo/cliamp/cliamp').then(()=>{var m=this.querySelector('.copied-msg');m.classList.add('show');setTimeout(()=>m.classList.remove('show'),1500)})">
+
+    <div class="install-group">
+      <div class="install-platform">Homebrew (macOS / Linux)</div>
+      <div class="install-box" onclick="copyCmd(this,'brew install bjarneo/cliamp/cliamp')">
         <code><span class="prompt">$ </span>brew install bjarneo/cliamp/cliamp</code>
         <span class="copied-msg">Copied!</span>
       </div>
     </div>
-    <div style="margin-top:20px">
-      <div style="color:#5c6773;font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px">Arch Linux (AUR)</div>
-      <div class="install-box" onclick="navigator.clipboard.writeText('yay -S cliamp').then(()=>{var m=this.querySelector('.copied-msg');m.classList.add('show');setTimeout(()=>m.classList.remove('show'),1500)})">
+
+    <div class="install-group">
+      <div class="install-platform">Arch Linux (AUR)</div>
+      <div class="install-box" onclick="copyCmd(this,'yay -S cliamp')">
         <code><span class="prompt">$ </span>yay -S cliamp</code>
         <span class="copied-msg">Copied!</span>
       </div>
     </div>
+
     <div class="install-note">
       Or build from source: <a href="https://github.com/bjarneo/cliamp">see the README</a>
     </div>
   </div>
 </section>
 
-<!-- ════════════════ FEATURES ════════════════ -->
-<section>
+<!-- ═══ FEATURES ═══ -->
+<section id="features">
   <div class="wrap">
-    <div class="section-label">Features</div>
+    <div class="section-label"><span class="label-text">Features</span></div>
     <div class="features-grid">
       <div class="feature">
         <div class="feature-icon">&#9835;</div>
@@ -569,233 +769,233 @@
       <div class="feature">
         <div class="feature-icon">&#9998;</div>
         <div class="feature-name">Embedded Tag Reading</div>
-        <p>ID3v2, Vorbis comments, and MP4 atoms &mdash; reads artist, album, genre, year, and track number from your files</p>
+        <p>ID3v2, Vorbis comments, and MP4 atoms &mdash; reads artist, album, genre, year, and track number</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#9654;</div>
         <div class="feature-name">CLI Flags</div>
-        <p>Override volume, shuffle, repeat, mono, theme, EQ, sample rate, and more per-session from the command line</p>
+        <p>Override volume, shuffle, repeat, mono, theme, EQ, sample rate, and more per-session</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#8593;</div>
         <div class="feature-name">Self-Update</div>
-        <p>Run <code style="color:#bae67e">--upgrade</code> to update to the latest release directly from your terminal</p>
+        <p>Run <code>--upgrade</code> to update to the latest release directly from your terminal</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ════════════════ THEMES ════════════════ -->
-<section>
+<!-- ═══ THEMES ═══ -->
+<section id="themes">
   <div class="wrap">
-    <div class="section-label">Themes</div>
-    <p style="color:#8a9199;font-size:13px;margin-bottom:24px;line-height:1.7">
-      17 built-in themes. Press <kbd style="color:#ffcc66">t</kbd> to switch, or use <code style="color:#bae67e">--theme "name"</code> from the CLI.
-      Drop a <code style="color:#bae67e">.toml</code> file in <code style="color:#5c6773">~/.config/cliamp/themes/</code> to add your own.
+    <div class="section-label"><span class="label-text">Themes</span></div>
+    <p class="themes-intro">
+      17 built-in themes. Press <kbd>t</kbd> to switch, or use <code>--theme "name"</code> from the CLI.
+      Drop a <code>.toml</code> file in <span class="path">~/.config/cliamp/themes/</span> to add your own.
     </p>
     <div class="themes-grid">
 
       <div class="theme-card">
         <div class="theme-card-name">Ayu Mirage Dark</div>
         <div class="theme-bars">
-          <span style="background:#73d0ff"></span>
-          <span style="background:#f3f4f5"></span>
-          <span style="background:#cccac2"></span>
-          <span style="background:#d5ff80"></span>
-          <span style="background:#ffad66"></span>
-          <span style="background:#f28779"></span>
+          <span style="background:#73d0ff;color:#73d0ff"></span>
+          <span style="background:#f3f4f5;color:#f3f4f5"></span>
+          <span style="background:#cccac2;color:#cccac2"></span>
+          <span style="background:#d5ff80;color:#d5ff80"></span>
+          <span style="background:#ffad66;color:#ffad66"></span>
+          <span style="background:#f28779;color:#f28779"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Catppuccin</div>
         <div class="theme-bars">
-          <span style="background:#89b4fa"></span>
-          <span style="background:#cdd6f4"></span>
-          <span style="background:#9399b2"></span>
-          <span style="background:#a6e3a1"></span>
-          <span style="background:#f9e2af"></span>
-          <span style="background:#f38ba8"></span>
+          <span style="background:#89b4fa;color:#89b4fa"></span>
+          <span style="background:#cdd6f4;color:#cdd6f4"></span>
+          <span style="background:#9399b2;color:#9399b2"></span>
+          <span style="background:#a6e3a1;color:#a6e3a1"></span>
+          <span style="background:#f9e2af;color:#f9e2af"></span>
+          <span style="background:#f38ba8;color:#f38ba8"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Catppuccin Latte</div>
         <div class="theme-bars">
-          <span style="background:#1e66f5"></span>
-          <span style="background:#4c4f69"></span>
-          <span style="background:#8c8fa1"></span>
-          <span style="background:#40a02b"></span>
-          <span style="background:#df8e1d"></span>
-          <span style="background:#d20f39"></span>
+          <span style="background:#1e66f5;color:#1e66f5"></span>
+          <span style="background:#4c4f69;color:#4c4f69"></span>
+          <span style="background:#8c8fa1;color:#8c8fa1"></span>
+          <span style="background:#40a02b;color:#40a02b"></span>
+          <span style="background:#df8e1d;color:#df8e1d"></span>
+          <span style="background:#d20f39;color:#d20f39"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Ethereal</div>
         <div class="theme-bars">
-          <span style="background:#7d82d9"></span>
-          <span style="background:#ffcead"></span>
-          <span style="background:#9a96a8"></span>
-          <span style="background:#92a593"></span>
-          <span style="background:#E9BB4F"></span>
-          <span style="background:#ED5B5A"></span>
+          <span style="background:#7d82d9;color:#7d82d9"></span>
+          <span style="background:#ffcead;color:#ffcead"></span>
+          <span style="background:#9a96a8;color:#9a96a8"></span>
+          <span style="background:#92a593;color:#92a593"></span>
+          <span style="background:#E9BB4F;color:#E9BB4F"></span>
+          <span style="background:#ED5B5A;color:#ED5B5A"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Everforest</div>
         <div class="theme-bars">
-          <span style="background:#7fbbb3"></span>
-          <span style="background:#d3c6aa"></span>
-          <span style="background:#7a8478"></span>
-          <span style="background:#a7c080"></span>
-          <span style="background:#dbbc7f"></span>
-          <span style="background:#e67e80"></span>
+          <span style="background:#7fbbb3;color:#7fbbb3"></span>
+          <span style="background:#d3c6aa;color:#d3c6aa"></span>
+          <span style="background:#7a8478;color:#7a8478"></span>
+          <span style="background:#a7c080;color:#a7c080"></span>
+          <span style="background:#dbbc7f;color:#dbbc7f"></span>
+          <span style="background:#e67e80;color:#e67e80"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Flexoki Light</div>
         <div class="theme-bars">
-          <span style="background:#205EA6"></span>
-          <span style="background:#100F0F"></span>
-          <span style="background:#6F6E69"></span>
-          <span style="background:#879A39"></span>
-          <span style="background:#D0A215"></span>
-          <span style="background:#D14D41"></span>
+          <span style="background:#205EA6;color:#205EA6"></span>
+          <span style="background:#100F0F;color:#100F0F"></span>
+          <span style="background:#6F6E69;color:#6F6E69"></span>
+          <span style="background:#879A39;color:#879A39"></span>
+          <span style="background:#D0A215;color:#D0A215"></span>
+          <span style="background:#D14D41;color:#D14D41"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Gruvbox</div>
         <div class="theme-bars">
-          <span style="background:#7daea3"></span>
-          <span style="background:#d4be98"></span>
-          <span style="background:#a89984"></span>
-          <span style="background:#a9b665"></span>
-          <span style="background:#d8a657"></span>
-          <span style="background:#ea6962"></span>
+          <span style="background:#7daea3;color:#7daea3"></span>
+          <span style="background:#d4be98;color:#d4be98"></span>
+          <span style="background:#a89984;color:#a89984"></span>
+          <span style="background:#a9b665;color:#a9b665"></span>
+          <span style="background:#d8a657;color:#d8a657"></span>
+          <span style="background:#ea6962;color:#ea6962"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Hackerman</div>
         <div class="theme-bars">
-          <span style="background:#82FB9C"></span>
-          <span style="background:#ddf7ff"></span>
-          <span style="background:#8e95b8"></span>
-          <span style="background:#4fe88f"></span>
-          <span style="background:#50f7d4"></span>
-          <span style="background:#50f872"></span>
+          <span style="background:#82FB9C;color:#82FB9C"></span>
+          <span style="background:#ddf7ff;color:#ddf7ff"></span>
+          <span style="background:#8e95b8;color:#8e95b8"></span>
+          <span style="background:#4fe88f;color:#4fe88f"></span>
+          <span style="background:#50f7d4;color:#50f7d4"></span>
+          <span style="background:#50f872;color:#50f872"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Kanagawa</div>
         <div class="theme-bars">
-          <span style="background:#7e9cd8"></span>
-          <span style="background:#dcd7ba"></span>
-          <span style="background:#938aa9"></span>
-          <span style="background:#76946a"></span>
-          <span style="background:#c0a36e"></span>
-          <span style="background:#c34043"></span>
+          <span style="background:#7e9cd8;color:#7e9cd8"></span>
+          <span style="background:#dcd7ba;color:#dcd7ba"></span>
+          <span style="background:#938aa9;color:#938aa9"></span>
+          <span style="background:#76946a;color:#76946a"></span>
+          <span style="background:#c0a36e;color:#c0a36e"></span>
+          <span style="background:#c34043;color:#c34043"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Matte Black</div>
         <div class="theme-bars">
-          <span style="background:#e68e0d"></span>
-          <span style="background:#bebebe"></span>
-          <span style="background:#777777"></span>
-          <span style="background:#FFC107"></span>
-          <span style="background:#b91c1c"></span>
-          <span style="background:#D35F5F"></span>
+          <span style="background:#e68e0d;color:#e68e0d"></span>
+          <span style="background:#bebebe;color:#bebebe"></span>
+          <span style="background:#777777;color:#777777"></span>
+          <span style="background:#FFC107;color:#FFC107"></span>
+          <span style="background:#b91c1c;color:#b91c1c"></span>
+          <span style="background:#D35F5F;color:#D35F5F"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Miasma</div>
         <div class="theme-bars">
-          <span style="background:#78824b"></span>
-          <span style="background:#c2c2b0"></span>
-          <span style="background:#666666"></span>
-          <span style="background:#5f875f"></span>
-          <span style="background:#b36d43"></span>
-          <span style="background:#685742"></span>
+          <span style="background:#78824b;color:#78824b"></span>
+          <span style="background:#c2c2b0;color:#c2c2b0"></span>
+          <span style="background:#666666;color:#666666"></span>
+          <span style="background:#5f875f;color:#5f875f"></span>
+          <span style="background:#b36d43;color:#b36d43"></span>
+          <span style="background:#685742;color:#685742"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Nord</div>
         <div class="theme-bars">
-          <span style="background:#81a1c1"></span>
-          <span style="background:#d8dee9"></span>
-          <span style="background:#8690a0"></span>
-          <span style="background:#a3be8c"></span>
-          <span style="background:#ebcb8b"></span>
-          <span style="background:#bf616a"></span>
+          <span style="background:#81a1c1;color:#81a1c1"></span>
+          <span style="background:#d8dee9;color:#d8dee9"></span>
+          <span style="background:#8690a0;color:#8690a0"></span>
+          <span style="background:#a3be8c;color:#a3be8c"></span>
+          <span style="background:#ebcb8b;color:#ebcb8b"></span>
+          <span style="background:#bf616a;color:#bf616a"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Osaka Jade</div>
         <div class="theme-bars">
-          <span style="background:#509475"></span>
-          <span style="background:#F7E8B2"></span>
-          <span style="background:#C1C497"></span>
-          <span style="background:#549e6a"></span>
-          <span style="background:#459451"></span>
-          <span style="background:#FF5345"></span>
+          <span style="background:#509475;color:#509475"></span>
+          <span style="background:#F7E8B2;color:#F7E8B2"></span>
+          <span style="background:#C1C497;color:#C1C497"></span>
+          <span style="background:#549e6a;color:#549e6a"></span>
+          <span style="background:#459451;color:#459451"></span>
+          <span style="background:#FF5345;color:#FF5345"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Ristretto</div>
         <div class="theme-bars">
-          <span style="background:#f38d70"></span>
-          <span style="background:#e6d9db"></span>
-          <span style="background:#948a8b"></span>
-          <span style="background:#adda78"></span>
-          <span style="background:#f9cc6c"></span>
-          <span style="background:#fd6883"></span>
+          <span style="background:#f38d70;color:#f38d70"></span>
+          <span style="background:#e6d9db;color:#e6d9db"></span>
+          <span style="background:#948a8b;color:#948a8b"></span>
+          <span style="background:#adda78;color:#adda78"></span>
+          <span style="background:#f9cc6c;color:#f9cc6c"></span>
+          <span style="background:#fd6883;color:#fd6883"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Ros&eacute; Pine</div>
         <div class="theme-bars">
-          <span style="background:#56949f"></span>
-          <span style="background:#575279"></span>
-          <span style="background:#908caa"></span>
-          <span style="background:#286983"></span>
-          <span style="background:#ea9d34"></span>
-          <span style="background:#b4637a"></span>
+          <span style="background:#56949f;color:#56949f"></span>
+          <span style="background:#575279;color:#575279"></span>
+          <span style="background:#908caa;color:#908caa"></span>
+          <span style="background:#286983;color:#286983"></span>
+          <span style="background:#ea9d34;color:#ea9d34"></span>
+          <span style="background:#b4637a;color:#b4637a"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Tokyo Night</div>
         <div class="theme-bars">
-          <span style="background:#7aa2f7"></span>
-          <span style="background:#cfc9c2"></span>
-          <span style="background:#737aa2"></span>
-          <span style="background:#9ece6a"></span>
-          <span style="background:#e0af68"></span>
-          <span style="background:#f7768e"></span>
+          <span style="background:#7aa2f7;color:#7aa2f7"></span>
+          <span style="background:#cfc9c2;color:#cfc9c2"></span>
+          <span style="background:#737aa2;color:#737aa2"></span>
+          <span style="background:#9ece6a;color:#9ece6a"></span>
+          <span style="background:#e0af68;color:#e0af68"></span>
+          <span style="background:#f7768e;color:#f7768e"></span>
         </div>
       </div>
 
       <div class="theme-card">
         <div class="theme-card-name">Vantablack</div>
         <div class="theme-bars">
-          <span style="background:#8d8d8d"></span>
-          <span style="background:#ffffff"></span>
-          <span style="background:#8d8d8d"></span>
-          <span style="background:#b6b6b6"></span>
-          <span style="background:#cecece"></span>
-          <span style="background:#a4a4a4"></span>
+          <span style="background:#8d8d8d;color:#8d8d8d"></span>
+          <span style="background:#ffffff;color:#ffffff"></span>
+          <span style="background:#8d8d8d;color:#8d8d8d"></span>
+          <span style="background:#b6b6b6;color:#b6b6b6"></span>
+          <span style="background:#cecece;color:#cecece"></span>
+          <span style="background:#a4a4a4;color:#a4a4a4"></span>
         </div>
       </div>
 
@@ -806,11 +1006,11 @@
   </div>
 </section>
 
-<!-- ════════════════ CLI FLAGS ════════════════ -->
-<section>
+<!-- ═══ CLI FLAGS ═══ -->
+<section id="cli">
   <div class="wrap">
-    <div class="section-label">CLI Flags</div>
-    <p style="color:#8a9199;font-size:13px;margin-bottom:24px;line-height:1.7">
+    <div class="section-label"><span class="label-text">CLI Flags</span></div>
+    <p class="table-intro">
       Override any config option for a single session. Flags can appear before, after, or between file arguments.
     </p>
     <div class="keys-wrap">
@@ -832,10 +1032,10 @@
   </div>
 </section>
 
-<!-- ════════════════ KEYBINDINGS ════════════════ -->
-<section>
+<!-- ═══ KEYBINDINGS ═══ -->
+<section id="keys">
   <div class="wrap">
-    <div class="section-label">Keybindings</div>
+    <div class="section-label"><span class="label-text">Keybindings</span></div>
     <div class="keys-wrap">
       <div class="keys-grid">
         <div class="key-row"><kbd>Space</kbd><span>Play / Pause</span></div>
@@ -871,7 +1071,7 @@
   </div>
 </section>
 
-<!-- ════════════════ FOOTER ════════════════ -->
+<!-- ═══ FOOTER ═══ -->
 <footer>
   <div class="footer-viz">
     <span></span><span></span><span></span><span></span><span></span>
@@ -890,7 +1090,36 @@
       @iamdothash
     </a>
   </div>
+  <div class="footer-note">BUILT FOR THE TERMINAL</div>
 </footer>
+
+<script>
+function copyCmd(el,cmd){
+  navigator.clipboard.writeText(cmd).then(function(){
+    var m=el.querySelector('.copied-msg');
+    m.classList.add('show');
+    setTimeout(function(){m.classList.remove('show')},1500);
+  });
+}
+
+function toggleSound(btn){
+  var vid=document.getElementById('demo-vid');
+  vid.muted=!vid.muted;
+  btn.classList.toggle('unmuted',!vid.muted);
+}
+
+function toggleRadio(){
+  var audio=document.getElementById('radio-stream');
+  var card=document.getElementById('radio-card');
+  if(audio.paused){
+    audio.play();
+    card.classList.add('playing');
+  }else{
+    audio.pause();
+    card.classList.remove('playing');
+  }
+}
+</script>
 
 </body>
 </html>
