@@ -71,9 +71,7 @@ func (m Model) View() string {
 		m.renderSeekBar(),
 		"",
 		// Controls
-		m.renderVolume(),
-		m.renderEQ(),
-		m.renderAudioInfo(),
+		m.renderControls(),
 		"",
 		// Playlist
 		m.renderPlaylistHeader(),
@@ -545,24 +543,42 @@ func (m Model) renderSeekBar() string {
 		seekDimStyle.Render(strings.Repeat("━", max(0, panelWidth-filled-1)))
 }
 
-func (m Model) renderVolume() string {
+func (m Model) renderControls() string {
+	// ── Line 1: VOL bar + dB [Mono]  ·····  OUT 48kHz · Resample 3/4 ──
+
 	vol := m.player.Volume()
 	frac := max(0, min(1, (vol+30)/36))
 
-	barW := 30
+	barW := 20
 	filled := int(frac * float64(barW))
 
 	bar := volBarStyle.Render(strings.Repeat("█", filled)) +
 		dimStyle.Render(strings.Repeat("░", barW-filled))
 
-	line := labelStyle.Render("VOL ") + bar + dimStyle.Render(fmt.Sprintf(" %+.1fdB", vol))
+	left := labelStyle.Render("VOL ") + bar + dimStyle.Render(fmt.Sprintf(" %+.1fdB", vol))
 	if m.player.Mono() {
-		line += " " + activeToggle.Render("[Mono]")
+		left += " " + activeToggle.Render("[Mono]")
 	}
-	return line
-}
 
-func (m Model) renderEQ() string {
+	sr := m.player.SampleRate()
+	rq := m.player.ResampleQuality()
+	var srStr string
+	if sr >= 1000 {
+		srStr = fmt.Sprintf("%gkHz", float64(sr)/1000)
+	} else {
+		srStr = fmt.Sprintf("%dHz", sr)
+	}
+	right := labelStyle.Render("OUT ") +
+		activeToggle.Render(srStr) + dimStyle.Render(" · ") +
+		dimStyle.Render("Resample ") + activeToggle.Render(fmt.Sprintf("%d/4", rq))
+
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	gap := max(2, panelWidth-leftW-rightW)
+	line1 := left + strings.Repeat(" ", gap) + right
+
+	// ── Line 2: EQ bands  ·····  [Preset] ──
+
 	bands := m.player.EQBands()
 	labels := [10]string{"70", "180", "320", "600", "1k", "3k", "6k", "12k", "14k", "16k"}
 
@@ -579,24 +595,15 @@ func (m Model) renderEQ() string {
 	}
 
 	presetName := m.EQPresetName()
-	presetLabel := dimStyle.Render(" [") + activeToggle.Render(presetName) + dimStyle.Render("]")
-	return labelStyle.Render("EQ  ") + strings.Join(parts, " ") + presetLabel
-}
+	eqLeft := labelStyle.Render("EQ  ") + strings.Join(parts, " ")
+	eqRight := dimStyle.Render("[") + activeToggle.Render(presetName) + dimStyle.Render("]")
 
-func (m Model) renderAudioInfo() string {
-	sr := m.player.SampleRate()
-	rq := m.player.ResampleQuality()
+	eqLeftW := lipgloss.Width(eqLeft)
+	eqRightW := lipgloss.Width(eqRight)
+	eqGap := max(2, panelWidth-eqLeftW-eqRightW)
+	line2 := eqLeft + strings.Repeat(" ", eqGap) + eqRight
 
-	var srStr string
-	if sr >= 1000 {
-		srStr = fmt.Sprintf("%gkHz", float64(sr)/1000)
-	} else {
-		srStr = fmt.Sprintf("%dHz", sr)
-	}
-
-	return labelStyle.Render("OUT ") +
-		dimStyle.Render("Rate ") + activeToggle.Render(srStr) +
-		dimStyle.Render("  Resample ") + activeToggle.Render(fmt.Sprintf("%d/4", rq))
+	return line1 + "\n" + line2
 }
 
 func (m Model) renderPlaylistHeader() string {
