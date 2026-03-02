@@ -25,6 +25,7 @@ const (
 	VisWave                   // braille waveform oscilloscope
 	VisScatter                // braille particle sparkle
 	VisFlame                  // braille rising flame tendrils
+	VisNone                   // hidden — no visualizer
 	visCount                  // sentinel for cycling
 )
 
@@ -87,6 +88,8 @@ func (v *Visualizer) ModeName() string {
 		return "Scatter"
 	case VisFlame:
 		return "Flame"
+	case VisNone:
+		return "None"
 	default:
 		return "Bars"
 	}
@@ -186,6 +189,8 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 		return v.renderScatter(bands)
 	case VisFlame:
 		return v.renderFlame(bands)
+	case VisNone:
+		return ""
 	default:
 		return v.renderBars(bands)
 	}
