@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -52,7 +53,7 @@ func Args(args []string) (Result, error) {
 
 	for _, arg := range args {
 		if playlist.IsURL(arg) {
-			if playlist.IsFeed(arg) || playlist.IsM3U(arg) || playlist.IsPLS(arg) || playlist.IsYTDL(arg) {
+			if playlist.IsFeed(arg) || playlist.IsM3U(arg) || playlist.IsPLS(arg) || playlist.IsYTDL(arg) || sniffFeedURL(arg) {
 				r.Pending = append(r.Pending, arg)
 			} else {
 				files = append(files, arg)
@@ -121,9 +122,35 @@ func Remote(urls []string) ([]playlist.Track, error) {
 				return nil, fmt.Errorf("resolving pls %s: %w", u, err)
 			}
 			tracks = append(tracks, t...)
+		default:
+			// URL was classified as a feed by content-type sniffing.
+			t, err := resolveFeed(u)
+			if err != nil {
+				return nil, fmt.Errorf("resolving feed %s: %w", u, err)
+			}
+			tracks = append(tracks, t...)
 		}
 	}
 	return tracks, nil
+}
+
+// sniffFeedURL does a HEAD request and returns true if the Content-Type
+// indicates an RSS/Atom feed. Used as a fallback when the URL has no
+// recognizable file extension (e.g. https://feeds.megaphone.fm/GLT1412515089).
+func sniffFeedURL(rawURL string) bool {
+	resp, err := httpClient.Head(rawURL)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	ct := resp.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(ct)
+	switch mediaType {
+	case "application/rss+xml", "application/atom+xml",
+		"application/xml", "text/xml":
+		return true
+	}
+	return false
 }
 
 // collectAudioFiles returns audio file paths for the given argument.
