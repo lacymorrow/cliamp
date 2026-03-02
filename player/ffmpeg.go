@@ -173,5 +173,9 @@ func (f *ffmpegPipeStreamer) Seek(int) error { return nil }
 
 func (f *ffmpegPipeStreamer) Close() error {
 	f.pipe.Close()
-	return f.cmd.Wait()
+	if f.cmd.Process != nil {
+		f.cmd.Process.Kill()
+	}
+	f.cmd.Wait() // ignore error — process was intentionally killed
+	return nil
 }

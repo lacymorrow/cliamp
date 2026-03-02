@@ -3,8 +3,10 @@
 package local
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,11 +32,25 @@ func New() *Provider {
 
 func (p *Provider) Name() string { return "Local Playlists" }
 
+// safePath validates a playlist name and returns the absolute path to its TOML
+// file, ensuring the result stays within p.dir. This prevents path traversal
+// via names containing ".." or path separators.
+func (p *Provider) safePath(name string) (string, error) {
+	if strings.ContainsAny(name, "/\\") || name == ".." || name == "." || name == "" {
+		return "", fmt.Errorf("invalid playlist name %q", name)
+	}
+	resolved := filepath.Join(p.dir, name+".toml")
+	if !strings.HasPrefix(resolved, filepath.Clean(p.dir)+string(filepath.Separator)) {
+		return "", fmt.Errorf("playlist path escapes base directory")
+	}
+	return resolved, nil
+}
+
 // Playlists scans the directory for .toml files and returns their metadata.
 // Returns an empty list (not error) when the directory doesn't exist.
 func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 	entries, err := os.ReadDir(p.dir)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -62,7 +78,10 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 // Tracks parses the TOML file for the given playlist name and returns its tracks.
 func (p *Provider) Tracks(playlistID string) ([]playlist.Track, error) {
-	path := filepath.Join(p.dir, playlistID+".toml")
+	path, err := p.safePath(playlistID)
+	if err != nil {
+		return nil, err
+	}
 	return p.loadTOML(path)
 }
 
@@ -73,7 +92,10 @@ func (p *Provider) AddTrack(playlistName string, track playlist.Track) error {
 		return err
 	}
 
-	path := filepath.Join(p.dir, playlistName+".toml")
+	path, err := p.safePath(playlistName)
+	if err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -95,7 +117,10 @@ func (p *Provider) SavePlaylist(name string, tracks []playlist.Track) error {
 		return err
 	}
 
-	path := filepath.Join(p.dir, name+".toml")
+	path, err := p.safePath(name)
+	if err != nil {
+		return err
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -113,7 +138,10 @@ func (p *Provider) SavePlaylist(name string, tracks []playlist.Track) error {
 
 // DeletePlaylist removes the TOML file for the named playlist.
 func (p *Provider) DeletePlaylist(name string) error {
-	path := filepath.Join(p.dir, name+".toml")
+	path, err := p.safePath(name)
+	if err != nil {
+		return err
+	}
 	return os.Remove(path)
 }
 

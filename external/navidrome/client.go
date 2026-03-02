@@ -2,9 +2,11 @@ package navidrome
 
 import (
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +18,9 @@ import (
 
 // httpClient is used for all Navidrome API calls with a finite timeout.
 var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+// maxResponseBody limits JSON API responses to 10 MB to prevent unbounded memory growth.
+const maxResponseBody = 10 << 20
 
 // Sort type constants for album browsing (Subsonic getAlbumList2 "type" parameter).
 const (
@@ -120,8 +125,34 @@ func (c *NavidromeClient) Name() string {
 	return "Navidrome"
 }
 
+// subsonicError represents an application-level error from the Subsonic API.
+// The API returns HTTP 200 even for errors; the real status is in the JSON body.
+type subsonicError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// checkSubsonicError inspects the decoded JSON response for an application-level
+// error (e.g., wrong credentials, missing resource). Returns nil if status is "ok".
+func checkSubsonicError(status string, apiErr *subsonicError) error {
+	if status == "ok" || status == "" {
+		return nil
+	}
+	if apiErr != nil && apiErr.Message != "" {
+		return fmt.Errorf("navidrome: %s (code %d)", apiErr.Message, apiErr.Code)
+	}
+	return fmt.Errorf("navidrome: request failed (status %q)", status)
+}
+
 func (c *NavidromeClient) buildURL(endpoint string, params url.Values) string {
-	salt := fmt.Sprintf("%d", time.Now().UnixNano())
+	// Use crypto/rand for the salt as recommended by the Subsonic API spec.
+	// MD5 is required by the protocol — not a choice.
+	saltBytes := make([]byte, 8)
+	if _, err := io.ReadFull(rand.Reader, saltBytes); err != nil {
+		// Fallback to timestamp if crypto/rand fails (should never happen).
+		saltBytes = []byte(fmt.Sprintf("%d", time.Now().UnixNano()))
+	}
+	salt := hex.EncodeToString(saltBytes)
 	hash := md5.Sum([]byte(c.password + salt))
 	token := hex.EncodeToString(hash[:])
 
@@ -151,6 +182,8 @@ func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
 
 	var result struct {
 		SubsonicResponse struct {
+			Status string         `json:"status"`
+			Error  *subsonicError `json:"error"`
 			Playlists struct {
 				Playlist []struct {
 					ID    string `json:"id"`
@@ -160,7 +193,10 @@ func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
 			} `json:"playlists"`
 		} `json:"subsonic-response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&result); err != nil {
+		return nil, err
+	}
+	if err := checkSubsonicError(result.SubsonicResponse.Status, result.SubsonicResponse.Error); err != nil {
 		return nil, err
 	}
 
@@ -188,6 +224,8 @@ func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
 
 	var result struct {
 		SubsonicResponse struct {
+			Status string         `json:"status"`
+			Error  *subsonicError `json:"error"`
 			Playlist struct {
 				Entry []struct {
 					ID          string `json:"id"`
@@ -201,7 +239,10 @@ func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
 			} `json:"playlist"`
 		} `json:"subsonic-response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&result); err != nil {
+		return nil, err
+	}
+	if err := checkSubsonicError(result.SubsonicResponse.Status, result.SubsonicResponse.Error); err != nil {
 		return nil, err
 	}
 
@@ -235,6 +276,8 @@ func (c *NavidromeClient) Artists() ([]Artist, error) {
 
 	var result struct {
 		SubsonicResponse struct {
+			Status string         `json:"status"`
+			Error  *subsonicError `json:"error"`
 			Artists struct {
 				Index []struct {
 					Artist []struct {
@@ -246,8 +289,11 @@ func (c *NavidromeClient) Artists() ([]Artist, error) {
 			} `json:"artists"`
 		} `json:"subsonic-response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("navidrome: getArtists: %w", err)
+	}
+	if err := checkSubsonicError(result.SubsonicResponse.Status, result.SubsonicResponse.Error); err != nil {
+		return nil, err
 	}
 
 	var artists []Artist
@@ -277,6 +323,8 @@ func (c *NavidromeClient) ArtistAlbums(artistID string) ([]Album, error) {
 
 	var result struct {
 		SubsonicResponse struct {
+			Status string         `json:"status"`
+			Error  *subsonicError `json:"error"`
 			Artist struct {
 				Album []struct {
 					ID        string `json:"id"`
@@ -290,8 +338,11 @@ func (c *NavidromeClient) ArtistAlbums(artistID string) ([]Album, error) {
 			} `json:"artist"`
 		} `json:"subsonic-response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("navidrome: getArtist: %w", err)
+	}
+	if err := checkSubsonicError(result.SubsonicResponse.Status, result.SubsonicResponse.Error); err != nil {
+		return nil, err
 	}
 
 	var albums []Album
@@ -332,6 +383,8 @@ func (c *NavidromeClient) AlbumList(sortType string, offset, size int) ([]Album,
 
 	var result struct {
 		SubsonicResponse struct {
+			Status string         `json:"status"`
+			Error  *subsonicError `json:"error"`
 			AlbumList2 struct {
 				Album []struct {
 					ID        string `json:"id"`
@@ -345,8 +398,11 @@ func (c *NavidromeClient) AlbumList(sortType string, offset, size int) ([]Album,
 			} `json:"albumList2"`
 		} `json:"subsonic-response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("navidrome: getAlbumList2: %w", err)
+	}
+	if err := checkSubsonicError(result.SubsonicResponse.Status, result.SubsonicResponse.Error); err != nil {
+		return nil, err
 	}
 
 	var albums []Album
@@ -378,6 +434,8 @@ func (c *NavidromeClient) AlbumTracks(albumID string) ([]playlist.Track, error) 
 
 	var result struct {
 		SubsonicResponse struct {
+			Status string         `json:"status"`
+			Error  *subsonicError `json:"error"`
 			Album struct {
 				Song []struct {
 					ID          string `json:"id"`
@@ -391,8 +449,11 @@ func (c *NavidromeClient) AlbumTracks(albumID string) ([]playlist.Track, error) 
 			} `json:"album"`
 		} `json:"subsonic-response"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("navidrome: getAlbum: %w", err)
+	}
+	if err := checkSubsonicError(result.SubsonicResponse.Status, result.SubsonicResponse.Error); err != nil {
+		return nil, err
 	}
 
 	var tracks []playlist.Track

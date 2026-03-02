@@ -523,7 +523,7 @@ func (m Model) renderSeekBar() string {
 	// Show a static streaming bar for non-seekable streams
 	if !m.player.Seekable() && m.player.IsPlaying() {
 		label := " STREAMING "
-		pad := panelWidth - len(label)
+		pad := panelWidth - lipgloss.Width(label)
 		left := pad / 2
 		right := pad - left
 		return seekFillStyle.Render(strings.Repeat("━", left) + label + strings.Repeat("━", right))

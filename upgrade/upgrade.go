@@ -78,7 +78,8 @@ func latestVersion() (string, error) {
 	}
 
 	var r release
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+	// Limit response body to 1 MB to prevent unbounded memory usage.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&r); err != nil {
 		return "", fmt.Errorf("parsing response: %w", err)
 	}
 	return r.TagName, nil
@@ -104,7 +105,10 @@ func downloadAndReplace(url, destPath string) error {
 	}
 	tmpPath := tmp.Name()
 
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	// Limit download to 200 MB to prevent unbounded disk usage from a
+	// rogue redirect or compromised CDN.
+	const maxBinarySize = 200 << 20
+	if _, err := io.Copy(tmp, io.LimitReader(resp.Body, maxBinarySize)); err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return fmt.Errorf("writing binary: %w", err)

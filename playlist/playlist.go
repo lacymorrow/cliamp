@@ -304,7 +304,8 @@ func (p *Playlist) Prev() (Track, bool) {
 		p.pos = len(p.order) - 1
 		return p.tracks[p.order[p.pos]], true
 	}
-	return p.tracks[p.order[p.pos]], true
+	// At the beginning with RepeatOff — return false for consistency with Next().
+	return p.tracks[p.order[p.pos]], false
 }
 
 // SetIndex sets the current position to the given track index.

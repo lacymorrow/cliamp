@@ -177,13 +177,19 @@ func Save(key, value string) error {
 		return os.WriteFile(path, []byte(line+"\n"), 0o644)
 	}
 
-	// Scan existing lines and replace the matching key in-place.
+	// Scan existing lines and replace the matching key in-place,
+	// but only in the top-level scope (before any [section] header).
 	lines := strings.Split(string(data), "\n")
 	found := false
 	for i, l := range lines {
 		trimmed := strings.TrimSpace(l)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
+		}
+		// Stop searching once we hit a section header — the key
+		// belongs in the top-level scope only.
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			break
 		}
 		k, _, ok := strings.Cut(trimmed, "=")
 		if ok && strings.TrimSpace(k) == key {
@@ -193,7 +199,19 @@ func Save(key, value string) error {
 		}
 	}
 	if !found {
-		lines = append(lines, line)
+		// Insert before the first section header to keep top-level keys together.
+		inserted := false
+		for i, l := range lines {
+			trimmed := strings.TrimSpace(l)
+			if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+				lines = append(lines[:i], append([]string{line}, lines[i:]...)...)
+				inserted = true
+				break
+			}
+		}
+		if !inserted {
+			lines = append(lines, line)
+		}
 	}
 
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
@@ -213,7 +231,7 @@ func SaveNavidromeSort(sortType string) error {
 		return err
 	}
 
-	line := fmt.Sprintf("browse_sort = %s", sortType)
+	line := fmt.Sprintf("browse_sort = %q", sortType)
 
 	data, err := os.ReadFile(path)
 	if err != nil {

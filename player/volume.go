@@ -17,6 +17,9 @@ type volumeStreamer struct {
 
 func (v *volumeStreamer) Stream(samples [][2]float64) (int, bool) {
 	n, ok := v.s.Stream(samples)
+	if n == 0 {
+		return 0, ok
+	}
 	v.mu.Lock()
 	gain := math.Pow(10, *v.vol/20)
 	mono := *v.mono

@@ -125,7 +125,7 @@ func allStreams(entries []plsEntry) bool {
 			return false
 		}
 	}
-	return len(entries) > 1
+	return len(entries) >= 1
 }
 
 // stripMirrorSuffix removes a trailing " (#N)" or " #N" suffix that radio

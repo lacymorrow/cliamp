@@ -24,6 +24,7 @@ type m3uEntry struct {
 // entries without EXTINF lines.
 func parseM3U(r io.Reader, baseDir string) ([]m3uEntry, error) {
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1 MB max line — handles large EXTINF metadata
 	var entries []m3uEntry
 	var pending *m3uEntry // EXTINF parsed, waiting for path line
 

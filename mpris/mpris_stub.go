@@ -4,6 +4,8 @@
 // where D-Bus is not available.
 package mpris
 
+import "math"
+
 // Message types (must match the Linux implementation).
 type (
 	PlayPauseMsg   struct{}
@@ -41,7 +43,20 @@ func (s *Service) Update(status string, track TrackInfo, volumeDB float64, posit
 }
 
 // LinearToDb converts a 0.0–1.0 linear volume to dB (range [-30, +6]).
-func LinearToDb(v float64) float64 { return 0 }
+// This must match the Linux implementation in mpris.go.
+func LinearToDb(v float64) float64 {
+	if v <= 0 {
+		return -30
+	}
+	if v >= 1 {
+		return 6
+	}
+	db := 20*math.Log10(v) + 6
+	if db < -30 {
+		return -30
+	}
+	return db
+}
 
 // EmitSeeked is a no-op on non-Linux platforms.
 func (s *Service) EmitSeeked(positionUs int64) {}

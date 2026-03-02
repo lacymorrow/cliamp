@@ -47,6 +47,10 @@ type Player struct {
 
 // New creates a Player and initializes the speaker with the given quality settings.
 func New(q Quality) (*Player, error) {
+	if q.SampleRate <= 0 || q.BufferMs <= 0 || q.ResampleQuality <= 0 {
+		return nil, fmt.Errorf("invalid quality settings: SampleRate=%d, BufferMs=%d, ResampleQuality=%d",
+			q.SampleRate, q.BufferMs, q.ResampleQuality)
+	}
 	sr := beep.SampleRate(q.SampleRate)
 	if err := speaker.Init(sr, sr.N(time.Duration(q.BufferMs)*time.Millisecond)); err != nil {
 		return nil, fmt.Errorf("speaker init: %w", err)

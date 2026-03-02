@@ -155,12 +155,21 @@ func New(send func(interface{})) (*Service, error) {
 	path := dbus.ObjectPath("/org/mpris/MediaPlayer2")
 
 	// Export method handlers.
-	conn.Export(root{svc}, path, "org.mpris.MediaPlayer2")
-	conn.ExportWithMap(playerIface{svc}, map[string]string{
+	if err := conn.Export(root{svc}, path, "org.mpris.MediaPlayer2"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("mpris: export root: %w", err)
+	}
+	if err := conn.ExportWithMap(playerIface{svc}, map[string]string{
 		"DoSeek": "Seek",
-	}, path, "org.mpris.MediaPlayer2.Player")
-	conn.Export(introspect.Introspectable(introspectXML), path,
-		"org.freedesktop.DBus.Introspectable")
+	}, path, "org.mpris.MediaPlayer2.Player"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("mpris: export player: %w", err)
+	}
+	if err := conn.Export(introspect.Introspectable(introspectXML), path,
+		"org.freedesktop.DBus.Introspectable"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("mpris: export introspect: %w", err)
+	}
 
 	// Export properties for both interfaces.
 	propsSpec := map[string]map[string]*prop.Prop{

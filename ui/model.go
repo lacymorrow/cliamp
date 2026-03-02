@@ -289,6 +289,9 @@ func (m *Model) plMgrEnterTrackList(name string) {
 
 // plMgrRefreshList reloads playlist names and counts from disk and clamps the cursor.
 func (m *Model) plMgrRefreshList() {
+	if m.localProvider == nil {
+		return
+	}
 	playlists, err := m.localProvider.Playlists()
 	if err != nil {
 		m.saveMsg = fmt.Sprintf("Load failed: %s", err)
@@ -656,7 +659,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.nextTrack())
 			m.notifyMPRIS()
 		}
-		m.titleOff++
+		if m.player.IsPlaying() && !m.player.IsPaused() {
+			m.titleOff++
+		}
 		cmds = append(cmds, tickCmd())
 		return m, tea.Batch(cmds...)
 
