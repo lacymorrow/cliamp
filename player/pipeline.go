@@ -46,24 +46,48 @@ func (p *Player) buildPipeline(path string) (*trackPipeline, error) {
 		onMeta = p.setStreamTitle
 	}
 
-	rc, err := openSource(path, onMeta)
+	src, err := openSource(path, onMeta)
 	if err != nil {
 		return nil, err
+	}
+	rc := src.body
+
+	// Determine format: prefer URL extension, fall back to Content-Type.
+	ext := formatExt(path)
+	if isURL(path) && ext == ".mp3" && src.contentType != "" {
+		if ctExt := extFromContentType(src.contentType); ctExt != "" {
+			ext = ctExt
+		}
 	}
 
 	// For OGG HTTP streams, use the chained decoder so Icecast radio
 	// continues across song boundaries instead of stopping at EOS.
-	ext := formatExt(path)
 	if isURL(path) && ext == ".ogg" {
 		return p.buildChainedOggPipeline(rc, onMeta)
 	}
 
-	decoder, format, err := decode(rc, path, p.sr)
+	// For HTTP streams that need ffmpeg (e.g. AAC+), use the streaming
+	// pipe decoder so playback starts immediately instead of buffering
+	// the entire (potentially infinite) stream.
+	if isURL(path) && needsFFmpeg(ext) {
+		rc.Close()
+		decoder, format, err := decodeFFmpegStream(path, p.sr)
+		if err != nil {
+			return nil, fmt.Errorf("decode: %w", err)
+		}
+		return &trackPipeline{
+			decoder: decoder,
+			stream:  decoder,
+			format:  format,
+		}, nil
+	}
+
+	decoder, format, err := decodeWithExt(rc, ext, path, p.sr)
 	if err != nil {
 		rc.Close()
 		// If the format already required ffmpeg (e.g., .m4a), decode() already
 		// tried it — don't invoke ffmpeg a second time.
-		if needsFFmpeg(formatExt(path)) {
+		if needsFFmpeg(ext) {
 			return nil, fmt.Errorf("decode: %w", err)
 		}
 		// Native decoder failed (e.g., IEEE float WAV). Fall back to ffmpeg,

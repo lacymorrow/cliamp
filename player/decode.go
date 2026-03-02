@@ -49,19 +49,26 @@ func isURL(path string) bool {
 	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
+// sourceResult holds the opened stream and optional HTTP Content-Type.
+type sourceResult struct {
+	body        io.ReadCloser
+	contentType string // e.g. "audio/aacp"; empty for local files
+}
+
 // openSource returns a ReadCloser for the given path, handling both
 // local files and HTTP URLs.
 //
 // For HTTP URLs, it sends the Icy-MetaData:1 header to request ICY metadata.
 // If the server responds with icy-metaint, the body is wrapped in an icyReader
 // that strips metadata and fires onMeta with each StreamTitle update.
-func openSource(path string, onMeta func(string)) (io.ReadCloser, error) {
+func openSource(path string, onMeta func(string)) (sourceResult, error) {
 	if !isURL(path) {
-		return os.Open(path)
+		f, err := os.Open(path)
+		return sourceResult{body: f}, err
 	}
 	req, err := http.NewRequest("GET", path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return sourceResult{}, fmt.Errorf("http request: %w", err)
 	}
 	req.Header.Set("User-Agent", "cliamp/1.0 (https://github.com/bjarneo/cliamp)")
 	// Request ICY metadata — servers that don't support it simply ignore this header.
@@ -69,11 +76,11 @@ func openSource(path string, onMeta func(string)) (io.ReadCloser, error) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http get: %w", err)
+		return sourceResult{}, fmt.Errorf("http get: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("http status %s", resp.Status)
+		return sourceResult{}, fmt.Errorf("http status %s", resp.Status)
 	}
 
 	body := resp.Body
@@ -85,7 +92,34 @@ func openSource(path string, onMeta func(string)) (io.ReadCloser, error) {
 		}
 	}
 
-	return body, nil
+	return sourceResult{body: body, contentType: resp.Header.Get("Content-Type")}, nil
+}
+
+// extFromContentType maps an HTTP Content-Type to a file extension.
+// Returns "" if the type is unrecognized.
+func extFromContentType(ct string) string {
+	// Strip parameters (e.g. "audio/aacp; charset=utf-8" → "audio/aacp").
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	ct = strings.TrimSpace(strings.ToLower(ct))
+	switch ct {
+	case "audio/aac", "audio/aacp", "audio/x-aac":
+		return ".aac"
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/ogg", "application/ogg":
+		return ".ogg"
+	case "audio/flac":
+		return ".flac"
+	case "audio/wav", "audio/x-wav":
+		return ".wav"
+	case "audio/mp4", "audio/x-m4a":
+		return ".m4a"
+	case "audio/opus":
+		return ".opus"
+	}
+	return ""
 }
 
 // formatExt returns the audio format extension for a path.
@@ -120,7 +154,11 @@ func needsFFmpeg(ext string) bool {
 
 // decode selects the appropriate decoder based on the file extension.
 func decode(rc io.ReadCloser, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
-	ext := formatExt(path)
+	return decodeWithExt(rc, formatExt(path), path, sr)
+}
+
+// decodeWithExt selects the decoder using an explicit extension.
+func decodeWithExt(rc io.ReadCloser, ext, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
 	if needsFFmpeg(ext) {
 		return decodeFFmpeg(path, sr)
 	}

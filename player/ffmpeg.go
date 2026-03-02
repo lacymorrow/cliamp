@@ -1,8 +1,10 @@
 package player
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -95,4 +97,81 @@ func (p *pcmStreamer) Seek(pos int) error {
 func (p *pcmStreamer) Close() error {
 	p.data = nil
 	return nil
+}
+
+// decodeFFmpegStream starts ffmpeg as a subprocess and streams PCM data
+// incrementally from its stdout pipe. Unlike decodeFFmpeg, this does not
+// wait for the entire input to be read — suitable for live/infinite streams.
+func decodeFFmpegStream(path string, sr beep.SampleRate) (*ffmpegPipeStreamer, beep.Format, error) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		ext := filepath.Ext(path)
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg is required to play %s files — install it with your package manager", ext)
+	}
+
+	cmd := exec.Command("ffmpeg",
+		"-i", path,
+		"-f", "s16le",
+		"-acodec", "pcm_s16le",
+		"-ar", strconv.Itoa(int(sr)),
+		"-ac", "2",
+		"-loglevel", "error",
+		"pipe:1",
+	)
+
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg stdout pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg start: %w", err)
+	}
+
+	format := beep.Format{
+		SampleRate:  sr,
+		NumChannels: 2,
+		Precision:   2,
+	}
+
+	return &ffmpegPipeStreamer{cmd: cmd, reader: bufio.NewReaderSize(pipe, 64*1024), pipe: pipe}, format, nil
+}
+
+// ffmpegPipeStreamer reads PCM data incrementally from a running ffmpeg process.
+type ffmpegPipeStreamer struct {
+	cmd    *exec.Cmd
+	reader *bufio.Reader
+	pipe   io.ReadCloser
+	buf    [pcmFrameSize]byte
+	err    error
+}
+
+func (f *ffmpegPipeStreamer) Stream(samples [][2]float64) (int, bool) {
+	n := 0
+	for i := range samples {
+		_, err := io.ReadFull(f.reader, f.buf[:])
+		if err != nil {
+			if err != io.EOF && err != io.ErrUnexpectedEOF {
+				f.err = err
+			}
+			break
+		}
+		left := int16(binary.LittleEndian.Uint16(f.buf[0:2]))
+		right := int16(binary.LittleEndian.Uint16(f.buf[2:4]))
+		samples[i][0] = float64(left) / 32768
+		samples[i][1] = float64(right) / 32768
+		n++
+	}
+	return n, n > 0
+}
+
+func (f *ffmpegPipeStreamer) Err() error { return f.err }
+
+func (f *ffmpegPipeStreamer) Len() int { return 0 }
+
+func (f *ffmpegPipeStreamer) Position() int { return 0 }
+
+func (f *ffmpegPipeStreamer) Seek(int) error { return nil }
+
+func (f *ffmpegPipeStreamer) Close() error {
+	f.pipe.Close()
+	return f.cmd.Wait()
 }
