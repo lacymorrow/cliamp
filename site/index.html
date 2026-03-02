@@ -481,6 +481,13 @@
       <span class="copied-msg">Copied!</span>
     </div>
     <div style="margin-top:20px">
+      <div style="color:#5c6773;font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px">Homebrew (macOS / Linux)</div>
+      <div class="install-box" onclick="navigator.clipboard.writeText('brew install bjarneo/cliamp/cliamp').then(()=>{var m=this.querySelector('.copied-msg');m.classList.add('show');setTimeout(()=>m.classList.remove('show'),1500)})">
+        <code><span class="prompt">$ </span>brew install bjarneo/cliamp/cliamp</code>
+        <span class="copied-msg">Copied!</span>
+      </div>
+    </div>
+    <div style="margin-top:20px">
       <div style="color:#5c6773;font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px">Arch Linux (AUR)</div>
       <div class="install-box" onclick="navigator.clipboard.writeText('yay -S cliamp').then(()=>{var m=this.querySelector('.copied-msg');m.classList.add('show');setTimeout(()=>m.classList.remove('show'),1500)})">
         <code><span class="prompt">$ </span>yay -S cliamp</code>

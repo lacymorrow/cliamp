@@ -19,6 +19,12 @@ https://github.com/user-attachments/assets/da33abfd-91fb-42f9-8bff-45aa549e4b27
 curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
 ```
 
+### Homebrew (macOS / Linux)
+
+```sh
+brew install bjarneo/cliamp/cliamp
+```
+
 ### Arch Linux (AUR)
 
 ```sh
