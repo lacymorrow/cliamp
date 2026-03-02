@@ -15,10 +15,10 @@ import (
 
 // fbEntry is a single item in the file browser listing.
 type fbEntry struct {
-	name    string
-	path    string
-	isDir   bool
-	isAudio bool
+	name     string
+	path     string
+	isDir    bool
+	isAudio  bool
 	isParent bool
 }
 

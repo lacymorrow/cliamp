@@ -182,8 +182,8 @@ func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
 
 	var result struct {
 		SubsonicResponse struct {
-			Status string         `json:"status"`
-			Error  *subsonicError `json:"error"`
+			Status    string         `json:"status"`
+			Error     *subsonicError `json:"error"`
 			Playlists struct {
 				Playlist []struct {
 					ID    string `json:"id"`
@@ -224,8 +224,8 @@ func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
 
 	var result struct {
 		SubsonicResponse struct {
-			Status string         `json:"status"`
-			Error  *subsonicError `json:"error"`
+			Status   string         `json:"status"`
+			Error    *subsonicError `json:"error"`
 			Playlist struct {
 				Entry []struct {
 					ID          string `json:"id"`
@@ -276,8 +276,8 @@ func (c *NavidromeClient) Artists() ([]Artist, error) {
 
 	var result struct {
 		SubsonicResponse struct {
-			Status string         `json:"status"`
-			Error  *subsonicError `json:"error"`
+			Status  string         `json:"status"`
+			Error   *subsonicError `json:"error"`
 			Artists struct {
 				Index []struct {
 					Artist []struct {
@@ -383,8 +383,8 @@ func (c *NavidromeClient) AlbumList(sortType string, offset, size int) ([]Album,
 
 	var result struct {
 		SubsonicResponse struct {
-			Status string         `json:"status"`
-			Error  *subsonicError `json:"error"`
+			Status     string         `json:"status"`
+			Error      *subsonicError `json:"error"`
 			AlbumList2 struct {
 				Album []struct {
 					ID        string `json:"id"`
@@ -436,7 +436,7 @@ func (c *NavidromeClient) AlbumTracks(albumID string) ([]playlist.Track, error) 
 		SubsonicResponse struct {
 			Status string         `json:"status"`
 			Error  *subsonicError `json:"error"`
-			Album struct {
+			Album  struct {
 				Song []struct {
 					ID          string `json:"id"`
 					Title       string `json:"title"`
