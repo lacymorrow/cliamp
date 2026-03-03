@@ -41,6 +41,19 @@ var brailleBit = [4][2]rune{
 	{0x40, 0x80}, // row 3
 }
 
+// visBandWidth returns the character width for band b so that all 10 bands
+// plus 1-char gaps exactly fill panelWidth (74). The remainder is distributed
+// across the first few bands (7 chars) while the rest get 6.
+func visBandWidth(b int) int {
+	const gap = 1
+	base := (panelWidth - (numBands-1)*gap) / numBands
+	extra := (panelWidth - (numBands-1)*gap) % numBands
+	if b < extra {
+		return base + 1
+	}
+	return base
+}
+
 // Frequency edges for 10 spectrum bands (Hz)
 var bandEdges = [11]float64{20, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 16000, 20000}
 
@@ -204,7 +217,6 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 // renderBars is the default smooth spectrum with fractional Unicode blocks.
 func (v *Visualizer) renderBars(bands [numBands]float64) string {
 	height := v.Rows
-	const bw = 6 // character width per band
 
 	lines := make([]string, height)
 
@@ -214,6 +226,7 @@ func (v *Visualizer) renderBars(bands [numBands]float64) string {
 		rowTop := float64(height-row) / float64(height)
 
 		for i, level := range bands {
+			bw := visBandWidth(i)
 			var block string
 			if level >= rowTop {
 				block = "█"
@@ -243,28 +256,23 @@ func (v *Visualizer) renderBars(bands [numBands]float64) string {
 // gaps between them, keeping total height equal to the bars visualizer.
 func (v *Visualizer) renderBricks(bands [numBands]float64) string {
 	height := v.Rows
-	const (
-		bw  = 6 // character width per band
-		gap = 1 // space between bands
-	)
 
 	lines := make([]string, height)
-	pad := strings.Repeat(" ", gap)
-	blank := strings.Repeat(" ", bw)
 
 	for row := range height {
 		var sb strings.Builder
 		rowThreshold := float64(height-1-row) / float64(height)
 
 		for i, level := range bands {
+			bw := visBandWidth(i)
 			style := specStyle(rowThreshold)
 			if level > rowThreshold {
 				sb.WriteString(style.Render(strings.Repeat("▄", bw)))
 			} else {
-				sb.WriteString(blank)
+				sb.WriteString(strings.Repeat(" ", bw))
 			}
 			if i < numBands-1 {
-				sb.WriteString(pad)
+				sb.WriteString(" ")
 			}
 		}
 		lines[row] = sb.String()
@@ -277,27 +285,31 @@ func (v *Visualizer) renderBricks(bands [numBands]float64) string {
 // between bands so adjacent columns vary slightly for a dense, organic look.
 func (v *Visualizer) renderColumns(bands [numBands]float64) string {
 	height := v.Rows
-	const (
-		colsPer = 5 // thin columns per band
-		gap     = 1 // space between band groups
-	)
+
+	// Compute per-band column counts and flat-array offsets.
+	var bandCols [numBands]int
+	var offsets [numBands]int
+	totalCols := 0
+	for b := range numBands {
+		offsets[b] = totalCols
+		bandCols[b] = visBandWidth(b)
+		totalCols += bandCols[b]
+	}
 
 	// Build per-column levels by interpolating between neighboring bands.
-	totalCols := numBands * colsPer
 	cols := make([]float64, totalCols)
 	for b, level := range bands {
 		nextLevel := level
 		if b+1 < numBands {
 			nextLevel = bands[b+1]
 		}
-		for c := range colsPer {
-			t := float64(c) / float64(colsPer)
-			cols[b*colsPer+c] = level*(1-t) + nextLevel*t
+		for c := range bandCols[b] {
+			t := float64(c) / float64(bandCols[b])
+			cols[offsets[b]+c] = level*(1-t) + nextLevel*t
 		}
 	}
 
 	lines := make([]string, height)
-	pad := strings.Repeat(" ", gap)
 
 	for row := range height {
 		var sb strings.Builder
@@ -305,8 +317,8 @@ func (v *Visualizer) renderColumns(bands [numBands]float64) string {
 		rowTop := float64(height-row) / float64(height)
 
 		for b := range numBands {
-			for c := range colsPer {
-				level := cols[b*colsPer+c]
+			for c := range bandCols[b] {
+				level := cols[offsets[b]+c]
 				var block string
 				if level >= rowTop {
 					block = "█"
@@ -321,7 +333,7 @@ func (v *Visualizer) renderColumns(bands [numBands]float64) string {
 				sb.WriteString(specStyle(rowBottom).Render(block))
 			}
 			if b < numBands-1 {
-				sb.WriteString(pad)
+				sb.WriteString(" ")
 			}
 		}
 		lines[row] = sb.String()
@@ -334,9 +346,9 @@ func (v *Visualizer) renderColumns(bands [numBands]float64) string {
 // Each Braille character covers a 2×4 dot grid, giving smooth sub-cell resolution.
 func (v *Visualizer) renderWave() string {
 	height := v.Rows
-	const charCols = 69 // braille characters wide (matches band display width)
+	const charCols = panelWidth
 	dotRows := height * 4
-	const dotCols = charCols * 2 // 138 horizontal dot positions
+	dotCols := charCols * 2
 
 	samples := v.waveBuf
 	n := len(samples)
@@ -400,10 +412,6 @@ func (v *Visualizer) renderWave() string {
 // gravity bias that makes particles denser near the bottom.
 func (v *Visualizer) renderScatter(bands [numBands]float64) string {
 	height := v.Rows
-	const (
-		charsPerBand = 6
-		gap          = 1
-	)
 	dotRows := height * 4
 
 	lines := make([]string, height)
@@ -412,6 +420,7 @@ func (v *Visualizer) renderScatter(bands [numBands]float64) string {
 		var sb strings.Builder
 
 		for b := range numBands {
+			charsPerBand := visBandWidth(b)
 			for c := range charsPerBand {
 				var braille rune = '\u2800'
 
@@ -437,7 +446,7 @@ func (v *Visualizer) renderScatter(bands [numBands]float64) string {
 				sb.WriteString(style.Render(string(braille)))
 			}
 			if b < numBands-1 {
-				sb.WriteString(strings.Repeat(" ", gap))
+				sb.WriteString(" ")
 			}
 		}
 		lines[row] = sb.String()
@@ -463,11 +472,6 @@ func scatterHash(band, row, col int, frame uint64) float64 {
 // wobble driven by a sine-based displacement for an organic, dancing look.
 func (v *Visualizer) renderFlame(bands [numBands]float64) string {
 	height := v.Rows
-	const (
-		charsPerBand = 6
-		gap          = 1
-		dotCols      = charsPerBand * 2
-	)
 	dotRows := height * 4
 
 	lines := make([]string, height)
@@ -476,6 +480,8 @@ func (v *Visualizer) renderFlame(bands [numBands]float64) string {
 		var sb strings.Builder
 
 		for b := range numBands {
+			charsPerBand := visBandWidth(b)
+			bandDotCols := charsPerBand * 2
 			for c := range charsPerBand {
 				var braille rune = '\u2800'
 
@@ -495,7 +501,7 @@ func (v *Visualizer) renderFlame(bands [numBands]float64) string {
 						// Lateral wobble: sine wave displaced by height and time.
 						t := float64(v.frame) * 0.3
 						wobble := math.Sin(t+flameY*6.0+float64(b)*2.1) * 1.5
-						centerCol := float64(dotCols) / 2.0
+						centerCol := float64(bandDotCols) / 2.0
 
 						// Flame narrows toward the tip.
 						tipNarrow := 1.0 - flameY/max(bands[b], 0.01)
@@ -519,7 +525,7 @@ func (v *Visualizer) renderFlame(bands [numBands]float64) string {
 				sb.WriteString(style.Render(string(braille)))
 			}
 			if b < numBands-1 {
-				sb.WriteString(strings.Repeat(" ", gap))
+				sb.WriteString(" ")
 			}
 		}
 		lines[row] = sb.String()
@@ -533,7 +539,7 @@ func (v *Visualizer) renderFlame(bands [numBands]float64) string {
 // scrolls toward the viewer. Uses Braille characters for sub-cell resolution.
 func (v *Visualizer) renderRetro(bands [numBands]float64) string {
 	height := v.Rows
-	const charCols = 69
+	const charCols = panelWidth
 	dotRows := height * 4
 	dotCols := charCols * 2
 
