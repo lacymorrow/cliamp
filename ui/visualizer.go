@@ -26,6 +26,7 @@ const (
 	VisScatter                // braille particle sparkle
 	VisFlame                  // braille rising flame tendrils
 	VisRetro                  // 80s synthwave perspective grid with wave
+	VisPulse                  // braille pulsating circle
 	VisNone                   // hidden — no visualizer
 	visCount                  // sentinel for cycling
 )
@@ -104,6 +105,8 @@ func (v *Visualizer) ModeName() string {
 		return "Flame"
 	case VisRetro:
 		return "Retro"
+	case VisPulse:
+		return "Pulse"
 	case VisNone:
 		return "None"
 	default:
@@ -132,6 +135,8 @@ func StringToVisMode(name string) VisMode {
 		return VisFlame
 	case "retro":
 		return VisRetro
+	case "pulse":
+		return VisPulse
 	case "none":
 		return VisNone
 	default:
@@ -235,6 +240,8 @@ func (v *Visualizer) Render(bands [numBands]float64) string {
 		return v.renderFlame(bands)
 	case VisRetro:
 		return v.renderRetro(bands)
+	case VisPulse:
+		return v.renderPulse(bands)
 	case VisNone:
 		return ""
 	default:
