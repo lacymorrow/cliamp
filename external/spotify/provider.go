@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ func (p *SpotifyProvider) Name() string { return "Spotify" }
 
 // Playlists returns the authenticated user's Spotify playlists.
 func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	var all []playlist.PlaylistInfo
@@ -187,7 +188,7 @@ func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.F
 
 // webAPI calls the Spotify Web API via the session with retry on 429.
 func (p *SpotifyProvider) webAPI(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
-	const maxRetries = 5
+	const maxRetries = 8
 	for attempt := range maxRetries {
 		resp, err := p.session.WebApi(ctx, method, path, query)
 		if err != nil {
@@ -202,6 +203,7 @@ func (p *SpotifyProvider) webAPI(ctx context.Context, method, path string, query
 					wait = time.Duration(secs) * time.Second
 				}
 			}
+			fmt.Fprintf(os.Stderr, "spotify: rate limited on %s, retrying in %v (attempt %d/%d)\n", path, wait, attempt+1, maxRetries)
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -210,8 +212,9 @@ func (p *SpotifyProvider) webAPI(ctx context.Context, method, path string, query
 			}
 		}
 		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 			resp.Body.Close()
-			return nil, fmt.Errorf("http status %s", resp.Status)
+			return nil, fmt.Errorf("http status %s: %s", resp.Status, string(body))
 		}
 		return resp, nil
 	}
