@@ -7,57 +7,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 
 	librespot "github.com/devgianlu/go-librespot"
 	librespotPlayer "github.com/devgianlu/go-librespot/player"
 	"github.com/devgianlu/go-librespot/session"
 	devicespb "github.com/devgianlu/go-librespot/proto/spotify/connectstate/devices"
+	"golang.org/x/oauth2"
+	spotifyoauth2 "golang.org/x/oauth2/spotify"
 )
-
-// authLogger captures the OAuth2 URL from go-librespot's log output
-// so we can display it to the user and offer to open a browser.
-type authLogger struct {
-	librespot.NullLogger
-	authURL string
-}
-
-func (l *authLogger) Infof(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	if strings.Contains(msg, "to complete authentication visit") {
-		// Extract URL — it's the last argument
-		if len(args) > 0 {
-			if u, ok := args[len(args)-1].(string); ok {
-				l.authURL = u
-			}
-		}
-	}
-}
-
-func (l *authLogger) Info(args ...interface{})                       {}
-func (l *authLogger) WithField(string, interface{}) librespot.Logger { return l }
-func (l *authLogger) WithError(error) librespot.Logger               { return l }
-
-// openBrowser tries to open a URL in the user's default browser.
-func openBrowser(url string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return exec.Command("open", url).Start()
-	case "linux":
-		return exec.Command("xdg-open", url).Start()
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-}
 
 // storedCreds holds persisted Spotify credentials for re-authentication.
 type storedCreds struct {
@@ -68,10 +33,11 @@ type storedCreds struct {
 
 // Session manages a go-librespot session and player for Spotify integration.
 type Session struct {
-	mu     sync.Mutex
-	sess   *session.Session
-	player *librespotPlayer.Player
-	devID  string
+	mu         sync.Mutex
+	sess       *session.Session
+	player     *librespotPlayer.Player
+	devID      string
+	webAPIToken string // OAuth2 access token for Spotify Web API calls
 }
 
 // NewSession creates a go-librespot session, using stored credentials if
@@ -108,7 +74,12 @@ func newSessionFromStored(ctx context.Context, creds *storedCreds) (*Session, er
 		return nil, fmt.Errorf("spotify: stored auth: %w", err)
 	}
 
-	s := &Session{sess: sess, devID: devID}
+	// For stored credentials, we need a fresh Web API token.
+	// Get it from the spclient (this is the login5 token — not ideal but works
+	// for stored credential sessions since we can't re-do OAuth2).
+	webToken, _ := sess.Spclient().GetAccessToken(ctx, false)
+
+	s := &Session{sess: sess, devID: devID, webAPIToken: webToken}
 
 	// Re-save credentials (they may have been refreshed).
 	_ = saveCreds(&storedCreds{
@@ -124,104 +95,146 @@ func newSessionFromStored(ctx context.Context, creds *storedCreds) (*Session, er
 	return s, nil
 }
 
+// oauthScopes are the same scopes go-librespot uses for its interactive auth.
+var oauthScopes = []string{
+	"app-remote-control",
+	"playlist-modify",
+	"playlist-modify-private",
+	"playlist-modify-public",
+	"playlist-read",
+	"playlist-read-collaborative",
+	"playlist-read-private",
+	"streaming",
+	"ugc-image-upload",
+	"user-follow-modify",
+	"user-follow-read",
+	"user-library-modify",
+	"user-library-read",
+	"user-modify",
+	"user-modify-playback-state",
+	"user-modify-private",
+	"user-personalized",
+	"user-read-birthdate",
+	"user-read-currently-playing",
+	"user-read-email",
+	"user-read-play-history",
+	"user-read-playback-position",
+	"user-read-playback-state",
+	"user-read-private",
+	"user-read-recently-played",
+	"user-top-read",
+}
+
 func newInteractiveSession(ctx context.Context) (*Session, error) {
 	devID := generateDeviceID()
-	logger := &authLogger{}
 
 	fmt.Println("Spotify: Starting OAuth2 authentication...")
 
-	// Start session creation in a goroutine so we can capture the auth URL
-	// from the logger and prompt the user while it waits for the callback.
-	type sessionResult struct {
-		sess *session.Session
-		err  error
-	}
-	resultCh := make(chan sessionResult, 1)
+	// We do our own OAuth2 flow so we can:
+	// 1. Capture the access token for Web API calls
+	// 2. Serve auto-close HTML in the callback
+	// 3. Pass the token to go-librespot via SpotifyTokenCredentials
 
+	// Start our callback server.
+	lis, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return nil, fmt.Errorf("spotify: listen: %w", err)
+	}
+	callbackPort := lis.Addr().(*net.TCPAddr).Port
+
+	oauthConf := &oauth2.Config{
+		ClientID:    librespot.ClientIdHex,
+		RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/login", callbackPort),
+		Scopes:      oauthScopes,
+		Endpoint:    spotifyoauth2.Endpoint,
+	}
+
+	verifier := oauth2.GenerateVerifier()
+	authURL := oauthConf.AuthCodeURL("", oauth2.S256ChallengeOption(verifier))
+
+	// Serve the callback — return HTML that auto-closes the tab.
+	codeCh := make(chan string, 1)
 	go func() {
-		sess, err := session.NewSessionFromOptions(ctx, &session.Options{
-			Log:        logger,
-			DeviceType: devicespb.DeviceType_COMPUTER,
-			DeviceId:   devID,
-			Credentials: session.InteractiveCredentials{
-				CallbackPort: 0, // auto-pick port
-			},
-		})
-		resultCh <- sessionResult{sess, err}
+		_ = http.Serve(lis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			code := r.URL.Query().Get("code")
+			if code != "" {
+				codeCh <- code
+			}
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<!DOCTYPE html>
+<html><head><title>cliamp</title></head>
+<body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0">
+<div style="text-align:center">
+<h2>✅ Authenticated!</h2>
+<p>You can close this tab now.</p>
+<script>setTimeout(function(){window.close()},1500)</script>
+</div></body></html>`))
+		}))
 	}()
 
-	// Poll for the auth URL to appear (the logger captures it).
-	// Once we have it, print it and try to open a browser.
-	urlPrinted := false
-	for !urlPrinted {
-		select {
-		case res := <-resultCh:
-			// Session completed before we even printed URL (unlikely but handle it).
-			if res.err != nil {
-				return nil, fmt.Errorf("spotify: interactive auth: %w", res.err)
-			}
-			fmt.Printf("Spotify: Authenticated as %s\n", res.sess.Username())
-			_ = saveCreds(&storedCreds{
-				Username: res.sess.Username(),
-				Data:     res.sess.StoredCredentials(),
-				DeviceID: devID,
-			})
-			s := &Session{sess: res.sess, devID: devID}
-			if err := s.initPlayer(); err != nil {
-				res.sess.Close()
-				return nil, err
-			}
-			return s, nil
-		default:
-			if logger.authURL != "" {
-				urlPrinted = true
-			}
-		}
-	}
-
-	// We have the URL. Try opening browser, show URL, offer retry.
+	// Show URL and open browser.
 	fmt.Println()
 	fmt.Printf("  Open this URL to authenticate with Spotify:\n\n")
-	fmt.Printf("  %s\n\n", logger.authURL)
+	fmt.Printf("  %s\n\n", authURL)
 
-	if err := openBrowser(logger.authURL); err == nil {
+	if err := openBrowser(authURL); err == nil {
 		fmt.Println("  (Attempting to open in your browser...)")
 	} else {
 		fmt.Println("  (Could not open browser automatically.)")
 	}
-	fmt.Println("  Press Enter to retry opening the browser, or just complete auth in your browser.")
-	fmt.Println("  (You can close the browser tab after authentication completes.)")
+	fmt.Println("  Press Enter to retry opening the browser.")
 	fmt.Println("  Waiting for authentication callback...")
 
-	// Start a goroutine to handle Enter presses for browser retry.
+	// Handle Enter for retry.
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
-			if logger.authURL != "" {
-				_ = openBrowser(logger.authURL)
-				fmt.Println("  (Retrying browser open...)")
-			}
+			_ = openBrowser(authURL)
+			fmt.Println("  (Retrying browser open...)")
 		}
 	}()
 
-	// Wait for session result.
-	res := <-resultCh
-	if res.err != nil {
-		return nil, fmt.Errorf("spotify: interactive auth: %w", res.err)
+	// Wait for the auth code.
+	code := <-codeCh
+	_ = lis.Close()
+
+	// Exchange code for token.
+	token, err := oauthConf.Exchange(context.Background(), code, oauth2.VerifierOption(verifier))
+	if err != nil {
+		return nil, fmt.Errorf("spotify: token exchange: %w", err)
 	}
 
-	fmt.Printf("\nSpotify: Authenticated as %s\n", res.sess.Username())
+	username, _ := token.Extra("username").(string)
+	accessToken := token.AccessToken
 
-	// Persist credentials for future sessions.
+	fmt.Printf("\nSpotify: Got OAuth2 token, connecting session...\n")
+
+	// Create go-librespot session using the OAuth2 token.
+	sess, err := session.NewSessionFromOptions(ctx, &session.Options{
+		Log:        &librespot.NullLogger{},
+		DeviceType: devicespb.DeviceType_COMPUTER,
+		DeviceId:   devID,
+		Credentials: session.SpotifyTokenCredentials{
+			Username: username,
+			Token:    accessToken,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("spotify: session from token: %w", err)
+	}
+
+	fmt.Printf("Spotify: Authenticated as %s\n", sess.Username())
+
+	// Persist stored credentials for future sessions.
 	_ = saveCreds(&storedCreds{
-		Username: res.sess.Username(),
-		Data:     res.sess.StoredCredentials(),
+		Username: sess.Username(),
+		Data:     sess.StoredCredentials(),
 		DeviceID: devID,
 	})
 
-	s := &Session{sess: res.sess, devID: devID}
+	s := &Session{sess: sess, devID: devID, webAPIToken: accessToken}
 	if err := s.initPlayer(); err != nil {
-		res.sess.Close()
+		sess.Close()
 		return nil, err
 	}
 	return s, nil
@@ -248,24 +261,29 @@ func (s *Session) initPlayer() error {
 }
 
 // NewStream creates a decoded audio stream for the given Spotify track ID.
-// Returns the Stream containing an AudioSource (float32 PCM at 44100Hz stereo).
 func (s *Session) NewStream(ctx context.Context, spotID librespot.SpotifyId, bitrate int) (*librespotPlayer.Stream, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.player.NewStream(ctx, http.DefaultClient, spotID, bitrate, 0)
 }
 
-// WebApi calls the Spotify Web API directly using the session's access token.
-// We bypass the spclient's WebApiRequest to avoid the Client-Token header and
-// its internal retry logic, which can conflict with our own backoff and may
-// trigger stricter rate limits.
+// WebApi calls the Spotify Web API using the OAuth2 access token.
+// This is the standard Web API token (not go-librespot's internal spclient token),
+// which has proper rate limits for api.spotify.com endpoints.
 func (s *Session) WebApi(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	token := s.webAPIToken
+	s.mu.Unlock()
 
-	token, err := s.sess.Spclient().GetAccessToken(ctx, false)
-	if err != nil {
-		return nil, fmt.Errorf("get access token: %w", err)
+	// If no OAuth2 token available, fall back to spclient token.
+	if token == "" {
+		s.mu.Lock()
+		var err error
+		token, err = s.sess.Spclient().GetAccessToken(ctx, false)
+		s.mu.Unlock()
+		if err != nil {
+			return nil, fmt.Errorf("get access token: %w", err)
+		}
 	}
 
 	u, _ := url.Parse("https://api.spotify.com")
@@ -296,7 +314,20 @@ func (s *Session) Close() {
 	}
 }
 
-// configDir returns ~/.config/cliamp/.
+// openBrowser tries to open a URL in the user's default browser.
+func openBrowser(u string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", u).Start()
+	case "linux":
+		return exec.Command("xdg-open", u).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
+}
+
 func configDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -314,7 +345,7 @@ func credsPath() (string, error) {
 }
 
 func generateDeviceID() string {
-	b := make([]byte, 20) // 40 hex chars
+	b := make([]byte, 20)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
