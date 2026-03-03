@@ -31,6 +31,7 @@ var SupportedExts = map[string]bool{
 	".alac": true,
 	".wma":  true,
 	".opus": true,
+	".webm": true,
 }
 
 // httpClient is used for all HTTP streaming. It sets a generous header
@@ -162,7 +163,7 @@ func formatExt(path string) string {
 // needsFFmpeg reports whether the given extension requires ffmpeg to decode.
 func needsFFmpeg(ext string) bool {
 	switch ext {
-	case ".m4a", ".aac", ".m4b", ".alac", ".wma", ".opus":
+	case ".m4a", ".aac", ".m4b", ".alac", ".wma", ".opus", ".webm":
 		return true
 	}
 	return false

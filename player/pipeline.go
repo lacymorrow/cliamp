@@ -101,6 +101,24 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 		}, nil
 	}
 
+	// For local files that need ffmpeg (e.g. webm, m4a, opus), stream from
+	// a pipe so playback starts instantly instead of buffering the entire
+	// file to memory. Seeking is supported via ffmpeg -ss restart.
+	if !isURL(path) && needsFFmpeg(ext) {
+		rc.Close()
+		decoder, format, err := decodeFFmpegLocal(path, p.sr)
+		if err != nil {
+			return nil, fmt.Errorf("decode: %w", err)
+		}
+		return &trackPipeline{
+			decoder:  decoder,
+			stream:   decoder, // outputs at target sample rate
+			format:   format,
+			seekable: true,
+			path:     path,
+		}, nil
+	}
+
 	decoder, format, err := decodeWithExt(rc, ext, path, p.sr)
 	if err != nil {
 		rc.Close()
