@@ -255,11 +255,33 @@ func (s *Session) NewStream(ctx context.Context, spotID librespot.SpotifyId, bit
 	return s.player.NewStream(ctx, http.DefaultClient, spotID, bitrate, 0)
 }
 
-// WebApi calls the Spotify Web API via the session, guarded by the session mutex.
+// WebApi calls the Spotify Web API directly using the session's access token.
+// We bypass the spclient's WebApiRequest to avoid the Client-Token header and
+// its internal retry logic, which can conflict with our own backoff and may
+// trigger stricter rate limits.
 func (s *Session) WebApi(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.sess.WebApi(ctx, method, path, query, nil, nil)
+
+	token, err := s.sess.Spclient().GetAccessToken(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("get access token: %w", err)
+	}
+
+	u, _ := url.Parse("https://api.spotify.com")
+	u = u.JoinPath(path)
+	if query != nil {
+		u.RawQuery = query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	return http.DefaultClient.Do(req)
 }
 
 // Close releases all session and player resources.
