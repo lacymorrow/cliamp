@@ -35,6 +35,17 @@ func (n NavidromeConfig) IsSet() bool {
 	return n.URL != "" && n.User != "" && n.Password != ""
 }
 
+// SpotifyConfig holds settings for the Spotify provider.
+// Requires a Spotify Premium account.
+type SpotifyConfig struct {
+	Enabled bool
+}
+
+// IsSet reports whether the Spotify provider is enabled.
+func (s SpotifyConfig) IsSet() bool {
+	return s.Enabled
+}
+
 // Config holds user preferences loaded from the config file.
 type Config struct {
 	Volume          float64     // dB, range [-30, +6]
@@ -50,6 +61,7 @@ type Config struct {
 	ResampleQuality int             // beep resample quality factor (1–4)
 	BitDepth        int             // PCM bit depth for FFmpeg output: 16 or 32
 	Navidrome       NavidromeConfig // optional Navidrome/Subsonic server credentials
+	Spotify         SpotifyConfig   // optional Spotify provider (requires Premium)
 }
 
 // Default returns a Config with sensible defaults.
@@ -114,6 +126,11 @@ func Load() (Config, error) {
 				cfg.Navidrome.Password = strings.Trim(val, `"'`)
 			case "browse_sort":
 				cfg.Navidrome.BrowseSort = strings.Trim(val, `"'`)
+			}
+		case "spotify":
+			switch key {
+			case "enabled":
+				cfg.Spotify.Enabled = val == "true"
 			}
 		default:
 			switch key {

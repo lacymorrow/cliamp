@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -10,6 +11,7 @@ import (
 	"cliamp/config"
 	"cliamp/external/local"
 	"cliamp/external/navidrome"
+	"cliamp/external/spotify"
 	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
@@ -39,6 +41,19 @@ func run(overrides config.Overrides, positional []string) error {
 		navClient = c
 		navProv = c
 	}
+	// Build Spotify provider if enabled in config.
+	var spotifyProv *spotify.SpotifyProvider
+	var spotifySession *spotify.Session
+	if cfg.Spotify.IsSet() {
+		sess, err := spotify.NewSession(context.Background())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "spotify: %v\n", err)
+		} else {
+			spotifySession = sess
+			spotifyProv = spotify.New(sess)
+		}
+	}
+
 	localProv := local.New()
 	var localAsProvider playlist.Provider
 	if localProv != nil {
@@ -46,12 +61,19 @@ func run(overrides config.Overrides, positional []string) error {
 			localAsProvider = localProv
 		}
 	}
+	var spotifyAsProvider playlist.Provider
+	if spotifyProv != nil {
+		spotifyAsProvider = spotifyProv
+	}
 	var provider playlist.Provider
-	if cp := playlist.NewComposite(navProv, localAsProvider); cp != nil {
+	if cp := playlist.NewComposite(navProv, spotifyAsProvider, localAsProvider); cp != nil {
 		provider = cp
 	}
 
 	defer resolve.CleanupYTDL()
+	if spotifySession != nil {
+		defer spotifySession.Close()
+	}
 
 	resolved, err := resolve.Args(positional)
 	if err != nil {
@@ -60,7 +82,7 @@ func run(overrides config.Overrides, positional []string) error {
 
 	// No args — stream the default radio (unless Navidrome is configured,
 	// in which case we open the provider browser instead).
-	defaultRadio := len(positional) == 0 && navProv == nil
+	defaultRadio := len(positional) == 0 && navProv == nil && spotifyProv == nil
 	if defaultRadio {
 		resolved.Pending = append(resolved.Pending, "http://cliamp.stream/public/iamdothash/playlist.pls")
 	}
@@ -78,6 +100,12 @@ func run(overrides config.Overrides, positional []string) error {
 		return fmt.Errorf("player: %w", err)
 	}
 	defer p.Close()
+
+	// Register Spotify streamer factory so spotify: URIs are decoded
+	// through go-librespot instead of the normal file/HTTP pipeline.
+	if spotifyProv != nil {
+		p.SetStreamerFactory(spotifyProv.NewStreamer)
+	}
 
 	cfg.ApplyPlayer(p)
 	cfg.ApplyPlaylist(pl)
