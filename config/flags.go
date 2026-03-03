@@ -18,6 +18,7 @@ type Overrides struct {
 	SampleRate      *int
 	BufferMs        *int
 	ResampleQuality *int
+	BitDepth        *int
 	Play            *bool
 }
 
@@ -52,6 +53,9 @@ func (o Overrides) Apply(cfg *Config) {
 	}
 	if o.ResampleQuality != nil {
 		cfg.ResampleQuality = *o.ResampleQuality
+	}
+	if o.BitDepth != nil {
+		cfg.BitDepth = *o.BitDepth
 	}
 	cfg.clamp()
 }
@@ -147,6 +151,12 @@ func ParseFlags(args []string) (action string, ov Overrides, positional []string
 				return "", ov, nil, e
 			}
 			ov.ResampleQuality = &v
+		case "--bit-depth":
+			v, e := requireNextInt(args, &i, arg)
+			if e != nil {
+				return "", ov, nil, e
+			}
+			ov.BitDepth = &v
 
 		default:
 			return "", ov, nil, fmt.Errorf("unknown flag: %s", arg)

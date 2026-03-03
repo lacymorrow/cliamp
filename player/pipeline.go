@@ -124,7 +124,7 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 	// the entire (potentially infinite) stream.
 	if isURL(path) && needsFFmpeg(ext) {
 		rc.Close()
-		decoder, format, err := decodeFFmpegStream(path, p.sr)
+		decoder, format, err := decodeFFmpegStream(path, p.sr, p.bitDepth)
 		if err != nil {
 			return nil, fmt.Errorf("decode: %w", err)
 		}
@@ -140,7 +140,7 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 	// file to memory. Seeking is supported via ffmpeg -ss restart.
 	if !isURL(path) && needsFFmpeg(ext) {
 		rc.Close()
-		decoder, format, err := decodeFFmpegLocal(path, p.sr)
+		decoder, format, err := decodeFFmpegLocal(path, p.sr, p.bitDepth)
 		if err != nil {
 			return nil, fmt.Errorf("decode: %w", err)
 		}
@@ -153,7 +153,7 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 		}, nil
 	}
 
-	decoder, format, err := decodeWithExt(rc, ext, path, p.sr)
+	decoder, format, err := decodeWithExt(rc, ext, path, p.sr, p.bitDepth)
 	if err != nil {
 		rc.Close()
 		// If the format already required ffmpeg (e.g., .m4a), decode() already
@@ -163,7 +163,7 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 		}
 		// Native decoder failed (e.g., IEEE float WAV). Fall back to ffmpeg,
 		// which reads from the path directly and handles more formats.
-		decoder, format, err = decodeFFmpeg(path, p.sr)
+		decoder, format, err = decodeFFmpeg(path, p.sr, p.bitDepth)
 		if err != nil {
 			return nil, fmt.Errorf("decode: %w", err)
 		}

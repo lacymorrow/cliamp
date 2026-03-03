@@ -170,14 +170,14 @@ func needsFFmpeg(ext string) bool {
 }
 
 // decode selects the appropriate decoder based on the file extension.
-func decode(rc io.ReadCloser, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
-	return decodeWithExt(rc, formatExt(path), path, sr)
+func decode(rc io.ReadCloser, path string, sr beep.SampleRate, bitDepth int) (beep.StreamSeekCloser, beep.Format, error) {
+	return decodeWithExt(rc, formatExt(path), path, sr, bitDepth)
 }
 
 // decodeWithExt selects the decoder using an explicit extension.
-func decodeWithExt(rc io.ReadCloser, ext, path string, sr beep.SampleRate) (beep.StreamSeekCloser, beep.Format, error) {
+func decodeWithExt(rc io.ReadCloser, ext, path string, sr beep.SampleRate, bitDepth int) (beep.StreamSeekCloser, beep.Format, error) {
 	if needsFFmpeg(ext) {
-		return decodeFFmpeg(path, sr)
+		return decodeFFmpeg(path, sr, bitDepth)
 	}
 	switch ext {
 	case ".wav":

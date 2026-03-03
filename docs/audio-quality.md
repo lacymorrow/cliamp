@@ -1,6 +1,6 @@
 # Audio Quality
 
-cliamp lets you tune the output sample rate, speaker buffer size, and resample quality via `~/.config/cliamp/config.toml`. The active settings are shown in the `OUT` status line below the EQ.
+cliamp lets you tune the output sample rate, speaker buffer size, resample quality, and bit depth via `~/.config/cliamp/config.toml`. The active settings are shown in the `OUT` status line below the EQ.
 
 ## Configuration
 
@@ -15,9 +15,12 @@ buffer_ms = 100
 
 # Resample quality (1-4, where 4 is best)
 resample_quality = 4
+
+# PCM bit depth for FFmpeg-decoded formats: 16 (default) or 32 (lossless)
+bit_depth = 16
 ```
 
-All three are optional. Defaults are shown above.
+All four are optional. Defaults are shown above.
 
 ## What they do
 
@@ -26,15 +29,17 @@ All three are optional. Defaults are shown above.
 | `sample_rate`      | Output rate sent to your sound card. 48000 matches most modern DACs.   |
 | `buffer_ms`        | Lower = less latency, higher = fewer glitches. Try 200 if audio pops. |
 | `resample_quality` | Sinc interpolation quality when a file's native rate differs from output. 4 is best, 1 is fastest. |
+| `bit_depth`        | PCM precision for FFmpeg-decoded formats (m4a, aac, alac, opus, wma, webm). 32 uses float PCM which preserves up to 24-bit audio without truncation. Native formats (mp3, flac, wav, ogg) always decode at full precision regardless of this setting. |
 
 ## Quick recipes
 
-**Hi-res setup** (good DAC, beefy CPU):
+**Lossless / hi-res setup** (good DAC, beefy CPU):
 
 ```toml
 sample_rate = 96000
 buffer_ms = 100
 resample_quality = 4
+bit_depth = 32
 ```
 
 **Low-latency / weak hardware**:

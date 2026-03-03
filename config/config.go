@@ -48,6 +48,7 @@ type Config struct {
 	SampleRate      int             // output sample rate: 22050, 44100, 48000, 96000, 192000
 	BufferMs        int             // speaker buffer in milliseconds (50–500)
 	ResampleQuality int             // beep resample quality factor (1–4)
+	BitDepth        int             // PCM bit depth for FFmpeg output: 16 or 32
 	Navidrome       NavidromeConfig // optional Navidrome/Subsonic server credentials
 }
 
@@ -58,6 +59,7 @@ func Default() Config {
 		SampleRate:      44100,
 		BufferMs:        100,
 		ResampleQuality: 4,
+		BitDepth:        16,
 	}
 }
 
@@ -148,6 +150,10 @@ func Load() (Config, error) {
 			case "resample_quality":
 				if v, err := strconv.Atoi(val); err == nil {
 					cfg.ResampleQuality = v
+				}
+			case "bit_depth":
+				if v, err := strconv.Atoi(val); err == nil {
+					cfg.BitDepth = v
 				}
 			}
 		}
@@ -339,6 +345,7 @@ func (c *Config) clamp() {
 	c.SampleRate = clampSampleRate(c.SampleRate)
 	c.BufferMs = max(min(c.BufferMs, 500), 50)
 	c.ResampleQuality = max(min(c.ResampleQuality, 4), 1)
+	c.BitDepth = clampBitDepth(c.BitDepth)
 }
 
 // clampSampleRate returns the nearest valid sample rate from the allowed set.
@@ -353,6 +360,14 @@ func clampSampleRate(v int) int {
 		}
 	}
 	return best
+}
+
+// clampBitDepth returns the nearest valid bit depth (16 or 32).
+func clampBitDepth(v int) int {
+	if v >= 24 {
+		return 32
+	}
+	return 16
 }
 
 func abs(x int) int {

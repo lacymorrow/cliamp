@@ -19,6 +19,7 @@ cliamp --auto-play ~/Music            # start playback immediately
 cliamp --sample-rate 48000 track.mp3      # output sample rate (22050, 44100, 48000, 96000, 192000)
 cliamp --buffer-ms 200 track.mp3          # speaker buffer in ms (50–500)
 cliamp --resample-quality 1 track.mp3     # resample quality factor (1–4)
+cliamp --bit-depth 32 track.m4a           # PCM bit depth: 16 (default) or 32 (lossless)
 ```
 
 ## Appearance
@@ -58,5 +59,6 @@ cliamp track.mp3 --repeat all --mono ~/Music
 | `--sample-rate` | int | 44100 | 22050, 44100, 48000, 96000, 192000 |
 | `--buffer-ms` | int | 100 | 50–500 |
 | `--resample-quality` | int | 4 | 1–4 |
+| `--bit-depth` | int | 16 | 16, 32 |
 
 CLI flags override config file values for the current session only. They are not persisted.

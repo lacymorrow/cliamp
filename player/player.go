@@ -16,6 +16,7 @@ type Quality struct {
 	SampleRate      int // output sample rate in Hz (e.g. 44100, 48000)
 	BufferMs        int // speaker buffer in milliseconds
 	ResampleQuality int // beep resample quality factor (1–4)
+	BitDepth        int // PCM bit depth for FFmpeg output: 16 or 32 (32 = lossless)
 }
 
 // Player is the audio engine managing the playback pipeline:
@@ -39,6 +40,7 @@ type Player struct {
 	paused          bool
 	mono            bool
 	resampleQuality int
+	bitDepth        int // 16 or 32
 
 	gaplessAdvance atomic.Bool // set when gapless transition fires
 
@@ -55,7 +57,11 @@ func New(q Quality) (*Player, error) {
 	if err := speaker.Init(sr, sr.N(time.Duration(q.BufferMs)*time.Millisecond)); err != nil {
 		return nil, fmt.Errorf("speaker init: %w", err)
 	}
-	p := &Player{sr: sr, resampleQuality: q.ResampleQuality}
+	bitDepth := q.BitDepth
+	if bitDepth != 32 {
+		bitDepth = 16
+	}
+	p := &Player{sr: sr, resampleQuality: q.ResampleQuality, bitDepth: bitDepth}
 	p.gapless = &gaplessStreamer{}
 	p.gapless.onSwap = func() {
 		// Called from audio thread (goroutine) when gapless transition occurs.

@@ -72,6 +72,7 @@ func run(overrides config.Overrides, positional []string) error {
 		SampleRate:      cfg.SampleRate,
 		BufferMs:        cfg.BufferMs,
 		ResampleQuality: cfg.ResampleQuality,
+		BitDepth:        cfg.BitDepth,
 	})
 	if err != nil {
 		return fmt.Errorf("player: %w", err)
@@ -140,6 +141,7 @@ Audio engine:
   --sample-rate <Hz>      Output sample rate (22050, 44100, 48000, 96000, 192000)
   --buffer-ms <ms>        Speaker buffer in milliseconds (50–500)
   --resample-quality <n>  Resample quality factor (1–4)
+  --bit-depth <n>         PCM bit depth: 16 (default) or 32 (lossless)
 
 Appearance:
   --theme <name>          UI theme name

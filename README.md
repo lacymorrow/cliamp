@@ -202,6 +202,7 @@ cliamp track.mp3 --repeat all --mono
 cliamp --auto-play --theme "Amber CRT" ~/Music
 cliamp --visualizer Flame ~/Music
 cliamp --sample-rate 48000 --buffer-ms 200 track.mp3
+cliamp --bit-depth 32 --sample-rate 96000 track.m4a
 cliamp --eq-preset "Bass Boost" --visualizer Wave track.mp3
 ```
 
