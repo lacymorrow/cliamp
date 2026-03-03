@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,17 +185,37 @@ func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.F
 	return streamer, streamer.Format(), streamer.Duration(), nil
 }
 
-// webAPI calls the Spotify Web API via the session (mutex-guarded).
+// webAPI calls the Spotify Web API via the session with retry on 429.
 func (p *SpotifyProvider) webAPI(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
-	resp, err := p.session.WebApi(ctx, method, path, query)
-	if err != nil {
-		return nil, err
+	const maxRetries = 5
+	for attempt := range maxRetries {
+		resp, err := p.session.WebApi(ctx, method, path, query)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			// Parse Retry-After header (seconds), default to exponential backoff.
+			wait := time.Duration(1<<uint(attempt)) * time.Second
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+					wait = time.Duration(secs) * time.Second
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+				continue
+			}
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("http status %s", resp.Status)
+		}
+		return resp, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("http status %s", resp.Status)
-	}
-	return resp, nil
+	return nil, fmt.Errorf("http status 429 after %d retries", maxRetries)
 }
 
 // decodeBody reads and decodes a JSON response body, then closes it.

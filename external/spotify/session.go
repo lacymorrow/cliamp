@@ -190,6 +190,7 @@ func newInteractiveSession(ctx context.Context) (*Session, error) {
 		fmt.Println("  (Could not open browser automatically.)")
 	}
 	fmt.Println("  Press Enter to retry opening the browser, or just complete auth in your browser.")
+	fmt.Println("  (You can close the browser tab after authentication completes.)")
 	fmt.Println("  Waiting for authentication callback...")
 
 	// Start a goroutine to handle Enter presses for browser retry.
