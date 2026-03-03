@@ -63,6 +63,15 @@ const (
 	tickSlow = 200 * time.Millisecond // 5 FPS — visualizer off or overlay
 )
 
+// streamPreloadLeadTime is how far before the end of a stream we arm the
+// gapless next pipeline. Opening the preload HTTP connection too early can
+// cause the server to close the current stream (e.g., per-user concurrent
+// stream limits on Navidrome), which makes the mp3 decoder error out and
+// triggers a premature gapless transition. 3 seconds is short enough that
+// most servers won't enforce a concurrency limit for such a brief overlap,
+// and any resulting early skip is imperceptible (≤3 s from the true end).
+const streamPreloadLeadTime = 3 * time.Second
+
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
 	player    *player.Player
@@ -106,6 +115,12 @@ type Model struct {
 
 	// Async stream buffering (true while HTTP connect is in progress)
 	buffering bool
+
+	// preloading is true while a preloadStreamCmd goroutine is in-flight.
+	// It prevents the tick-loop from dispatching a second concurrent preload
+	// for the same next track before the first HTTP connection is armed in
+	// the gapless streamer.
+	preloading bool
 
 	// Live stream title from ICY metadata (e.g., "Artist - Song")
 	streamTitle string
@@ -414,15 +429,15 @@ func resolveYTDLCmd(index int, pageURL string) tea.Cmd {
 	}
 }
 
-func playStreamCmd(p *player.Player, path string) tea.Cmd {
+func playStreamCmd(p *player.Player, path string, knownDuration time.Duration) tea.Cmd {
 	return func() tea.Msg {
-		return streamPlayedMsg{err: p.Play(path)}
+		return streamPlayedMsg{err: p.Play(path, knownDuration)}
 	}
 }
 
-func preloadStreamCmd(p *player.Player, path string) tea.Cmd {
+func preloadStreamCmd(p *player.Player, path string, knownDuration time.Duration) tea.Cmd {
 	return func() tea.Msg {
-		p.Preload(path) // errors silently ignored
+		p.Preload(path, knownDuration) // errors silently ignored
 		return streamPreloadedMsg{}
 	}
 }
@@ -668,6 +683,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.plCursor = m.playlist.Index()
 			m.adjustScroll()
 			m.titleOff = 0
+			// The preload that just fired is consumed — clear the in-flight flag
+			// so the next track can be preloaded.
+			m.preloading = false
+			// A stream decoder error at the track boundary (e.g., server closing
+			// the connection when the preload HTTP request opens) is expected and
+			// not a user-visible problem. Clear any pending error so the red
+			// message doesn't flash at every track transition.
+			m.err = nil
 			cmds = append(cmds, m.preloadNext())
 			m.notifyMPRIS()
 		}
@@ -680,6 +703,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.player.IsPlaying() && !m.player.IsPaused() {
 			m.titleOff++
+		}
+		// Retry deferred stream preload: preloadNext() returns nil (defers) when
+		// the current stream has >streamPreloadLeadTime remaining. Poll every tick
+		// until we're within the window and the preload gets armed.
+		// Guard with !m.preloading so we don't fire a second concurrent HTTP
+		// connection while the first preloadStreamCmd goroutine is still running.
+		if m.player.IsPlaying() && !m.player.IsPaused() && !m.buffering && !m.preloading && !m.player.HasPreload() {
+			if cmd := m.preloadNext(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 
 		// Use fast ticks only when the visualizer is rendering; otherwise
@@ -798,6 +831,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.preloadNext()
 
 	case streamPreloadedMsg:
+		m.preloading = false
 		return m, nil
 
 	case ytdlResolvedMsg:
@@ -892,7 +926,16 @@ func (m *Model) nextTrack() tea.Cmd {
 // prevTrack goes to the previous track, or restarts if >3s into the current one.
 func (m *Model) prevTrack() tea.Cmd {
 	if m.player.Position() > 3*time.Second {
-		m.player.Seek(-m.player.Position())
+		if m.player.Seekable() {
+			// Local file or seekable stream: jump back to the beginning.
+			m.player.Seek(-m.player.Position())
+			return nil
+		}
+		// Non-seekable stream (e.g. Icecast radio): restart by replaying the URL.
+		track, idx := m.playlist.Current()
+		if idx >= 0 {
+			return m.playTrack(track)
+		}
 		return nil
 	}
 	track, ok := m.playlist.Prev()
@@ -925,12 +968,13 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		_, idx := m.playlist.Current()
 		return resolveYTDLCmd(idx, track.Path)
 	}
+	dur := time.Duration(track.DurationSecs) * time.Second
 	if track.Stream {
 		m.buffering = true
 		m.err = nil
-		return playStreamCmd(m.player, track.Path)
+		return playStreamCmd(m.player, track.Path, dur)
 	}
-	if err := m.player.Play(track.Path); err != nil {
+	if err := m.player.Play(track.Path, dur); err != nil {
 		m.err = err
 	} else {
 		m.err = nil
@@ -941,6 +985,14 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 // preloadNext looks ahead in the playlist and preloads the next track for
 // gapless transition. Errors are silently ignored — playback falls back to
 // non-gapless if preloading fails.
+//
+// For HTTP streams with a known duration, preloading is deferred until the
+// current track is within streamPreloadLeadTime of its end. This prevents the
+// gapless streamer from having a live HTTP connection armed too early, which
+// would cause the player to skip to the next track if the decoder signals EOF
+// prematurely (e.g. a mis-estimated Content-Length from a transcoding server).
+// When position has not yet reached the threshold, this function returns nil
+// and the tick loop will retry on the next pass.
 func (m *Model) preloadNext() tea.Cmd {
 	next, ok := m.playlist.PeekNext()
 	if !ok {
@@ -951,9 +1003,26 @@ func (m *Model) preloadNext() tea.Cmd {
 		return nil
 	}
 	if next.Stream {
-		return preloadStreamCmd(m.player, next.Path)
+		// For streams, only arm gapless if we're within the lead-time window.
+		// If we don't know the duration yet (0), preload immediately as before
+		// so that streams without duration metadata still get gapless behaviour.
+		dur := m.player.Duration()
+		if dur > 0 {
+			pos := m.player.Position()
+			remaining := dur - pos
+			if remaining > streamPreloadLeadTime {
+				// Too early — caller should retry from the tick loop.
+				return nil
+			}
+		}
+		nextDur := time.Duration(next.DurationSecs) * time.Second
+		// Mark in-flight so the tick loop doesn't dispatch a second concurrent
+		// preload before this goroutine has finished arming gapless.SetNext.
+		m.preloading = true
+		return preloadStreamCmd(m.player, next.Path, nextDur)
 	}
-	m.player.Preload(next.Path)
+	nextDur := time.Duration(next.DurationSecs) * time.Second
+	m.player.Preload(next.Path, nextDur)
 	return nil
 }
 

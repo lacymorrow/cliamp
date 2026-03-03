@@ -76,11 +76,14 @@ func New(q Quality) (*Player, error) {
 // Play opens and starts playing an audio file. On the first call it builds
 // the long-lived EQ → volume → tap → ctrl chain and starts the speaker.
 // Subsequent calls swap only the track source via the gapless streamer.
-func (p *Player) Play(path string) error {
+// knownDuration is the metadata duration (use 0 if unknown); it is used as a
+// fallback when the decoder cannot determine the length (e.g. HTTP streams).
+func (p *Player) Play(path string, knownDuration time.Duration) error {
 	tp, err := p.buildPipeline(path)
 	if err != nil {
 		return err
 	}
+	tp.knownDuration = knownDuration
 
 	// Collect old pipelines to close after releasing locks.
 	var oldCurrent, oldNext *trackPipeline
@@ -136,11 +139,13 @@ func (p *Player) Play(path string) error {
 }
 
 // Preload builds a pipeline for the next track and queues it for gapless transition.
-func (p *Player) Preload(path string) error {
+// knownDuration is the metadata duration (use 0 if unknown).
+func (p *Player) Preload(path string, knownDuration time.Duration) error {
 	tp, err := p.buildPipeline(path)
 	if err != nil {
 		return err
 	}
+	tp.knownDuration = knownDuration
 
 	// Lock speaker to atomically swap the gapless next stream, ensuring no
 	// in-flight transition reads from the old pipeline we're about to close.
@@ -225,7 +230,12 @@ func (p *Player) Stop() {
 }
 
 // Seek moves the playback position by the given duration (positive or negative).
-// Returns nil immediately for non-seekable streams (e.g., HTTP without ffmpeg).
+// For seekable local files, the decoder's Seek method is used directly.
+// For HTTP streams with a known Content-Length and duration (seekableStream),
+// seek is implemented by reconnecting with a Range: bytes=N- header and
+// rebuilding the decoder at the computed byte offset. This is known as
+// seek-by-reconnect.
+// Returns nil immediately for non-seekable streams (e.g., Icecast radio).
 // The speaker lock is acquired first (outer), then p.mu briefly to snapshot
 // the current pipeline, ensuring consistent lock ordering with the audio thread.
 // Clears the preloaded next pipeline to prevent a stale gapless transition.
@@ -235,7 +245,55 @@ func (p *Player) Seek(d time.Duration) error {
 	p.mu.Lock()
 	cur := p.current
 	p.mu.Unlock()
-	if cur == nil || !cur.seekable {
+	if cur == nil {
+		return nil
+	}
+
+	// seekableStream: HTTP stream with Content-Length — reconnect at byte offset.
+	if cur.seekableStream && cur.knownDuration > 0 && cur.contentLength > 0 {
+		// Compute new absolute position.
+		curPos := cur.format.SampleRate.D(cur.decoder.Position()) + cur.streamOffset
+		newPos := curPos + d
+		if newPos < 0 {
+			newPos = 0
+		}
+		if newPos >= cur.knownDuration {
+			newPos = cur.knownDuration - time.Second
+		}
+		// Map position to byte offset: offset = newPos/duration * contentLength.
+		// Use floating-point to avoid int64 overflow on large files.
+		ratio := float64(newPos) / float64(cur.knownDuration)
+		byteOffset := int64(ratio * float64(cur.contentLength))
+
+		// Build a new pipeline starting at the computed byte offset.
+		// Speaker is already locked, so we can safely swap gapless.
+		tp, err := p.buildPipelineAt(cur.path, byteOffset, newPos)
+		if err != nil {
+			return fmt.Errorf("seek reconnect: %w", err)
+		}
+		tp.knownDuration = cur.knownDuration
+		// seekableStream / contentLength / path are set by buildPipelineAt when
+		// contentLength > 0, but byteOffset shifts the origin, so we keep the
+		// original full-file contentLength and mark seekableStream explicitly.
+		tp.seekableStream = true
+		tp.contentLength = cur.contentLength
+
+		p.gapless.Replace(tp.stream)
+
+		// Clear any preloaded next pipeline — its transition point is now stale.
+		p.gapless.SetNext(nil)
+		p.mu.Lock()
+		old := p.current
+		oldNext := p.nextPipeline
+		p.current = tp
+		p.nextPipeline = nil
+		p.mu.Unlock()
+		closePipelines(old, oldNext)
+		return nil
+	}
+
+	// Local file (or ffmpeg-buffered PCM): use the decoder's native Seek.
+	if !cur.seekable {
 		return nil
 	}
 	curSample := cur.decoder.Position()
@@ -265,6 +323,9 @@ func (p *Player) Seek(d time.Duration) error {
 }
 
 // Position returns the current playback position.
+// For ranged HTTP streams (seek-by-reconnect), streamOffset is added to the
+// decoder's sample-based position so the reported time is absolute within
+// the track, not relative to the reconnect point.
 func (p *Player) Position() time.Duration {
 	speaker.Lock()
 	defer speaker.Unlock()
@@ -274,10 +335,13 @@ func (p *Player) Position() time.Duration {
 	if cur == nil {
 		return 0
 	}
-	return cur.format.SampleRate.D(cur.decoder.Position())
+	return cur.format.SampleRate.D(cur.decoder.Position()) + cur.streamOffset
 }
 
 // Duration returns the total duration of the current track.
+// For seekable local files it is derived from the decoder's sample count.
+// For HTTP streams where the decoder reports Len()==0, the metadata hint
+// stored at pipeline build time (knownDuration) is returned instead.
 func (p *Player) Duration() time.Duration {
 	speaker.Lock()
 	defer speaker.Unlock()
@@ -287,7 +351,10 @@ func (p *Player) Duration() time.Duration {
 	if cur == nil {
 		return 0
 	}
-	return cur.format.SampleRate.D(cur.decoder.Len())
+	if n := cur.decoder.Len(); n > 0 {
+		return cur.format.SampleRate.D(n)
+	}
+	return cur.knownDuration
 }
 
 // SetVolume sets the volume in dB, clamped to [-30, +6].
@@ -354,6 +421,13 @@ func (p *Player) Drained() bool {
 	return p.gapless.Drained()
 }
 
+// HasPreload returns true if a next track is already queued for gapless transition.
+func (p *Player) HasPreload() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.nextPipeline != nil
+}
+
 // StreamTitle returns the current ICY stream title (e.g., "Artist - Song").
 // Returns "" when no ICY metadata has been received.
 func (p *Player) StreamTitle() string {
@@ -367,11 +441,16 @@ func (p *Player) setStreamTitle(title string) {
 }
 
 // Seekable reports whether the current track supports seeking.
+// Returns true for local files (decoder-native seek) and for HTTP streams
+// with a known Content-Length and duration (seek-by-reconnect).
 func (p *Player) Seekable() bool {
 	p.mu.Lock()
 	cur := p.current
 	p.mu.Unlock()
-	return cur != nil && cur.seekable
+	if cur == nil {
+		return false
+	}
+	return cur.seekable || (cur.seekableStream && cur.knownDuration > 0)
 }
 
 // StreamErr returns the current streamer error, if any (e.g., connection drops).
