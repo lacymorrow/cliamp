@@ -152,20 +152,66 @@
   }
   .bar:nth-child(even){opacity:.7}
 
-  /* ── Radio Hint ── */
-  .radio-cmd{
-    margin-top:24px;
-    text-align:center;
+  /* ── Radio Player ── */
+  .radio-player{
+    margin:28px auto 0;
+    display:inline-flex;align-items:center;gap:10px;
+    background:#0c0e17;
+    border:1px solid #1a1e2e;
+    border-radius:6px;
+    padding:10px 16px;
+    transition:border-color .3s,box-shadow .3s;
+    animation:fade-up .6s ease-out .25s both;
   }
-  .radio-cmd code{
-    color:#2a3050;font-size:11px;
-    transition:color .3s,text-shadow .3s;
+  .radio-player:hover{border-color:#2a3050;box-shadow:0 0 16px rgba(0,0,0,.3)}
+  .rp-led{
+    width:5px;height:5px;border-radius:50%;
+    background:#2a3050;transition:all .4s;flex-shrink:0;
   }
-  .radio-cmd code:hover{
-    color:#5bf870;
-    text-shadow:0 0 8px rgba(91,248,112,.15);
+  .radio-player.playing .rp-led{background:#5bf870;box-shadow:0 0 6px rgba(91,248,112,.5)}
+  .radio-player.loading .rp-led{background:#ffcc66;animation:led-blink 1s ease-in-out infinite}
+  @keyframes led-blink{0%,100%{opacity:1}50%{opacity:.3}}
+  .rp-label{
+    color:#3a4060;font-size:10px;letter-spacing:2px;
+    text-transform:uppercase;transition:color .3s,text-shadow .3s;
   }
-  .radio-cmd code .p{color:#1a1e2e;user-select:none}
+  .radio-player.playing .rp-label{color:#5bf870;text-shadow:0 0 8px rgba(91,248,112,.15)}
+  .rp-play{
+    width:26px;height:26px;border-radius:50%;
+    background:transparent;border:1px solid #2a3050;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    color:#4a5068;transition:all .25s;flex-shrink:0;padding:0;
+  }
+  .rp-play:hover{border-color:#ffcc66;color:#ffcc66;box-shadow:0 0 10px rgba(255,204,102,.12)}
+  .rp-play:active{transform:scale(.92)}
+  .radio-player.playing .rp-play{border-color:#5bf870;color:#5bf870;box-shadow:0 0 8px rgba(91,248,112,.1)}
+  .rp-play svg{width:10px;height:10px;fill:currentColor}
+  .rp-play .rp-icon-stop{display:none}
+  .radio-player.playing .rp-play .rp-icon-play{display:none}
+  .radio-player.playing .rp-play .rp-icon-stop{display:block}
+  .rp-sep{width:1px;height:16px;background:#1a1e2e;flex-shrink:0}
+  .rp-vol{
+    -webkit-appearance:none;appearance:none;
+    width:60px;height:3px;background:#1a1e2e;
+    border-radius:2px;outline:none;cursor:pointer;
+  }
+  .rp-vol::-webkit-slider-thumb{
+    -webkit-appearance:none;width:8px;height:8px;border-radius:50%;
+    background:#3a4060;border:none;transition:all .2s;
+    margin-top:-2.5px;
+  }
+  .rp-vol::-moz-range-thumb{
+    width:8px;height:8px;border-radius:50%;
+    background:#3a4060;border:none;transition:all .2s;
+  }
+  .rp-vol::-webkit-slider-thumb:hover{background:#ffcc66;box-shadow:0 0 6px rgba(255,204,102,.3)}
+  .rp-vol::-moz-range-thumb:hover{background:#ffcc66;box-shadow:0 0 6px rgba(255,204,102,.3)}
+  .rp-vol::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:#1a1e2e}
+  .rp-vol::-moz-range-track{height:3px;border-radius:2px;background:#1a1e2e}
+  .radio-hint{margin-top:16px;text-align:center}
+  .radio-hint code{color:#1e2233;font-size:10px;transition:color .3s}
+  .radio-hint code:hover{color:#3a4060}
+  .radio-hint code .p{color:#1a1e2e;user-select:none}
 
   /* ── CTA Buttons ── */
   .hero-cta{
@@ -483,6 +529,8 @@
     .install-box code{white-space:pre-wrap;word-break:break-all}
     .nav-links{gap:14px}
     .nav-links a{font-size:10px;letter-spacing:1px}
+    .radio-player{max-width:100%}
+    .radio-hint code{font-size:9px}
   }
   @media(max-width:480px){
     .themes-grid{grid-template-columns:1fr}
@@ -536,8 +584,19 @@
       <a href="https://github.com/bjarneo/cliamp" class="btn btn-ghost">GitHub &rarr;</a>
     </div>
 
-    <div class="radio-cmd">
-      <code><span class="p">$ </span>cliamp http://cliamp.stream/public/iamdothash/playlist.pls</code>
+    <div class="radio-player" id="radio-player">
+      <audio id="radio-audio" preload="none" src="https://cliamp.stream/listen/iamdothash/lofi.mp3"></audio>
+      <div class="rp-led"></div>
+      <span class="rp-label">CLIAMP RADIO</span>
+      <button class="rp-play" onclick="toggleRadio()" aria-label="Play / Stop radio">
+        <svg class="rp-icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="rp-icon-stop" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+      </button>
+      <div class="rp-sep"></div>
+      <input type="range" class="rp-vol" min="0" max="100" value="70" oninput="setRadioVol(this.value)" aria-label="Volume">
+    </div>
+    <div class="radio-hint">
+      <code><span class="p">$ </span>cliamp https://cliamp.stream/public/iamdothash/playlist.pls</code>
     </div>
   </div>
 </section>
@@ -1000,6 +1059,31 @@ function toggleSound(btn){
   btn.classList.toggle('unmuted',!vid.muted);
 }
 
+/* ── Radio Player ── */
+function toggleRadio(){
+  var a=document.getElementById('radio-audio');
+  var p=document.getElementById('radio-player');
+  if(!a.paused){
+    a.pause();
+    a.removeAttribute('src');
+    a.load();
+    p.classList.remove('playing','loading');
+    return;
+  }
+  p.classList.add('loading');
+  p.classList.remove('playing');
+  a.src='https://cliamp.stream/listen/iamdothash/lofi.mp3';
+  a.volume=document.querySelector('.rp-vol').value/100;
+  a.play().then(function(){
+    p.classList.remove('loading');
+    p.classList.add('playing');
+  }).catch(function(){
+    p.classList.remove('loading');
+  });
+}
+function setRadioVol(v){
+  document.getElementById('radio-audio').volume=v/100;
+}
 </script>
 
 </body>
