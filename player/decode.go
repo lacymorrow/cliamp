@@ -50,6 +50,12 @@ func isURL(path string) bool {
 	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
+// isCustomURI reports whether path is a custom URI scheme (e.g., spotify:track:xxx)
+// that should be handled by the StreamerFactory rather than normal file/HTTP decoding.
+func isCustomURI(path string) bool {
+	return strings.HasPrefix(path, "spotify:")
+}
+
 // sourceResult holds the opened stream and optional HTTP metadata.
 type sourceResult struct {
 	body          io.ReadCloser

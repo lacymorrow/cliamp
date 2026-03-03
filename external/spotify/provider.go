@@ -1,0 +1,204 @@
+package spotify
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	librespot "github.com/devgianlu/go-librespot"
+	"github.com/gopxl/beep/v2"
+
+	"cliamp/playlist"
+)
+
+// maxResponseBody limits JSON API responses to 10 MB.
+const maxResponseBody = 10 << 20
+
+// SpotifyProvider implements playlist.Provider using the Spotify Web API
+// for playlist/track metadata and go-librespot for audio streaming.
+type SpotifyProvider struct {
+	session *Session
+}
+
+// New creates a SpotifyProvider from an authenticated Session.
+func New(session *Session) *SpotifyProvider {
+	return &SpotifyProvider{session: session}
+}
+
+func (p *SpotifyProvider) Name() string { return "Spotify" }
+
+// Playlists returns the authenticated user's Spotify playlists.
+func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	var all []playlist.PlaylistInfo
+	offset := 0
+	limit := 50
+
+	for {
+		query := url.Values{
+			"limit":  {fmt.Sprintf("%d", limit)},
+			"offset": {fmt.Sprintf("%d", offset)},
+		}
+
+		resp, err := p.webAPI(ctx, "GET", "/v1/me/playlists", query)
+		if err != nil {
+			return nil, fmt.Errorf("spotify: list playlists: %w", err)
+		}
+
+		var result struct {
+			Items []struct {
+				ID     string `json:"id"`
+				Name   string `json:"name"`
+				Tracks struct {
+					Total int `json:"total"`
+				} `json:"tracks"`
+			} `json:"items"`
+			Total int `json:"total"`
+		}
+		if err := decodeBody(resp, &result); err != nil {
+			return nil, fmt.Errorf("spotify: parse playlists: %w", err)
+		}
+
+		for _, item := range result.Items {
+			all = append(all, playlist.PlaylistInfo{
+				ID:         item.ID,
+				Name:       item.Name,
+				TrackCount: item.Tracks.Total,
+			})
+		}
+
+		if offset+limit >= result.Total {
+			break
+		}
+		offset += limit
+	}
+
+	return all, nil
+}
+
+// Tracks returns all tracks for the given Spotify playlist ID.
+// Track.Path is set to a spotify:track:<id> URI for the player to resolve.
+func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	var all []playlist.Track
+	offset := 0
+	limit := 100
+
+	for {
+		query := url.Values{
+			"limit":  {fmt.Sprintf("%d", limit)},
+			"offset": {fmt.Sprintf("%d", offset)},
+		}
+
+		path := fmt.Sprintf("/v1/playlists/%s/tracks", playlistID)
+		resp, err := p.webAPI(ctx, "GET", path, query)
+		if err != nil {
+			return nil, fmt.Errorf("spotify: list tracks: %w", err)
+		}
+
+		var result struct {
+			Items []struct {
+				Track *struct {
+					ID      string `json:"id"`
+					Name    string `json:"name"`
+					Artists []struct {
+						Name string `json:"name"`
+					} `json:"artists"`
+					Album struct {
+						Name        string `json:"name"`
+						ReleaseDate string `json:"release_date"`
+					} `json:"album"`
+					DurationMs  int `json:"duration_ms"`
+					TrackNumber int `json:"track_number"`
+				} `json:"track"`
+			} `json:"items"`
+			Total int `json:"total"`
+		}
+		if err := decodeBody(resp, &result); err != nil {
+			return nil, fmt.Errorf("spotify: parse tracks: %w", err)
+		}
+
+		for _, item := range result.Items {
+			t := item.Track
+			if t == nil || t.ID == "" {
+				continue // skip local/unavailable tracks
+			}
+
+			artists := make([]string, len(t.Artists))
+			for i, a := range t.Artists {
+				artists[i] = a.Name
+			}
+
+			var year int
+			if len(t.Album.ReleaseDate) >= 4 {
+				fmt.Sscanf(t.Album.ReleaseDate[:4], "%d", &year)
+			}
+
+			all = append(all, playlist.Track{
+				Path:         fmt.Sprintf("spotify:track:%s", t.ID),
+				Title:        t.Name,
+				Artist:       strings.Join(artists, ", "),
+				Album:        t.Album.Name,
+				Year:         year,
+				Stream:       true,
+				DurationSecs: t.DurationMs / 1000,
+				TrackNumber:  t.TrackNumber,
+			})
+		}
+
+		if offset+limit >= result.Total {
+			break
+		}
+		offset += limit
+	}
+
+	return all, nil
+}
+
+// NewStreamer creates a SpotifyStreamer for the given spotify:track:xxx URI.
+// Called by the player's StreamerFactory when it encounters a Spotify URI.
+func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.Format, time.Duration, error) {
+	spotID, err := librespot.SpotifyIdFromUri(uri)
+	if err != nil {
+		return nil, beep.Format{}, 0, fmt.Errorf("spotify: invalid URI %q: %w", uri, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	stream, err := p.session.NewStream(ctx, *spotID, 320)
+	if err != nil {
+		return nil, beep.Format{}, 0, fmt.Errorf("spotify: new stream: %w", err)
+	}
+
+	streamer := NewSpotifyStreamer(stream)
+	return streamer, streamer.Format(), streamer.Duration(), nil
+}
+
+// webAPI calls the Spotify Web API via the session (mutex-guarded).
+func (p *SpotifyProvider) webAPI(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
+	resp, err := p.session.WebApi(ctx, method, path, query)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("http status %s", resp.Status)
+	}
+	return resp, nil
+}
+
+// decodeBody reads and decodes a JSON response body, then closes it.
+func decodeBody(resp *http.Response, v any) error {
+	defer resp.Body.Close()
+	return json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(v)
+}
