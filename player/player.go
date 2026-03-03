@@ -485,6 +485,22 @@ func (p *Player) ResampleQuality() int {
 	return p.resampleQuality
 }
 
+// StreamBytes returns the bytes downloaded and total content length for the
+// current HTTP stream. Returns (0, 0) for local files or when no counter exists.
+func (p *Player) StreamBytes() (downloaded, total int64) {
+	p.mu.Lock()
+	cur := p.current
+	p.mu.Unlock()
+	if cur == nil {
+		return 0, 0
+	}
+	if cur.bytesRead != nil {
+		downloaded = cur.bytesRead.Load()
+	}
+	total = cur.contentLength
+	return downloaded, total
+}
+
 // Close fully stops the speaker and cleans up all resources.
 func (p *Player) Close() {
 	p.Stop()

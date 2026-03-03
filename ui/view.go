@@ -79,6 +79,7 @@ func (m Model) View() string {
 		"",
 		// Help
 		m.renderHelp(),
+		m.renderStreamStatus(),
 	}
 
 	if m.err != nil {
@@ -837,6 +838,42 @@ func (m Model) renderHelp() string {
 	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
 
 	return parts
+}
+
+// renderStreamStatus shows a network stats line for HTTP streams:
+// bytes downloaded, total size (if known), and throughput.
+func (m Model) renderStreamStatus() string {
+	downloaded, total := m.player.StreamBytes()
+	if downloaded == 0 && total <= 0 {
+		return ""
+	}
+
+	mb := float64(downloaded) / (1024 * 1024)
+
+	var status string
+	if total > 0 {
+		totalMB := float64(total) / (1024 * 1024)
+		pct := float64(downloaded) / float64(total) * 100
+		status = fmt.Sprintf("↓ %.1f / %.1f MB (%.0f%%)", mb, totalMB, pct)
+	} else {
+		status = fmt.Sprintf("↓ %.1f MB", mb)
+	}
+
+	if m.networkSpeed > 0 {
+		kbs := m.networkSpeed / 1024
+		if kbs >= 1024 {
+			status += fmt.Sprintf("  %.1f MB/s", kbs/1024)
+		} else {
+			status += fmt.Sprintf("  %.0f KB/s", kbs)
+		}
+	}
+
+	w := lipgloss.Width(status)
+	pad := panelWidth - w
+	if pad > 0 {
+		status = strings.Repeat(" ", pad) + status
+	}
+	return dimStyle.Render(status)
 }
 
 // — Navidrome browser renderers —

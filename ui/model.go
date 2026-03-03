@@ -129,6 +129,11 @@ type Model struct {
 	saveMsg    string
 	saveMsgTTL int // ticks remaining before clearing
 
+	// Network throughput tracking for stream status bar.
+	networkSpeed   float64 // bytes per second (smoothed)
+	lastSpeedBytes int64
+	lastSpeedTick  int // tick counter for sampling interval
+
 	// MPRIS D-Bus service (nil on non-Linux or if D-Bus unavailable)
 	mpris *mpris.Service
 
@@ -688,6 +693,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Poll ICY stream title for live radio display.
 		if title := m.player.StreamTitle(); title != "" {
 			m.streamTitle = title
+		}
+		// Update network throughput every ~1 second (20 ticks at 50ms).
+		m.lastSpeedTick++
+		if m.lastSpeedTick >= 20 {
+			downloaded, _ := m.player.StreamBytes()
+			delta := downloaded - m.lastSpeedBytes
+			if delta > 0 {
+				// Exponential moving average for smooth display.
+				instant := float64(delta) / (float64(m.lastSpeedTick) * 0.05) // bytes/sec
+				if m.networkSpeed == 0 {
+					m.networkSpeed = instant
+				} else {
+					m.networkSpeed = m.networkSpeed*0.6 + instant*0.4
+				}
+			} else if downloaded == 0 {
+				m.networkSpeed = 0
+			}
+			m.lastSpeedBytes = downloaded
+			m.lastSpeedTick = 0
 		}
 		var cmds []tea.Cmd
 		// Check gapless transition (audio already playing next track)

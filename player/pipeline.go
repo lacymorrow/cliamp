@@ -3,6 +3,7 @@ package player
 import (
 	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/gopxl/beep/v2"
@@ -24,6 +25,26 @@ type trackPipeline struct {
 	contentLength  int64         // Content-Length from the initial HTTP response
 	path           string        // original URL (needed to reconnect for seek)
 	streamOffset   time.Duration // playback time offset of the current ranged connection
+
+	// Network byte counter — incremented by countingReader for HTTP streams.
+	// nil for local files.
+	bytesRead *atomic.Int64
+}
+
+// countingReader wraps an io.ReadCloser and atomically counts bytes read.
+type countingReader struct {
+	inner io.ReadCloser
+	count *atomic.Int64
+}
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.inner.Read(p)
+	cr.count.Add(int64(n))
+	return n, err
+}
+
+func (cr *countingReader) Close() error {
+	return cr.inner.Close()
 }
 
 // close releases the pipeline's resources.
@@ -71,6 +92,13 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 	}
 	rc := src.body
 
+	// Wrap HTTP streams with a counting reader for network stats.
+	var byteCounter *atomic.Int64
+	if isURL(path) {
+		byteCounter = new(atomic.Int64)
+		rc = &countingReader{inner: rc, count: byteCounter}
+	}
+
 	// Determine format: prefer URL extension, fall back to Content-Type.
 	ext := formatExt(path)
 	if isURL(path) && ext == ".mp3" && src.contentType != "" {
@@ -82,7 +110,13 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 	// For OGG HTTP streams, use the chained decoder so Icecast radio
 	// continues across song boundaries instead of stopping at EOS.
 	if isURL(path) && ext == ".ogg" {
-		return p.buildChainedOggPipeline(rc, onMeta)
+		tp, err := p.buildChainedOggPipeline(rc, onMeta)
+		if err != nil {
+			return nil, err
+		}
+		tp.bytesRead = byteCounter
+		tp.contentLength = src.contentLength
+		return tp, nil
 	}
 
 	// For HTTP streams that need ffmpeg (e.g. AAC+), use the streaming
@@ -170,6 +204,7 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 		rc:           pipelineRC,
 		path:         path,
 		streamOffset: timeOffset,
+		bytesRead:    byteCounter,
 	}
 
 	// Mark HTTP streams with a known Content-Length as seek-by-reconnect capable.
