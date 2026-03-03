@@ -796,13 +796,22 @@ func (m Model) renderSearchOverlay() string {
 			}
 
 			name := tracks[i].DisplayName()
-			maxW := panelWidth - 8
+			queueSuffix := ""
+			if qp := m.playlist.QueuePosition(i); qp > 0 {
+				queueSuffix = fmt.Sprintf(" [Q%d]", qp)
+			}
+			maxW := panelWidth - 8 - len([]rune(queueSuffix))
 			nameRunes := []rune(name)
 			if len(nameRunes) > maxW {
 				name = string(nameRunes[:maxW-1]) + "…"
 			}
 
-			lines = append(lines, style.Render(fmt.Sprintf("%s%d. %s", prefix, i+1, name)))
+			line := fmt.Sprintf("%s%d. %s", prefix, i+1, name)
+			if queueSuffix != "" {
+				lines = append(lines, style.Render(line)+activeToggle.Render(queueSuffix))
+			} else {
+				lines = append(lines, style.Render(line))
+			}
 			rendered++
 		}
 	}
@@ -813,7 +822,7 @@ func (m Model) renderSearchOverlay() string {
 	}
 
 	lines = append(lines, "", dimStyle.Render(fmt.Sprintf("  %d found", len(m.searchResults))))
-	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter", "Play ")+helpKey("Ctrl+K", "Keymap ")+helpKey("Esc", "Close"))
+	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter", "Play ")+helpKey("Tab", "Queue ")+helpKey("Ctrl+K", "Keymap ")+helpKey("Esc", "Close"))
 
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
@@ -1261,6 +1270,7 @@ func (m Model) renderNavTrackList() string {
 		lines = append(lines, "",
 			helpKey("←↑↓→", "Navigate ")+
 				helpKey("Enter", "Play ")+
+				helpKey("q", "Queue ")+
 				helpKey("R", "Replace ")+
 				helpKey("a", "Append ")+
 				helpKey("/", "Search"))

@@ -413,6 +413,15 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 		m.focus = focusPlaylist
 		return cmd
 
+	case tea.KeyTab:
+		// Toggle queue for selected search result.
+		if len(m.searchResults) > 0 && m.searchCursor < len(m.searchResults) {
+			idx := m.searchResults[m.searchCursor]
+			if !m.playlist.Dequeue(idx) {
+				m.playlist.Queue(idx)
+			}
+		}
+
 	case tea.KeyUp:
 		if m.searchCursor > 0 {
 			m.searchCursor--
@@ -1168,6 +1177,23 @@ func (m *Model) handleNavTrackListKey(msg tea.KeyMsg) tea.Cmd {
 				m.notifyMPRIS()
 				return cmd
 			}
+		}
+	case "q":
+		// Add selected track to playlist and queue it to play next.
+		if len(m.navTracks) == 0 {
+			return nil
+		}
+		rawIdx := m.navCursor
+		if len(m.navSearchIdx) > 0 && m.navCursor < len(m.navSearchIdx) {
+			rawIdx = m.navSearchIdx[m.navCursor]
+		}
+		if rawIdx < len(m.navTracks) {
+			t := m.navTracks[rawIdx]
+			m.playlist.Add(t)
+			newIdx := m.playlist.Len() - 1
+			m.playlist.Queue(newIdx)
+			m.saveMsg = fmt.Sprintf("Queued: %s", t.DisplayName())
+			m.saveMsgTTL = 80
 		}
 	case "esc", "h", "left", "backspace":
 		// Navigate back one level depending on the mode and how we got here.
