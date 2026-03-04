@@ -103,26 +103,22 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 	return s, nil
 }
 
-// oauthScopes are the same scopes go-librespot uses for its interactive auth.
+// oauthScopes are the standard Spotify Web API scopes needed for cliamp.
+// Note: go-librespot uses additional internal scopes (app-remote-control,
+// playlist-modify, playlist-read, user-modify, user-modify-private,
+// user-personalized, user-read-birthdate) that are not available to
+// registered third-party apps.
 var oauthScopes = []string{
-	"app-remote-control",
-	"playlist-modify",
 	"playlist-modify-private",
 	"playlist-modify-public",
-	"playlist-read",
 	"playlist-read-collaborative",
 	"playlist-read-private",
 	"streaming",
-	"ugc-image-upload",
 	"user-follow-modify",
 	"user-follow-read",
 	"user-library-modify",
 	"user-library-read",
-	"user-modify",
 	"user-modify-playback-state",
-	"user-modify-private",
-	"user-personalized",
-	"user-read-birthdate",
 	"user-read-currently-playing",
 	"user-read-email",
 	"user-read-play-history",
