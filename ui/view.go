@@ -848,7 +848,7 @@ func (m Model) renderHelp() string {
 		parts += helpKey("←→", "Seek ")
 	}
 
-	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
+	parts += helpKey("+-", "Vol ") + helpKey("z", "Shfl ") + helpKey("r", "Rpt ") + helpKey("/", "Search ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
 
 	return parts
 }
