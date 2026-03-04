@@ -3,6 +3,7 @@ package spotify
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -109,12 +110,14 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: webToken}
 
 	// Re-save credentials (including refresh token for next launch).
-	_ = saveCreds(&storedCreds{
+	if err := saveCreds(&storedCreds{
 		Username:     sess.Username(),
 		Data:         sess.StoredCredentials(),
 		DeviceID:     devID,
 		RefreshToken: refreshToken,
-	})
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "spotify: failed to save credentials: %v\n", err)
+	}
 
 	if err := s.initPlayer(); err != nil {
 		sess.Close()
@@ -190,7 +193,7 @@ func doWebAPIAuth(clientID string) (*oauth2.Token, error) {
 
 	codeCh := make(chan string, 1)
 	go func() {
-		_ = http.Serve(lis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := http.Serve(lis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			code := r.URL.Query().Get("code")
 			if code != "" {
 				codeCh <- code
@@ -204,7 +207,9 @@ func doWebAPIAuth(clientID string) (*oauth2.Token, error) {
 <p>You can close this tab now.</p>
 <script>setTimeout(function(){window.close()},1500)</script>
 </div></body></html>`))
-		}))
+		})); err != nil && !errors.Is(err, net.ErrClosed) {
+			fmt.Fprintf(os.Stderr, "spotify: auth callback server error: %v\n", err)
+		}
 	}()
 
 	fmt.Println("\nSpotify: Refreshing Web API token...")
@@ -253,7 +258,7 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 	// Serve the callback — return HTML that auto-closes the tab.
 	codeCh := make(chan string, 1)
 	go func() {
-		_ = http.Serve(lis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := http.Serve(lis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			code := r.URL.Query().Get("code")
 			if code != "" {
 				codeCh <- code
@@ -267,7 +272,9 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 <p>You can close this tab now.</p>
 <script>setTimeout(function(){window.close()},1500)</script>
 </div></body></html>`))
-		}))
+		})); err != nil && !errors.Is(err, net.ErrClosed) {
+			fmt.Fprintf(os.Stderr, "spotify: auth callback server error: %v\n", err)
+		}
 	}()
 
 	// Show URL and open browser.
@@ -346,12 +353,14 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 	fmt.Printf("Spotify: Authenticated as %s\n", sess.Username())
 
 	// Persist stored credentials + refresh token for future sessions.
-	_ = saveCreds(&storedCreds{
+	if err := saveCreds(&storedCreds{
 		Username:     sess.Username(),
 		Data:         sess.StoredCredentials(),
 		DeviceID:     devID,
 		RefreshToken: token.RefreshToken,
-	})
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "spotify: failed to save credentials: %v\n", err)
+	}
 
 	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: accessToken}
 	if err := s.initPlayer(); err != nil {
@@ -367,15 +376,19 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 func (s *Session) initPlayer() error {
 	// Fetch user's country for media restriction checks.
 	countryCode := "US" // fallback
-	if resp, err := s.WebApi(context.Background(), "GET", "/v1/me", nil); err == nil {
+	if resp, err := s.WebApi(context.Background(), "GET", "/v1/me", nil); err != nil {
+		fmt.Fprintf(os.Stderr, "spotify: failed to get user profile for country: %v\n", err)
+	} else {
 		defer resp.Body.Close()
 		var me struct {
 			Country string `json:"country"`
 		}
-		if data, err := io.ReadAll(resp.Body); err == nil {
-			if json.Unmarshal(data, &me) == nil && me.Country != "" {
-				countryCode = me.Country
-			}
+		if data, err := io.ReadAll(resp.Body); err != nil {
+			fmt.Fprintf(os.Stderr, "spotify: failed to read user profile: %v\n", err)
+		} else if err := json.Unmarshal(data, &me); err != nil {
+			fmt.Fprintf(os.Stderr, "spotify: failed to parse user profile: %v\n", err)
+		} else if me.Country != "" {
+			countryCode = me.Country
 		}
 	}
 	p, err := librespotPlayer.NewPlayer(&librespotPlayer.Options{

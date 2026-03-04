@@ -142,7 +142,9 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 
 			var year int
 			if len(t.Album.ReleaseDate) >= 4 {
-				fmt.Sscanf(t.Album.ReleaseDate[:4], "%d", &year)
+				if y, err := strconv.Atoi(t.Album.ReleaseDate[:4]); err == nil {
+					year = y
+				}
 			}
 
 			all = append(all, playlist.Track{
@@ -151,7 +153,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 				Artist:       strings.Join(artists, ", "),
 				Album:        t.Album.Name,
 				Year:         year,
-				Stream:       false,
+				Stream:       false, // must be false: true causes togglePlayPause to stop+restart instead of pause/resume
 				DurationSecs: t.DurationMs / 1000,
 				TrackNumber:  t.TrackNumber,
 			})
@@ -177,7 +179,7 @@ func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.F
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	stream, err := p.session.NewStream(ctx, *spotID, 320)
+	stream, err := p.session.NewStream(ctx, *spotID, 320) // TODO: make bitrate configurable via config.toml
 	if err != nil {
 		return nil, beep.Format{}, 0, fmt.Errorf("spotify: new stream: %w", err)
 	}
@@ -212,8 +214,11 @@ func (p *SpotifyProvider) webAPI(ctx context.Context, method, path string, query
 			}
 		}
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 512))
 			resp.Body.Close()
+			if readErr != nil {
+				return nil, fmt.Errorf("http status %s (failed to read body: %v)", resp.Status, readErr)
+			}
 			return nil, fmt.Errorf("http status %s: %s", resp.Status, string(body))
 		}
 		return resp, nil
