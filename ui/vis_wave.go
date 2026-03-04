@@ -6,7 +6,7 @@ import "strings"
 // Each Braille character covers a 2×4 dot grid, giving smooth sub-cell resolution.
 func (v *Visualizer) renderWave() string {
 	height := v.Rows
-	const charCols = panelWidth
+	charCols := panelWidth
 	dotRows := height * 4
 	dotCols := charCols * 2
 

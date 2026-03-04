@@ -12,7 +12,7 @@ import (
 // scrolls toward the viewer. Uses Braille characters for sub-cell resolution.
 func (v *Visualizer) renderRetro(bands [numBands]float64) string {
 	height := v.Rows
-	const charCols = panelWidth
+	charCols := panelWidth
 	dotRows := height * 4
 	dotCols := charCols * 2
 
