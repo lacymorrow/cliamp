@@ -687,22 +687,29 @@ func (m Model) renderPlaylist() string {
 	}
 
 	currentIdx := m.playlist.Index()
-	visible := min(m.plVisible, len(tracks))
 
-	scroll := m.plScroll
-	if scroll+visible > len(tracks) {
-		scroll = len(tracks) - visible
+	scroll := max(0, m.plScroll)
+	if scroll >= len(tracks) {
+		scroll = max(0, len(tracks)-1)
 	}
-	scroll = max(0, scroll)
 
-	lines := make([]string, 0, visible*2) // extra capacity for album separators
+	// plVisible is the number of rendered lines available (tracks + album
+	// separators combined). The loop below counts every appended line
+	// against this budget so the playlist never overflows its area.
+	budget := m.plVisible
+
+	lines := make([]string, 0, budget) // tracks + separators
 	prevAlbum := ""
 	if scroll > 0 {
 		prevAlbum = tracks[scroll-1].Album
 	}
-	for i := scroll; i < len(tracks) && len(lines) < visible; i++ {
+	for i := scroll; i < len(tracks) && len(lines) < budget; i++ {
 		// Insert album separator when album changes
 		if album := tracks[i].Album; album != "" && album != prevAlbum {
+			// Need room for separator + track line (2 lines).
+			if len(lines)+2 > budget {
+				break
+			}
 			label := "── " + album
 			if tracks[i].Year != 0 {
 				label += fmt.Sprintf(" (%d)", tracks[i].Year)
