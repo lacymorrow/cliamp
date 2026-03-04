@@ -1,7 +1,6 @@
 package spotify
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -195,17 +194,39 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 	fmt.Println("  Press Enter to retry opening the browser.")
 	fmt.Println("  Waiting for authentication callback...")
 
-	// Handle Enter for retry.
+	// Handle Enter for retry. We read in a goroutine but DON'T use
+	// bufio.Scanner — it holds an internal buffer that steals bytes from
+	// stdin after auth completes, breaking Bubbletea's raw terminal input.
+	// The goroutine will block on Read after auth, but that's fine — it
+	// will exit when the process exits or stdin is closed.
+	authDone := make(chan struct{})
 	go func() {
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			_ = openBrowser(authURL)
-			fmt.Println("  (Retrying browser open...)")
+		buf := make([]byte, 1)
+		for {
+			select {
+			case <-authDone:
+				return
+			default:
+			}
+			n, err := os.Stdin.Read(buf)
+			if err != nil {
+				return
+			}
+			if n > 0 && buf[0] == '\n' {
+				select {
+				case <-authDone:
+					return
+				default:
+					_ = openBrowser(authURL)
+					fmt.Println("  (Retrying browser open...)")
+				}
+			}
 		}
 	}()
 
 	// Wait for the auth code.
 	code := <-codeCh
+	close(authDone) // stop the retry goroutine
 	_ = lis.Close()
 
 	// Exchange code for token.
