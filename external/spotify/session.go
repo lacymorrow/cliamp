@@ -43,8 +43,8 @@ type Session struct {
 	sess        *session.Session
 	player      *librespotPlayer.Player
 	devID       string
-	clientID    string // Spotify Developer app client ID
-	webAPIToken string // OAuth2 access token for Spotify Web API calls
+	clientID    string         // Spotify Developer app client ID
+	tokenSource oauth2.TokenSource // auto-refreshing OAuth2 token source
 }
 
 // NewSession creates a go-librespot session, using stored credentials if
@@ -85,36 +85,37 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 	// For stored credentials, we need a fresh Web API token via OAuth2.
 	// The spclient's login5 token is NOT suitable for Web API calls.
 	// Try silent refresh first (no browser), fall back to interactive.
-	var webToken string
-	var refreshToken string
+	var oauthToken *oauth2.Token
 	if creds.RefreshToken != "" {
 		token, err := silentTokenRefresh(clientID, creds.RefreshToken)
 		if err == nil {
-			webToken = token.AccessToken
-			refreshToken = token.RefreshToken
+			oauthToken = token
 			fmt.Fprintf(os.Stderr, "spotify: Web API token refreshed silently\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "spotify: silent refresh failed, launching browser: %v\n", err)
 		}
 	}
-	if webToken == "" {
+	if oauthToken == nil {
 		token, err := doWebAPIAuth(clientID)
 		if err != nil {
 			sess.Close()
 			return nil, fmt.Errorf("stored session needs fresh Web API token: %w", err)
 		}
-		webToken = token.AccessToken
-		refreshToken = token.RefreshToken
+		oauthToken = token
 	}
 
-	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: webToken}
+	// Create an auto-refreshing token source — handles expiry transparently.
+	conf := spotifyOAuthConfig(clientID)
+	ts := conf.TokenSource(context.Background(), oauthToken)
+
+	s := &Session{sess: sess, devID: devID, clientID: clientID, tokenSource: ts}
 
 	// Re-save credentials (including refresh token for next launch).
 	if err := saveCreds(&storedCreds{
 		Username:     sess.Username(),
 		Data:         sess.StoredCredentials(),
 		DeviceID:     devID,
-		RefreshToken: refreshToken,
+		RefreshToken: oauthToken.RefreshToken,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "spotify: failed to save credentials: %v\n", err)
 	}
@@ -362,7 +363,11 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 		fmt.Fprintf(os.Stderr, "spotify: failed to save credentials: %v\n", err)
 	}
 
-	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: accessToken}
+	// Create an auto-refreshing token source for Web API calls.
+	conf := spotifyOAuthConfig(clientID)
+	ts := conf.TokenSource(context.Background(), token)
+
+	s := &Session{sess: sess, devID: devID, clientID: clientID, tokenSource: ts}
 	if err := s.initPlayer(); err != nil {
 		sess.Close()
 		return nil, err
@@ -420,11 +425,18 @@ func (s *Session) NewStream(ctx context.Context, spotID librespot.SpotifyId, bit
 // which has proper rate limits for api.spotify.com endpoints.
 func (s *Session) WebApi(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
 	s.mu.Lock()
-	token := s.webAPIToken
+	ts := s.tokenSource
 	s.mu.Unlock()
 
-	// If no OAuth2 token available, fall back to spclient token.
-	if token == "" {
+	var token string
+	if ts != nil {
+		tok, err := ts.Token()
+		if err != nil {
+			return nil, fmt.Errorf("refresh access token: %w", err)
+		}
+		token = tok.AccessToken
+	} else {
+		// Fall back to spclient token if no OAuth2 token source.
 		s.mu.Lock()
 		var err error
 		token, err = s.sess.Spclient().GetAccessToken(ctx, false)
