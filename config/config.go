@@ -36,14 +36,15 @@ func (n NavidromeConfig) IsSet() bool {
 }
 
 // SpotifyConfig holds settings for the Spotify provider.
-// Requires a Spotify Premium account.
+// Requires a Spotify Premium account and a registered Spotify Developer app.
 type SpotifyConfig struct {
-	Enabled bool
+	Enabled  bool
+	ClientID string // Spotify Developer app client ID (required for Web API)
 }
 
-// IsSet reports whether the Spotify provider is enabled.
+// IsSet reports whether the Spotify provider is enabled with a client ID.
 func (s SpotifyConfig) IsSet() bool {
-	return s.Enabled
+	return s.Enabled && s.ClientID != ""
 }
 
 // Config holds user preferences loaded from the config file.
@@ -131,6 +132,8 @@ func Load() (Config, error) {
 			switch key {
 			case "enabled":
 				cfg.Spotify.Enabled = val == "true"
+			case "client_id":
+				cfg.Spotify.ClientID = strings.Trim(val, `"'`)
 			}
 		default:
 			switch key {
