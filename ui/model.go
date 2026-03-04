@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"cliamp/config"
 	"cliamp/external/local"
@@ -681,11 +682,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.fullVis {
 			m.vis.Rows = max(defaultVisRows, (m.height-10)*4/5)
 		}
-		// Dynamic playlist height: total height minus fixed UI chrome.
-		// Frame padding(2) + title(1) + trackInfo(1) + time(1) + blank(1) +
-		// visualizer(vis.Rows) + seekbar(1) + blank(1) + controls(2) +
-		// blank(1) + playlistHeader(1) + blank(1) + help(1) + streamStatus(1) = 17 + vis.Rows
-		fixedLines := 17 + m.vis.Rows
+		// Dynamic playlist height: render all non-playlist sections, measure
+		// total height, then give the remaining space to the playlist.
+		// This avoids fragile manual line counting.
+		m.plVisible = 3 // temporary minimal value for measurement
+		probe := strings.Join([]string{
+			m.renderTitle(),
+			m.renderTrackInfo(),
+			m.renderTimeStatus(),
+			"",
+			m.renderSpectrum(),
+			m.renderSeekBar(),
+			"",
+			m.renderControls(),
+			"",
+			m.renderPlaylistHeader(),
+			"x", // placeholder for playlist (1 line)
+			"",
+			m.renderHelp(),
+			m.renderStreamStatus(),
+		}, "\n")
+		probeFrame := frameStyle.Render(probe)
+		fixedLines := lipgloss.Height(probeFrame) - 1 // subtract the 1-line placeholder
 		m.plVisible = max(3, m.height-fixedLines)
 
 	case tickMsg:
