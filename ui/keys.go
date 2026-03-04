@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"cliamp/config"
 	"cliamp/external/navidrome"
@@ -289,9 +290,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "x":
 		if m.focus == focusPlaylist {
-			dynMax := max(5, m.plVisible)
-			if m.plVisible < dynMax {
-				m.plVisible = dynMax
+			if m.plVisible <= 5 {
+				// Expand: recalculate dynamic max from terminal height.
+				probe := strings.Join([]string{
+					m.renderTitle(), m.renderTrackInfo(), m.renderTimeStatus(), "",
+					m.renderSpectrum(), m.renderSeekBar(), "",
+					m.renderControls(), "", m.renderPlaylistHeader(),
+					"x", "", m.renderHelp(), m.renderStreamStatus(),
+				}, "\n")
+				fixedLines := lipgloss.Height(frameStyle.Render(probe)) - 1
+				m.plVisible = max(5, m.height-fixedLines)
 			} else {
 				m.plVisible = 5
 			}
