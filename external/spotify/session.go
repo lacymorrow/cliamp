@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -107,14 +108,37 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 }
 
 // oauthScopes are the Spotify Web API scopes needed for cliamp.
-// Only request what we actually use — playlist browsing + streaming.
 // See: https://developer.spotify.com/documentation/web-api/concepts/scopes
+//
+// NOTE: The following internal Spotify scopes are NOT available to third-party
+// apps and cause "Illegal scope" errors:
+//   app-remote-control, playlist-modify, playlist-read, user-modify,
+//   user-modify-private, user-personalized, user-read-birthdate
 var oauthScopes = []string{
+	// Playlist browsing
 	"playlist-read-collaborative",
 	"playlist-read-private",
+	// Playlist modification (save queue, create playlists)
+	"playlist-modify-public",
+	"playlist-modify-private",
+	// Streaming audio
 	"streaming",
+	// Library (liked songs, saved albums)
 	"user-library-read",
+	"user-library-modify",
+	// User profile
 	"user-read-private",
+	"user-read-email",
+	// Playback state (current track, queue)
+	"user-read-playback-state",
+	"user-modify-playback-state",
+	"user-read-currently-playing",
+	// Recently played / top tracks
+	"user-read-recently-played",
+	"user-top-read",
+	// Following (artists, users)
+	"user-follow-read",
+	"user-follow-modify",
 }
 
 // doWebAPIAuth performs an OAuth2 PKCE flow to get a fresh Web API access token.
@@ -311,7 +335,19 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 // decoded AudioSources — audio output is routed through cliamp's Beep pipeline,
 // not go-librespot's output backend.
 func (s *Session) initPlayer() error {
-	countryCode := "US" // default; used for media restriction checks
+	// Fetch user's country for media restriction checks.
+	countryCode := "US" // fallback
+	if resp, err := s.WebApi(context.Background(), "GET", "/v1/me", nil); err == nil {
+		defer resp.Body.Close()
+		var me struct {
+			Country string `json:"country"`
+		}
+		if data, err := io.ReadAll(resp.Body); err == nil {
+			if json.Unmarshal(data, &me) == nil && me.Country != "" {
+				countryCode = me.Country
+			}
+		}
+	}
 	p, err := librespotPlayer.NewPlayer(&librespotPlayer.Options{
 		Spclient:             s.sess.Spclient(),
 		AudioKey:             s.sess.AudioKey(),
