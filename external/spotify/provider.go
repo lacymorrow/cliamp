@@ -151,7 +151,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 				Artist:       strings.Join(artists, ", "),
 				Album:        t.Album.Name,
 				Year:         year,
-				Stream:       true,
+				Stream:       false,
 				DurationSecs: t.DurationMs / 1000,
 				TrackNumber:  t.TrackNumber,
 			})
