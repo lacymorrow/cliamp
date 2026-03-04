@@ -289,7 +289,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "x":
 		if m.focus == focusPlaylist {
-			fixedLines := 12 + m.vis.Rows
+			fixedLines := 17 + m.vis.Rows
 			dynMax := max(5, m.height-fixedLines)
 			if m.plVisible < dynMax {
 				m.plVisible = dynMax
