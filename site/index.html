@@ -585,7 +585,7 @@
     </div>
 
     <div class="radio-player" id="radio-player">
-      <audio id="radio-audio" preload="none" src="https://cliamp.stream/listen/iamdothash/lofi.mp3"></audio>
+      <audio id="radio-audio" preload="none" src="https://radio.cliamp.stream/lofi/stream"></audio>
       <div class="rp-led"></div>
       <span class="rp-label">CLIAMP RADIO</span>
       <button class="rp-play" onclick="toggleRadio()" aria-label="Play / Stop radio">
@@ -596,7 +596,7 @@
       <input type="range" class="rp-vol" min="0" max="100" value="70" oninput="setRadioVol(this.value)" aria-label="Volume">
     </div>
     <div class="radio-hint">
-      <code><span class="p">$ </span>cliamp https://cliamp.stream/public/iamdothash/playlist.pls</code>
+      <code><span class="p">$ </span>cliamp https://radio.cliamp.stream/lofi/stream.pls</code>
     </div>
   </div>
 </section>
@@ -1072,7 +1072,7 @@ function toggleRadio(){
   }
   p.classList.add('loading');
   p.classList.remove('playing');
-  a.src='https://cliamp.stream/listen/iamdothash/lofi.mp3';
+  a.src='https://radio.cliamp.stream/lofi/stream';
   a.volume=document.querySelector('.rp-vol').value/100;
   a.play().then(function(){
     p.classList.remove('loading');

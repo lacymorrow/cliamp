@@ -71,7 +71,7 @@ func run(overrides config.Overrides, positional []string) error {
 	// in which case we open the provider browser instead).
 	defaultRadio := len(positional) == 0 && navProv == nil
 	if defaultRadio {
-		resolved.Pending = append(resolved.Pending, "http://cliamp.stream/public/iamdothash/playlist.pls")
+		resolved.Pending = append(resolved.Pending, "https://radio.cliamp.stream/lofi/stream.pls")
 	}
 
 	pl := playlist.New()

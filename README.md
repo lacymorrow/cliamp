@@ -6,7 +6,7 @@ Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](
 
 Listen to our radio channel:
 ```bash
-cliamp http://cliamp.stream/public/iamdothash/playlist.pls
+cliamp https://radio.cliamp.stream/lofi/stream.pls
 ```
 
 
