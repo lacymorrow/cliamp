@@ -311,11 +311,13 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 // decoded AudioSources — audio output is routed through cliamp's Beep pipeline,
 // not go-librespot's output backend.
 func (s *Session) initPlayer() error {
+	countryCode := "US" // default; used for media restriction checks
 	p, err := librespotPlayer.NewPlayer(&librespotPlayer.Options{
 		Spclient:             s.sess.Spclient(),
 		AudioKey:             s.sess.AudioKey(),
 		Events:               s.sess.Events(),
 		Log:                  &librespot.NullLogger{},
+		CountryCode:          &countryCode,
 		NormalisationEnabled: true,
 		AudioBackend:         "pipe",
 		AudioOutputPipe:      os.DevNull,
