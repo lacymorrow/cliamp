@@ -103,30 +103,15 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 	return s, nil
 }
 
-// oauthScopes are the standard Spotify Web API scopes needed for cliamp.
-// Note: go-librespot uses additional internal scopes (app-remote-control,
-// playlist-modify, playlist-read, user-modify, user-modify-private,
-// user-personalized, user-read-birthdate) that are not available to
-// registered third-party apps.
+// oauthScopes are the Spotify Web API scopes needed for cliamp.
+// Only request what we actually use — playlist browsing + streaming.
+// See: https://developer.spotify.com/documentation/web-api/concepts/scopes
 var oauthScopes = []string{
-	"playlist-modify-private",
-	"playlist-modify-public",
 	"playlist-read-collaborative",
 	"playlist-read-private",
 	"streaming",
-	"user-follow-modify",
-	"user-follow-read",
-	"user-library-modify",
 	"user-library-read",
-	"user-modify-playback-state",
-	"user-read-currently-playing",
-	"user-read-email",
-	"user-read-play-history",
-	"user-read-playback-position",
-	"user-read-playback-state",
 	"user-read-private",
-	"user-read-recently-played",
-	"user-top-read",
 }
 
 // refreshWebAPIToken gets a fresh OAuth2 token for Web API using PKCE.
