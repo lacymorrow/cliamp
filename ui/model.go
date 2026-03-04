@@ -1070,12 +1070,53 @@ func (m *Model) preloadNext() tea.Cmd {
 }
 
 // adjustScroll ensures plCursor is visible in the playlist view.
+// It accounts for album separator lines that reduce the number of
+// tracks that fit in the visible window.
 func (m *Model) adjustScroll() {
 	if m.plCursor < m.plScroll {
 		m.plScroll = m.plCursor
 	}
-	if m.plCursor >= m.plScroll+m.plVisible {
-		m.plScroll = m.plCursor - m.plVisible + 1
+	// Count how many rendered lines the tracks from plScroll to plCursor
+	// actually take (including album separator lines).
+	effectiveVisible := m.plVisible
+	tracks := m.playlist.Tracks()
+	if len(tracks) > 0 && m.plScroll < len(tracks) {
+		renderedLines := 0
+		maxTracks := 0
+		prevAlbum := ""
+		if m.plScroll > 0 {
+			prevAlbum = tracks[m.plScroll-1].Album
+		}
+		for i := m.plScroll; i < len(tracks) && renderedLines < m.plVisible; i++ {
+			if album := tracks[i].Album; album != "" && album != prevAlbum {
+				renderedLines++ // album separator line
+			}
+			prevAlbum = tracks[i].Album
+			renderedLines++ // track line
+			maxTracks++
+		}
+		effectiveVisible = maxTracks
+	}
+	if m.plCursor >= m.plScroll+effectiveVisible {
+		// Walk backwards from plCursor to find the right scroll offset
+		// that fits plCursor on screen.
+		needed := 1
+		prevAlbum := ""
+		if m.plCursor+1 < len(tracks) {
+			prevAlbum = tracks[m.plCursor+1].Album
+		}
+		for i := m.plCursor; i >= 0 && needed < m.plVisible; i-- {
+			if album := tracks[i].Album; album != "" && album != prevAlbum {
+				needed++ // separator
+			}
+			prevAlbum = tracks[i].Album
+			needed++ // track
+			if needed >= m.plVisible {
+				m.plScroll = i
+				return
+			}
+		}
+		m.plScroll = m.plCursor - effectiveVisible + 1
 	}
 }
 

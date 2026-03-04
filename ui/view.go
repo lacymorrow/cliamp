@@ -695,7 +695,7 @@ func (m Model) renderPlaylist() string {
 	}
 	scroll = max(0, scroll)
 
-	lines := make([]string, 0, visible)
+	lines := make([]string, 0, visible*2) // extra capacity for album separators
 	prevAlbum := ""
 	if scroll > 0 {
 		prevAlbum = tracks[scroll-1].Album
@@ -714,9 +714,6 @@ func (m Model) renderPlaylist() string {
 				label += strings.Repeat("─", pw-labelLen)
 			}
 			lines = append(lines, dimStyle.Render(label))
-			if len(lines) >= visible {
-				break
-			}
 		}
 		prevAlbum = tracks[i].Album
 
