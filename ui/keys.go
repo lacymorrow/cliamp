@@ -199,11 +199,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "r":
 		m.playlist.CycleRepeat()
+		_ = config.Save("repeat", fmt.Sprintf("%q", m.playlist.Repeat().String()))
 		m.player.ClearPreload()
 		return m.preloadNext()
 
 	case "z":
 		m.playlist.ToggleShuffle()
+		_ = config.Save("shuffle", fmt.Sprintf("%v", m.playlist.Shuffled()))
 		m.player.ClearPreload()
 		return m.preloadNext()
 
