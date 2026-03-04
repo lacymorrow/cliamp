@@ -81,9 +81,13 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 
 	// For stored credentials, we need a fresh Web API token via OAuth2.
 	// The spclient's login5 token is NOT suitable for Web API calls.
-	webToken, err := refreshWebAPIToken(ctx, clientID, sess)
+	// Do a silent OAuth2 flow — reuse the same client_id + scopes.
+	webToken, err := doWebAPIAuth(clientID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "spotify: could not get Web API token, will re-auth on first API call: %v\n", err)
+		fmt.Fprintf(os.Stderr, "spotify: Web API auth needed — launching browser\n")
+		// Fall back to full interactive auth if silent refresh fails.
+		sess.Close()
+		return nil, fmt.Errorf("stored session needs fresh Web API token: %w", err)
 	}
 
 	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: webToken}
@@ -113,26 +117,58 @@ var oauthScopes = []string{
 	"user-read-private",
 }
 
-// refreshWebAPIToken gets a fresh OAuth2 token for Web API using PKCE.
-// For stored credential sessions, we do a fresh OAuth2 flow since the original
-// access token has expired. This requires user interaction (browser).
-func refreshWebAPIToken(ctx context.Context, clientID string, sess *session.Session) (string, error) {
-	// Try using the spclient token first — if it works for Web API, great.
-	// We test with a lightweight /v1/me call.
-	spToken, err := sess.Spclient().GetAccessToken(ctx, false)
-	if err == nil {
-		req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.spotify.com/v1/me", nil)
-		req.Header.Set("Authorization", "Bearer "+spToken)
-		req.Header.Set("Accept", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == 200 {
-				return spToken, nil
-			}
-		}
+// doWebAPIAuth performs an OAuth2 PKCE flow to get a fresh Web API access token.
+// Opens a browser for user consent, returns the access token.
+func doWebAPIAuth(clientID string) (string, error) {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", CallbackPort))
+	if err != nil {
+		return "", fmt.Errorf("listen on port %d: %w", CallbackPort, err)
 	}
-	return "", fmt.Errorf("spclient token not valid for Web API, needs re-auth")
+
+	oauthConf := &oauth2.Config{
+		ClientID:    clientID,
+		RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/login", CallbackPort),
+		Scopes:      oauthScopes,
+		Endpoint:    spotifyoauth2.Endpoint,
+	}
+
+	verifier := oauth2.GenerateVerifier()
+	authURL := oauthConf.AuthCodeURL("", oauth2.S256ChallengeOption(verifier))
+
+	codeCh := make(chan string, 1)
+	go func() {
+		_ = http.Serve(lis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			code := r.URL.Query().Get("code")
+			if code != "" {
+				codeCh <- code
+			}
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<!DOCTYPE html>
+<html><head><title>cliamp</title></head>
+<body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0">
+<div style="text-align:center">
+<h2>✅ Authenticated!</h2>
+<p>You can close this tab now.</p>
+<script>setTimeout(function(){window.close()},1500)</script>
+</div></body></html>`))
+		}))
+	}()
+
+	fmt.Println("\nSpotify: Refreshing Web API token...")
+	fmt.Printf("  %s\n", authURL)
+	_ = openBrowser(authURL)
+	fmt.Println("  Waiting for authentication callback...")
+
+	code := <-codeCh
+	_ = lis.Close()
+
+	token, err := oauthConf.Exchange(context.Background(), code, oauth2.VerifierOption(verifier))
+	if err != nil {
+		return "", fmt.Errorf("token exchange: %w", err)
+	}
+
+	fmt.Println("Spotify: Web API token refreshed.")
+	return token.AccessToken, nil
 }
 
 func newInteractiveSession(ctx context.Context, clientID string) (*Session, error) {
