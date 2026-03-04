@@ -260,7 +260,7 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 			}
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte(`<!DOCTYPE html>
-<html><head><title>cliamp</title></head>
+<html><head><meta charset="utf-8"><title>cliamp</title></head>
 <body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0">
 <div style="text-align:center">
 <h2>✅ Authenticated!</h2>
