@@ -493,6 +493,19 @@ func preloadYTDLStreamCmd(p *player.Player, pageURL string, knownDuration time.D
 	}
 }
 
+// ytdlSavedMsg signals that an async yt-dlp download-to-disk completed.
+type ytdlSavedMsg struct {
+	path string
+	err  error
+}
+
+func saveYTDLCmd(pageURL string, saveDir string) tea.Cmd {
+	return func() tea.Msg {
+		path, err := resolve.DownloadYTDL(pageURL, saveDir)
+		return ytdlSavedMsg{path: path, err: err}
+	}
+}
+
 func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
 	return func() tea.Msg {
 		tracks, err := prov.Tracks(playlistID)
@@ -933,6 +946,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamPreloadedMsg:
 		m.preloading = false
+		return m, nil
+
+	case ytdlSavedMsg:
+		if msg.err != nil {
+			m.saveMsg = fmt.Sprintf("Download failed: %s", msg.err)
+		} else {
+			m.saveMsg = fmt.Sprintf("Saved to %s", msg.path)
+		}
+		m.saveMsgTTL = 80
 		return m, nil
 
 	case ytdlResolvedMsg:

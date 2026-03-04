@@ -260,7 +260,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "S":
-		m.saveTrack()
+		return m.saveTrack()
 
 	case "m":
 		m.player.ToggleMono()
@@ -327,34 +327,42 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 // saveTrack copies the current track to ~/Music/cliamp/ with a clean filename.
-// Only works for downloaded yt-dlp tracks (temp files).
-func (m *Model) saveTrack() {
+// For yt-dlp tracks (piped streams), triggers an async download via yt-dlp.
+// For local temp files, copies synchronously.
+func (m *Model) saveTrack() tea.Cmd {
 	track, idx := m.playlist.Current()
 	if idx < 0 {
 		m.saveMsg = "Nothing to save"
 		m.saveMsgTTL = 40 // ~2s at 50ms ticks
-		return
-	}
-
-	// Only save local temp files (yt-dlp downloads), not streams or user's own files.
-	if track.Stream || !strings.HasPrefix(track.Path, os.TempDir()) {
-		m.saveMsg = "Only downloaded tracks can be saved"
-		m.saveMsgTTL = 40
-		return
+		return nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		m.saveMsg = fmt.Sprintf("Save failed: %s", err)
 		m.saveMsgTTL = 40
-		return
+		return nil
 	}
 
 	saveDir := filepath.Join(home, "Music", "cliamp")
 	if err := os.MkdirAll(saveDir, 0o755); err != nil {
 		m.saveMsg = fmt.Sprintf("Save failed: %s", err)
 		m.saveMsgTTL = 40
-		return
+		return nil
+	}
+
+	// yt-dlp tracks: async download directly to ~/Music/cliamp/.
+	if playlist.IsYTDL(track.Path) {
+		m.saveMsg = "Downloading..."
+		m.saveMsgTTL = 600 // cleared by ytdlSavedMsg
+		return saveYTDLCmd(track.Path, saveDir)
+	}
+
+	// Only save local temp files (yt-dlp downloads), not streams or user's own files.
+	if track.Stream || !strings.HasPrefix(track.Path, os.TempDir()) {
+		m.saveMsg = "Only downloaded tracks can be saved"
+		m.saveMsgTTL = 40
+		return nil
 	}
 
 	ext := filepath.Ext(track.Path)
@@ -375,11 +383,12 @@ func (m *Model) saveTrack() {
 	if err := copyFile(track.Path, dest); err != nil {
 		m.saveMsg = fmt.Sprintf("Save failed: %s", err)
 		m.saveMsgTTL = 40
-		return
+		return nil
 	}
 
 	m.saveMsg = fmt.Sprintf("Saved to ~/Music/cliamp/%s", name+ext)
 	m.saveMsgTTL = 60 // ~3s
+	return nil
 }
 
 func copyFile(src, dst string) error {
@@ -802,7 +811,7 @@ var keymapEntries = []keymapEntry{
 	{"N", "Navidrome browser"},
 	{"p", "Playlist manager"},
 	{"i", "Track info / metadata"},
-	{"S", "Save track to ~/Music"},
+	{"S", "Save/download track to ~/Music"},
 	{"r", "Cycle repeat"},
 	{"z", "Toggle shuffle"},
 	{"x", "Expand/collapse playlist"},
