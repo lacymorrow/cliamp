@@ -31,31 +31,37 @@ type storedCreds struct {
 	DeviceID string `json:"device_id"`
 }
 
+// CallbackPort is the fixed port for the OAuth2 callback server.
+// Must match the redirect URI registered in the Spotify Developer app.
+const CallbackPort = 19872
+
 // Session manages a go-librespot session and player for Spotify integration.
 type Session struct {
-	mu         sync.Mutex
-	sess       *session.Session
-	player     *librespotPlayer.Player
-	devID      string
+	mu          sync.Mutex
+	sess        *session.Session
+	player      *librespotPlayer.Player
+	devID       string
+	clientID    string // Spotify Developer app client ID
 	webAPIToken string // OAuth2 access token for Spotify Web API calls
 }
 
 // NewSession creates a go-librespot session, using stored credentials if
 // available, otherwise starting an interactive OAuth2 flow.
-func NewSession(ctx context.Context) (*Session, error) {
+// clientID is the Spotify Developer app client ID for Web API access.
+func NewSession(ctx context.Context, clientID string) (*Session, error) {
 	creds, err := loadCreds()
 	if err == nil && creds.Username != "" && len(creds.Data) > 0 {
-		s, err := newSessionFromStored(ctx, creds)
+		s, err := newSessionFromStored(ctx, clientID, creds)
 		if err == nil {
 			return s, nil
 		}
 		// Stored credentials failed (expired/revoked), fall through to interactive.
 		fmt.Fprintf(os.Stderr, "spotify: stored credentials failed, re-authenticating: %v\n", err)
 	}
-	return newInteractiveSession(ctx)
+	return newInteractiveSession(ctx, clientID)
 }
 
-func newSessionFromStored(ctx context.Context, creds *storedCreds) (*Session, error) {
+func newSessionFromStored(ctx context.Context, clientID string, creds *storedCreds) (*Session, error) {
 	devID := creds.DeviceID
 	if devID == "" {
 		devID = generateDeviceID()
@@ -74,12 +80,14 @@ func newSessionFromStored(ctx context.Context, creds *storedCreds) (*Session, er
 		return nil, fmt.Errorf("spotify: stored auth: %w", err)
 	}
 
-	// For stored credentials, we need a fresh Web API token.
-	// Get it from the spclient (this is the login5 token — not ideal but works
-	// for stored credential sessions since we can't re-do OAuth2).
-	webToken, _ := sess.Spclient().GetAccessToken(ctx, false)
+	// For stored credentials, we need a fresh Web API token via OAuth2.
+	// The spclient's login5 token is NOT suitable for Web API calls.
+	webToken, err := refreshWebAPIToken(ctx, clientID, sess)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "spotify: could not get Web API token, will re-auth on first API call: %v\n", err)
+	}
 
-	s := &Session{sess: sess, devID: devID, webAPIToken: webToken}
+	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: webToken}
 
 	// Re-save credentials (they may have been refreshed).
 	_ = saveCreds(&storedCreds{
@@ -125,7 +133,29 @@ var oauthScopes = []string{
 	"user-top-read",
 }
 
-func newInteractiveSession(ctx context.Context) (*Session, error) {
+// refreshWebAPIToken gets a fresh OAuth2 token for Web API using PKCE.
+// For stored credential sessions, we do a fresh OAuth2 flow since the original
+// access token has expired. This requires user interaction (browser).
+func refreshWebAPIToken(ctx context.Context, clientID string, sess *session.Session) (string, error) {
+	// Try using the spclient token first — if it works for Web API, great.
+	// We test with a lightweight /v1/me call.
+	spToken, err := sess.Spclient().GetAccessToken(ctx, false)
+	if err == nil {
+		req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.spotify.com/v1/me", nil)
+		req.Header.Set("Authorization", "Bearer "+spToken)
+		req.Header.Set("Accept", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				return spToken, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("spclient token not valid for Web API, needs re-auth")
+}
+
+func newInteractiveSession(ctx context.Context, clientID string) (*Session, error) {
 	devID := generateDeviceID()
 
 	fmt.Println("Spotify: Starting OAuth2 authentication...")
@@ -135,16 +165,15 @@ func newInteractiveSession(ctx context.Context) (*Session, error) {
 	// 2. Serve auto-close HTML in the callback
 	// 3. Pass the token to go-librespot via SpotifyTokenCredentials
 
-	// Start our callback server.
-	lis, err := net.Listen("tcp", ":0")
+	// Start our callback server on a fixed port (must match Spotify Developer app redirect URI).
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", CallbackPort))
 	if err != nil {
-		return nil, fmt.Errorf("spotify: listen: %w", err)
+		return nil, fmt.Errorf("spotify: listen on port %d (is another instance running?): %w", CallbackPort, err)
 	}
-	callbackPort := lis.Addr().(*net.TCPAddr).Port
 
 	oauthConf := &oauth2.Config{
-		ClientID:    librespot.ClientIdHex,
-		RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/login", callbackPort),
+		ClientID:    clientID,
+		RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/login", CallbackPort),
 		Scopes:      oauthScopes,
 		Endpoint:    spotifyoauth2.Endpoint,
 	}
@@ -232,7 +261,7 @@ func newInteractiveSession(ctx context.Context) (*Session, error) {
 		DeviceID: devID,
 	})
 
-	s := &Session{sess: sess, devID: devID, webAPIToken: accessToken}
+	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: accessToken}
 	if err := s.initPlayer(); err != nil {
 		sess.Close()
 		return nil, err

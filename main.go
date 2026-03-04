@@ -45,7 +45,7 @@ func run(overrides config.Overrides, positional []string) error {
 	var spotifyProv *spotify.SpotifyProvider
 	var spotifySession *spotify.Session
 	if cfg.Spotify.IsSet() {
-		sess, err := spotify.NewSession(context.Background())
+		sess, err := spotify.NewSession(context.Background(), cfg.Spotify.ClientID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "spotify: %v\n", err)
 		} else {
