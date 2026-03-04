@@ -704,7 +704,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}, "\n")
 		probeFrame := frameStyle.Render(probe)
 		fixedLines := lipgloss.Height(probeFrame) - 1 // subtract the 1-line placeholder
-		m.plVisible = max(3, m.height-fixedLines-1) // -1 extra for terminal prompt line
+		m.plVisible = max(3, m.height-fixedLines-2) // -2 for bubbletea alt-screen overhead
 
 	case tickMsg:
 		// Expire temporary status messages.
