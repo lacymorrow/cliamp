@@ -677,6 +677,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.fullVis {
 			m.vis.Rows = max(defaultVisRows, (m.height-10)*4/5)
 		}
+		// Dynamic playlist height: total height minus fixed UI chrome.
+		// Fixed lines: title(1) + track info(1) + time(1) + blank(1) +
+		// visualizer(vis.Rows) + seekbar(1) + blank(1) + controls(1) +
+		// blank(1) + playlist header(1) + blank(1) + help(1) + stream status(1) = 12 + vis.Rows
+		fixedLines := 12 + m.vis.Rows
+		m.plVisible = max(3, m.height-fixedLines)
 
 	case tickMsg:
 		// Expire temporary status messages.
