@@ -124,6 +124,12 @@ Playlists and albums are supported. Press `S` to save a downloaded track to `~/M
 
 **Use at your own risk.** Downloading or streaming copyrighted content may violate the terms of service of these platforms. You are responsible for how you use this feature.
 
+## Create Your Own Radio Station
+
+Run your own internet radio with [cliamp-server](https://github.com/bjarneo/cliamp-server) — point it at a directory of audio files and it starts broadcasting:
+
+Supports multiple stations, live metadata, on-the-fly transcoding. See the [cliamp-server README](https://github.com/bjarneo/cliamp-server) for the full setup guide.
+
 ## Navidrome
 
 Connect to a [Navidrome](https://www.navidrome.org/) ([GitHub](https://github.com/navidrome/navidrome)) server via environment variables:
