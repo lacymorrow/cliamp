@@ -26,9 +26,10 @@ import (
 
 // storedCreds holds persisted Spotify credentials for re-authentication.
 type storedCreds struct {
-	Username string `json:"username"`
-	Data     []byte `json:"data"`
-	DeviceID string `json:"device_id"`
+	Username     string `json:"username"`
+	Data         []byte `json:"data"`
+	DeviceID     string `json:"device_id"`
+	RefreshToken string `json:"refresh_token,omitempty"` // OAuth2 refresh token for silent re-auth
 }
 
 // CallbackPort is the fixed port for the OAuth2 callback server.
@@ -82,22 +83,37 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 
 	// For stored credentials, we need a fresh Web API token via OAuth2.
 	// The spclient's login5 token is NOT suitable for Web API calls.
-	// Do a silent OAuth2 flow — reuse the same client_id + scopes.
-	webToken, err := doWebAPIAuth(clientID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "spotify: Web API auth needed — launching browser\n")
-		// Fall back to full interactive auth if silent refresh fails.
-		sess.Close()
-		return nil, fmt.Errorf("stored session needs fresh Web API token: %w", err)
+	// Try silent refresh first (no browser), fall back to interactive.
+	var webToken string
+	var refreshToken string
+	if creds.RefreshToken != "" {
+		token, err := silentTokenRefresh(clientID, creds.RefreshToken)
+		if err == nil {
+			webToken = token.AccessToken
+			refreshToken = token.RefreshToken
+			fmt.Fprintf(os.Stderr, "spotify: Web API token refreshed silently\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "spotify: silent refresh failed, launching browser: %v\n", err)
+		}
+	}
+	if webToken == "" {
+		token, err := doWebAPIAuth(clientID)
+		if err != nil {
+			sess.Close()
+			return nil, fmt.Errorf("stored session needs fresh Web API token: %w", err)
+		}
+		webToken = token.AccessToken
+		refreshToken = token.RefreshToken
 	}
 
 	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: webToken}
 
-	// Re-save credentials (they may have been refreshed).
+	// Re-save credentials (including refresh token for next launch).
 	_ = saveCreds(&storedCreds{
-		Username: sess.Username(),
-		Data:     sess.StoredCredentials(),
-		DeviceID: devID,
+		Username:     sess.Username(),
+		Data:         sess.StoredCredentials(),
+		DeviceID:     devID,
+		RefreshToken: refreshToken,
 	})
 
 	if err := s.initPlayer(); err != nil {
@@ -141,20 +157,33 @@ var oauthScopes = []string{
 	"user-follow-modify",
 }
 
-// doWebAPIAuth performs an OAuth2 PKCE flow to get a fresh Web API access token.
-// Opens a browser for user consent, returns the access token.
-func doWebAPIAuth(clientID string) (string, error) {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", CallbackPort))
-	if err != nil {
-		return "", fmt.Errorf("listen on port %d: %w", CallbackPort, err)
-	}
-
-	oauthConf := &oauth2.Config{
+// spotifyOAuthConfig returns the OAuth2 config for the given client ID.
+func spotifyOAuthConfig(clientID string) *oauth2.Config {
+	return &oauth2.Config{
 		ClientID:    clientID,
 		RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/login", CallbackPort),
 		Scopes:      oauthScopes,
 		Endpoint:    spotifyoauth2.Endpoint,
 	}
+}
+
+// silentTokenRefresh uses a stored refresh token to get a new access token
+// without opening a browser.
+func silentTokenRefresh(clientID, refreshToken string) (*oauth2.Token, error) {
+	conf := spotifyOAuthConfig(clientID)
+	src := conf.TokenSource(context.Background(), &oauth2.Token{RefreshToken: refreshToken})
+	return src.Token()
+}
+
+// doWebAPIAuth performs an OAuth2 PKCE flow to get a fresh Web API access token.
+// Opens a browser for user consent, returns the full token (including refresh token).
+func doWebAPIAuth(clientID string) (*oauth2.Token, error) {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", CallbackPort))
+	if err != nil {
+		return nil, fmt.Errorf("listen on port %d: %w", CallbackPort, err)
+	}
+
+	oauthConf := spotifyOAuthConfig(clientID)
 
 	verifier := oauth2.GenerateVerifier()
 	authURL := oauthConf.AuthCodeURL("", oauth2.S256ChallengeOption(verifier))
@@ -188,11 +217,11 @@ func doWebAPIAuth(clientID string) (string, error) {
 
 	token, err := oauthConf.Exchange(context.Background(), code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return "", fmt.Errorf("token exchange: %w", err)
+		return nil, fmt.Errorf("token exchange: %w", err)
 	}
 
 	fmt.Println("Spotify: Web API token refreshed.")
-	return token.AccessToken, nil
+	return token, nil
 }
 
 func newInteractiveSession(ctx context.Context, clientID string) (*Session, error) {
@@ -316,11 +345,12 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 
 	fmt.Printf("Spotify: Authenticated as %s\n", sess.Username())
 
-	// Persist stored credentials for future sessions.
+	// Persist stored credentials + refresh token for future sessions.
 	_ = saveCreds(&storedCreds{
-		Username: sess.Username(),
-		Data:     sess.StoredCredentials(),
-		DeviceID: devID,
+		Username:     sess.Username(),
+		Data:         sess.StoredCredentials(),
+		DeviceID:     devID,
+		RefreshToken: token.RefreshToken,
 	})
 
 	s := &Session{sess: sess, devID: devID, clientID: clientID, webAPIToken: accessToken}
