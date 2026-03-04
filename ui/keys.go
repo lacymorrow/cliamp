@@ -199,11 +199,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "r":
 		m.playlist.CycleRepeat()
+		if err := config.Save("repeat", fmt.Sprintf("%q", m.playlist.Repeat().String())); err != nil {
+			m.saveMsg = fmt.Sprintf("Config save failed: %s", err)
+			m.saveMsgTTL = 60
+		}
 		m.player.ClearPreload()
 		return m.preloadNext()
 
 	case "z":
 		m.playlist.ToggleShuffle()
+		if err := config.Save("shuffle", fmt.Sprintf("%v", m.playlist.Shuffled())); err != nil {
+			m.saveMsg = fmt.Sprintf("Config save failed: %s", err)
+			m.saveMsgTTL = 60
+		}
 		m.player.ClearPreload()
 		return m.preloadNext()
 
@@ -733,6 +741,8 @@ var keymapEntries = []keymapEntry{
 	{"< ,", "Previous track"},
 	{"← →", "Seek ±5s"},
 	{"+ -", "Volume up/down"},
+	{"z", "Toggle shuffle"},
+	{"r", "Cycle repeat"},
 	{"m", "Toggle mono"},
 	{"e", "Cycle EQ preset"},
 	{"t", "Choose theme"},
@@ -748,8 +758,6 @@ var keymapEntries = []keymapEntry{
 	{"p", "Playlist manager"},
 	{"i", "Track info / metadata"},
 	{"S", "Save track to ~/Music"},
-	{"r", "Cycle repeat"},
-	{"z", "Toggle shuffle"},
 	{"x", "Expand/collapse playlist"},
 	{"/", "Search playlist"},
 	{"Tab", "Toggle focus"},

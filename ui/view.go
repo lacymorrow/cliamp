@@ -841,16 +841,78 @@ func (m Model) renderHelp() string {
 		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
 	}
 
-	parts := helpKey("Spc", "⏯ ") + helpKey("<>", "Trk ")
+	// Build help hints with priority (lower = dropped first when too wide).
+	var hints []helpHint
+
+	hints = append(hints, helpHint{helpKey("Spc", "⏯ "), 100})
+	hints = append(hints, helpHint{helpKey("<>", "Trk "), 90})
 
 	track, _ := m.playlist.Current()
 	if !track.Stream || m.player.Seekable() {
-		parts += helpKey("←→", "Seek ")
+		hints = append(hints, helpHint{helpKey("←→", "Seek "), 70})
 	}
 
-	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
+	hints = append(hints,
+		helpHint{helpKey("+-", "Vol "), 80},
+		helpHint{helpKey("z", "Shfl "), 20},
+		helpHint{helpKey("r", "Rpt "), 20},
+		helpHint{helpKey("/", "Search "), 40},
+		helpHint{helpKey("a", "Queue "), 30},
+		helpHint{helpKey("Tab", "Focus "), 50},
+		helpHint{helpKey("Ctrl+K", "Keys "), 60},
+		helpHint{helpKey("Q", "Quit"), 95},
+	)
 
-	return parts
+	return fitHints(hints, m.width)
+}
+
+// helpHint is a rendered help key with an associated display priority.
+type helpHint struct {
+	text     string
+	priority int
+}
+
+// fitHints drops lowest-priority hints until they fit within maxWidth.
+func fitHints(hints []helpHint, maxWidth int) string {
+	// Start with all hints; drop lowest priority until it fits.
+	active := make([]bool, len(hints))
+	for i := range active {
+		active[i] = true
+	}
+
+	for {
+		var total int
+		for i, h := range hints {
+			if active[i] {
+				total += lipgloss.Width(h.text)
+			}
+		}
+		if total <= maxWidth {
+			break
+		}
+
+		// Find lowest-priority active hint and drop it.
+		minPri := 1<<31 - 1
+		minIdx := -1
+		for i, h := range hints {
+			if active[i] && h.priority < minPri {
+				minPri = h.priority
+				minIdx = i
+			}
+		}
+		if minIdx < 0 {
+			break // nothing left to drop
+		}
+		active[minIdx] = false
+	}
+
+	var result string
+	for i, h := range hints {
+		if active[i] {
+			result += h.text
+		}
+	}
+	return result
 }
 
 // renderStreamStatus shows a network stats line for HTTP streams:
