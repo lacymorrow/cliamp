@@ -199,13 +199,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "r":
 		m.playlist.CycleRepeat()
-		_ = config.Save("repeat", fmt.Sprintf("%q", m.playlist.Repeat().String()))
+		if err := config.Save("repeat", fmt.Sprintf("%q", m.playlist.Repeat().String())); err != nil {
+			m.saveMsg = fmt.Sprintf("Config save failed: %s", err)
+			m.saveMsgTTL = 60
+		}
 		m.player.ClearPreload()
 		return m.preloadNext()
 
 	case "z":
 		m.playlist.ToggleShuffle()
-		_ = config.Save("shuffle", fmt.Sprintf("%v", m.playlist.Shuffled()))
+		if err := config.Save("shuffle", fmt.Sprintf("%v", m.playlist.Shuffled())); err != nil {
+			m.saveMsg = fmt.Sprintf("Config save failed: %s", err)
+			m.saveMsgTTL = 60
+		}
 		m.player.ClearPreload()
 		return m.preloadNext()
 
