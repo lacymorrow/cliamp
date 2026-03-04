@@ -24,8 +24,10 @@ var (
 	spectrumHigh lipgloss.TerminalColor = lipgloss.ANSIColor(9)  // bright red
 )
 
-// panelWidth is the usable inner width (80 frame - 6 padding).
-const panelWidth = 74
+// panelWidth is the usable inner width of the frame.
+// Updated dynamically in WindowSizeMsg based on terminal width.
+// Default: 74 (80 frame - 6 padding).
+var panelWidth = 74
 
 // Lip Gloss styles
 var (
