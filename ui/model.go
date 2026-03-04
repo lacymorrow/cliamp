@@ -480,6 +480,19 @@ func preloadStreamCmd(p *player.Player, path string, knownDuration time.Duration
 	}
 }
 
+func playYTDLStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		return streamPlayedMsg{err: p.PlayYTDL(pageURL, knownDuration)}
+	}
+}
+
+func preloadYTDLStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		p.PreloadYTDL(pageURL, knownDuration) // errors silently ignored
+		return streamPreloadedMsg{}
+	}
+}
+
 func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
 	return func() tea.Msg {
 		tracks, err := prov.Tracks(playlistID)
@@ -1052,15 +1065,15 @@ func (m *Model) playCurrentTrack() tea.Cmd {
 }
 
 // playTrack plays a track, using async HTTP for streams and sync I/O for local files.
-// yt-dlp URLs are lazily resolved to direct audio streams before playback.
+// yt-dlp URLs are streamed via a piped yt-dlp | ffmpeg chain for instant playback.
 func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 	m.streamTitle = ""
-	// Lazy-resolve yt-dlp URLs (SoundCloud, YouTube, etc.) to direct audio streams.
+	// Stream yt-dlp URLs (SoundCloud, YouTube, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
 		m.buffering = true
 		m.err = nil
-		_, idx := m.playlist.Current()
-		return resolveYTDLCmd(idx, track.Path)
+		dur := time.Duration(track.DurationSecs) * time.Second
+		return playYTDLStreamCmd(m.player, track.Path, dur)
 	}
 	// Fire now-playing notification for Navidrome tracks.
 	m.nowPlaying(track)
@@ -1094,9 +1107,18 @@ func (m *Model) preloadNext() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	// Can't preload yt-dlp tracks — they need lazy resolution first.
+	// Preload yt-dlp tracks with the same lead-time deferral as HTTP streams.
 	if playlist.IsYTDL(next.Path) {
-		return nil
+		dur := m.player.Duration()
+		if dur > 0 {
+			remaining := dur - m.player.Position()
+			if remaining > streamPreloadLeadTime {
+				return nil
+			}
+		}
+		nextDur := time.Duration(next.DurationSecs) * time.Second
+		m.preloading = true
+		return preloadYTDLStreamCmd(m.player, next.Path, nextDur)
 	}
 	if next.Stream {
 		// For streams, only arm gapless if we're within the lead-time window.
