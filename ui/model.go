@@ -189,6 +189,10 @@ type Model struct {
 
 	autoPlay bool // start playing immediately on launch
 
+	// Stream auto-reconnect state
+	reconnectAttempts int       // current retry count (0 = no retries yet)
+	reconnectAt       time.Time // when to attempt next reconnect (zero = not scheduled)
+
 	// File browser overlay
 	showFileBrowser bool
 	fbDir           string
@@ -776,9 +780,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.saveMsg = ""
 			}
 		}
-		// Surface stream errors (e.g., connection drops) before checking track done
+		// Surface stream errors (e.g., connection drops) and auto-reconnect streams.
 		if err := m.player.StreamErr(); err != nil {
-			m.err = err
+			track, idx := m.playlist.Current()
+			isStream := idx >= 0 && (track.Stream || playlist.IsYTDL(track.Path))
+			if isStream && m.reconnectAttempts < 5 {
+				// Schedule reconnect with exponential backoff: 1s, 2s, 4s, 8s, 16s
+				if m.reconnectAt.IsZero() {
+					delay := time.Second << m.reconnectAttempts
+					m.reconnectAt = time.Now().Add(delay)
+					m.reconnectAttempts++
+					m.err = fmt.Errorf("Reconnecting in %s...", delay)
+				}
+			} else {
+				m.err = err
+				m.reconnectAt = time.Time{}
+			}
 		}
 		// Poll ICY stream title for live radio display.
 		if title := m.player.StreamTitle(); title != "" {
@@ -802,6 +819,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.lastSpeedBytes = downloaded
 			m.lastSpeedTick = 0
+		}
+		// Fire scheduled reconnect when the timer expires.
+		if !m.reconnectAt.IsZero() && time.Now().After(m.reconnectAt) {
+			m.reconnectAt = time.Time{}
+			m.player.Stop()
+			if track, idx := m.playlist.Current(); idx >= 0 {
+				return m, tea.Batch(m.playTrack(track), tickCmd())
+			}
 		}
 		var cmds []tea.Cmd
 		// Check gapless transition (audio already playing next track)
@@ -836,7 +861,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if gapless drained (end of playlist, no preloaded next).
 		// Skip if already buffering a yt-dlp download to avoid advancing
 		// the playlist on every tick while waiting for the resolve.
-		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() && !m.buffering {
+		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() && !m.buffering && m.reconnectAt.IsZero() {
 			// Track drained to end — always ≥ 50%.
 			finishedTrack, _ := m.playlist.Current()
 			drainDur := time.Duration(finishedTrack.DurationSecs) * time.Second
@@ -1003,6 +1028,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.err = nil
+			m.reconnectAttempts = 0
+			m.reconnectAt = time.Time{}
 		}
 		m.notifyMPRIS()
 		return m, m.preloadNext()
@@ -1152,6 +1179,8 @@ func (m *Model) playCurrentTrack() tea.Cmd {
 // playTrack plays a track, using async HTTP for streams and sync I/O for local files.
 // yt-dlp URLs are streamed via a piped yt-dlp | ffmpeg chain for instant playback.
 func (m *Model) playTrack(track playlist.Track) tea.Cmd {
+	m.reconnectAttempts = 0
+	m.reconnectAt = time.Time{}
 	m.streamTitle = ""
 	m.lyricsLines = nil
 	m.lyricsErr = nil
