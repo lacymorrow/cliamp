@@ -59,6 +59,10 @@ func (m Model) View() string {
 		return m.renderNetSearchOverlay()
 	}
 
+	if m.urlInputting {
+		return m.renderURLInputOverlay()
+	}
+
 	if m.showLyrics {
 		return m.renderLyricsOverlay()
 	}

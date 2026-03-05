@@ -99,6 +99,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleJumpKey(msg)
 	}
 
+	if m.urlInputting {
+		return m.handleURLInputKey(msg)
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -350,6 +354,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "o":
 		m.openFileBrowser()
+
+	case "u":
+		m.urlInputting = true
+		m.urlInput = ""
 
 	case "N":
 		if m.navClient != nil {
@@ -645,6 +653,33 @@ func (m *Model) handleNetSearchKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// handleURLInputKey processes key presses while in URL input mode.
+func (m *Model) handleURLInputKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.urlInputting = false
+	case tea.KeyEnter:
+		m.urlInputting = false
+		input := strings.TrimSpace(m.urlInput)
+		if input != "" {
+			m.feedLoading = true
+			m.saveMsg = "Loading URL..."
+			m.saveMsgTTL = 120
+			return resolveRemoteCmd([]string{input})
+		}
+	case tea.KeyBackspace:
+		if len(m.urlInput) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.urlInput)
+			m.urlInput = m.urlInput[:len(m.urlInput)-size]
+		}
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.urlInput += string(msg.Runes)
+		}
+	}
+	return nil
+}
+
 // handlePlaylistManagerKey dispatches keys to the active manager screen.
 func (m *Model) handlePlaylistManagerKey(msg tea.KeyMsg) tea.Cmd {
 	switch m.plMgrScreen {
@@ -931,6 +966,8 @@ var keymapEntries = []keymapEntry{
 	{"/", "Search playlist"},
 	{"f", "Find on YouTube (queue play next)"},
 	{"F", "Find on SoundCloud (queue play next)"},
+	{"u", "Load URL (stream/playlist)"},
+	{"y", "Show lyrics"},
 	{"Tab", "Toggle focus"},
 	{"Esc", "Back to provider"},
 	{"Ctrl+K", "This keymap"},

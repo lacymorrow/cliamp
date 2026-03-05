@@ -315,6 +315,17 @@ func (m Model) renderNetSearchOverlay() string {
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
 
+func (m Model) renderURLInputOverlay() string {
+	lines := []string{
+		titleStyle.Render("L O A D   U R L"),
+		"",
+		playlistSelectedStyle.Render("  URL: " + m.urlInput + "_"),
+		"",
+		helpKey("Enter", "Load") + " " + helpKey("Esc", "Cancel"),
+	}
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
+
 func (m Model) renderLyricsOverlay() string {
 	lines := []string{
 		titleStyle.Render("L Y R I C S"),

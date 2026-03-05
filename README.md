@@ -133,6 +133,19 @@ You can also search interactively while playing by pressing `f` (YouTube) or `F`
 
 **Use at your own risk.** Downloading or streaming copyrighted content may violate the terms of service of these platforms. You are responsible for how you use this feature.
 
+## Lyrics
+
+Press `y` to show lyrics for the current track. Lyrics are fetched from LRCLIB and NetEase Cloud Music.
+
+- **Synced lyrics** — for local files and Navidrome tracks, lyrics auto-scroll and highlight the active line in time with playback.
+- **Scroll mode** — for streams and plain lyrics without timestamps, use `j`/`k` or arrow keys to scroll manually.
+- **Streams** — lyrics auto-update when the ICY metadata changes (e.g., internet radio station transitions).
+- **YouTube/SoundCloud** — titles like "Artist - Song (Official Video)" are parsed to build better search queries.
+
+## Load URL at Runtime
+
+Press `u` while playing to load a new stream or playlist URL without restarting. Supports the same URL types as CLI arguments: direct audio URLs, M3U/PLS playlists, RSS podcast feeds, and yt-dlp compatible links.
+
 ## Create Your Own Radio Station
 
 Run your own internet radio with [cliamp-server](https://github.com/bjarneo/cliamp-server) — point it at a directory of audio files and it starts broadcasting:
@@ -252,6 +265,8 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `/` | Search playlist |
 | `f` | Find on YouTube (queue play next) |
 | `F` | Find on SoundCloud (queue play next) |
+| `u` | Load URL (stream/playlist) |
+| `y` | Show lyrics |
 | `J` | Jump to time |
 | `x` | Expand/collapse playlist |
 | `o` | Open file browser |

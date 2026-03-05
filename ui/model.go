@@ -125,6 +125,10 @@ type Model struct {
 	jumping   bool
 	jumpInput string
 
+	// URL input mode (load playlist/stream URL at runtime)
+	urlInputting bool
+	urlInput     string
+
 	// Async feed/M3U URL resolution
 	pendingURLs []string
 	feedLoading bool
@@ -313,7 +317,8 @@ func (m Model) ThemeName() string {
 func (m *Model) isOverlayActive() bool {
 	return m.showKeymap || m.showThemes || m.showFileBrowser ||
 		m.showNavBrowser || m.showPlManager || m.showQueue ||
-		m.showInfo || m.searching || m.netSearching || m.jumping
+		m.showInfo || m.searching || m.netSearching || m.jumping ||
+		m.urlInputting
 }
 
 // openThemePicker re-loads themes from disk (picking up new user files)
@@ -780,11 +785,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case feedsLoadedMsg:
 		m.feedLoading = false
-		m.playlist.Add(msg...)
-		if m.playlist.Len() > 0 && !m.player.IsPlaying() {
-			cmd := m.playCurrentTrack()
-			m.notifyMPRIS()
-			return m, cmd
+		if len(msg) > 0 {
+			m.playlist.Add(msg...)
+			m.saveMsg = fmt.Sprintf("Loaded %d track(s)", len(msg))
+			m.saveMsgTTL = 60
+			if m.playlist.Len() > 0 && !m.player.IsPlaying() {
+				cmd := m.playCurrentTrack()
+				m.notifyMPRIS()
+				return m, cmd
+			}
+		} else {
+			m.saveMsg = "No tracks found at URL."
+			m.saveMsgTTL = 60
 		}
 		return m, nil
 
