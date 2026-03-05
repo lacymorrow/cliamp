@@ -3,6 +3,7 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	librespot "github.com/devgianlu/go-librespot"
+	"github.com/devgianlu/go-librespot/audio"
 	"github.com/gopxl/beep/v2"
 
 	"cliamp/playlist"
@@ -168,8 +170,27 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 	return all, nil
 }
 
+// isAuthError returns true if the error is an authentication/session-related
+// failure that can be resolved by re-authenticating.
+func isAuthError(err error) bool {
+	var keyErr *audio.KeyProviderError
+	if errors.As(err, &keyErr) {
+		return true
+	}
+	// Catch wrapped context errors from a dead session.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return false
+}
+
 // NewStreamer creates a SpotifyStreamer for the given spotify:track:xxx URI.
 // Called by the player's StreamerFactory when it encounters a Spotify URI.
+//
+// If the stream fails due to an auth error (e.g. expired session, AES key
+// rejection), the session is torn down, credentials are cleared, and a fresh
+// interactive OAuth2 flow is triggered automatically. The stream is then
+// retried once with the new session.
 func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.Format, time.Duration, error) {
 	spotID, err := librespot.SpotifyIdFromUri(uri)
 	if err != nil {
@@ -181,7 +202,28 @@ func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.F
 
 	stream, err := p.session.NewStream(ctx, *spotID, 320) // TODO: make bitrate configurable via config.toml
 	if err != nil {
-		return nil, beep.Format{}, 0, fmt.Errorf("spotify: new stream: %w", err)
+		if !isAuthError(err) {
+			return nil, beep.Format{}, 0, fmt.Errorf("spotify: new stream: %w", err)
+		}
+
+		// Auth error — attempt re-authentication and retry once.
+		fmt.Fprintf(os.Stderr, "spotify: stream auth error (%v), attempting re-auth...\n", err)
+
+		reconnCtx, reconnCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer reconnCancel()
+
+		if reconnErr := p.session.Reconnect(reconnCtx); reconnErr != nil {
+			return nil, beep.Format{}, 0, fmt.Errorf("spotify: re-auth failed: %w (original: %v)", reconnErr, err)
+		}
+
+		// Retry with the fresh session.
+		retryCtx, retryCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer retryCancel()
+
+		stream, err = p.session.NewStream(retryCtx, *spotID, 320)
+		if err != nil {
+			return nil, beep.Format{}, 0, fmt.Errorf("spotify: new stream after re-auth: %w", err)
+		}
 	}
 
 	streamer := NewSpotifyStreamer(stream)
