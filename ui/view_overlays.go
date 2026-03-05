@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"cliamp/lyrics"
 	"cliamp/theme"
 )
 
@@ -315,17 +317,31 @@ func (m Model) renderNetSearchOverlay() string {
 
 func (m Model) renderLyricsOverlay() string {
 	lines := []string{
-		titleStyle.Render("S Y N C E D   L Y R I C S"),
+		titleStyle.Render("L Y R I C S"),
 		"",
 	}
 
 	if m.lyricsLoading {
-		lines = append(lines, dimStyle.Render("  Fetching lyrics from lrclib.net..."))
+		lines = append(lines, dimStyle.Render("  Searching for lyrics..."))
 	} else if m.lyricsErr != nil {
-		lines = append(lines, helpStyle.Render("  Error: "+m.lyricsErr.Error()))
+		if errors.Is(m.lyricsErr, lyrics.ErrNotFound) {
+			lines = append(lines, dimStyle.Render("  No lyrics found for this track."))
+		} else {
+			lines = append(lines, helpStyle.Render("  Lyrics fetch failed: "+m.lyricsErr.Error()))
+		}
 	} else if len(m.lyricsLines) == 0 {
-		lines = append(lines, dimStyle.Render("  No lyrics available for this track."))
-	} else {
+		artist, title := m.lyricsArtistTitle()
+		if artist == "" && title == "" {
+			lines = append(lines, dimStyle.Render("  No artist/title metadata available."))
+			track, idx := m.playlist.Current()
+			if idx >= 0 && track.Stream {
+				lines = append(lines, dimStyle.Render("  Waiting for stream metadata..."))
+			}
+		} else {
+			lines = append(lines, dimStyle.Render("  No lyrics loaded. Press y to retry."))
+		}
+	} else if m.lyricsSyncable() && m.lyricsHaveTimestamps() {
+		// Synced mode: auto-scroll to follow playback position.
 		pos := m.player.Position()
 		activeIdx := -1
 		for i, line := range m.lyricsLines {
@@ -336,13 +352,22 @@ func (m Model) renderLyricsOverlay() string {
 			}
 		}
 
-		startIdx := activeIdx - 4
+		visible := m.height - 8
+		if visible < 5 {
+			visible = 5
+		}
+		half := visible / 2
+		startIdx := activeIdx - half
 		if startIdx < 0 {
 			startIdx = 0
 		}
-		endIdx := activeIdx + 7
+		endIdx := startIdx + visible
 		if endIdx > len(m.lyricsLines) {
 			endIdx = len(m.lyricsLines)
+			startIdx = endIdx - visible
+			if startIdx < 0 {
+				startIdx = 0
+			}
 		}
 
 		for i := startIdx; i < endIdx; i++ {
@@ -356,12 +381,34 @@ func (m Model) renderLyricsOverlay() string {
 				lines = append(lines, dimStyle.Render("  "+text))
 			}
 		}
+	} else {
+		// Scroll mode: manual navigation with j/k or arrow keys.
+		visible := m.height - 8
+		if visible < 5 {
+			visible = 5
+		}
+		endIdx := m.lyricsScroll + visible
+		if endIdx > len(m.lyricsLines) {
+			endIdx = len(m.lyricsLines)
+		}
+
+		for i := m.lyricsScroll; i < endIdx; i++ {
+			text := m.lyricsLines[i].Text
+			if text == "" {
+				text = "♪"
+			}
+			lines = append(lines, dimStyle.Render("  "+text))
+		}
 	}
 
 	for len(lines) < 14 {
 		lines = append(lines, "")
 	}
 
-	lines = append(lines, "", helpKey("y", "Close Lyric View"))
+	if m.lyricsSyncable() && m.lyricsHaveTimestamps() {
+		lines = append(lines, "", helpKey("y/Esc", "Close"))
+	} else {
+		lines = append(lines, "", helpKey("↑↓/jk", "Scroll")+" "+helpKey("y/Esc", "Close"))
+	}
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }

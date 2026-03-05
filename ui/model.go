@@ -167,10 +167,12 @@ type Model struct {
 	fullVis bool
 
 	// Lyrics overlay
-	showLyrics    bool
-	lyricsLines   []lyrics.Line
-	lyricsLoading bool
-	lyricsErr     error
+	showLyrics       bool
+	lyricsLines      []lyrics.Line
+	lyricsLoading    bool
+	lyricsErr        error
+	lyricsQuery      string        // "artist\ntitle" of the last fetch, prevents redundant requests
+	lyricsScroll     int           // scroll offset for lyrics view
 
 	// Queue manager overlay
 	showQueue   bool
@@ -600,9 +602,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.reconnectAt = time.Time{}
 			}
 		}
+		var lyricCmd tea.Cmd
 		// Poll ICY stream title for live radio display.
-		if title := m.player.StreamTitle(); title != "" {
+		if title := m.player.StreamTitle(); title != "" && title != m.streamTitle {
 			m.streamTitle = title
+			// Auto-fetch lyrics when the stream song changes and lyrics overlay is open.
+			if m.showLyrics && !m.lyricsLoading {
+				if artist, song, ok := strings.Cut(title, " - "); ok {
+					q := artist + "\n" + song
+					if q != m.lyricsQuery {
+						m.lyricsQuery = q
+						m.lyricsLoading = true
+						m.lyricsLines = nil
+						m.lyricsErr = nil
+						m.lyricsScroll = 0
+						lyricCmd = fetchLyricsCmd(artist, song)
+					}
+				}
+			}
 		}
 		// Update network throughput every ~1 second (20 ticks at 50ms).
 		m.lastSpeedTick++
@@ -632,6 +649,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		var cmds []tea.Cmd
+		if lyricCmd != nil {
+			cmds = append(cmds, lyricCmd)
+		}
 		// Check gapless transition (audio already playing next track)
 		if m.player.GaplessAdvanced() {
 			// Capture the track that just finished before advancing the playlist.
@@ -792,6 +812,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lyricsLoadedMsg:
 		m.lyricsLoading = false
 		m.lyricsErr = msg.err
+		m.lyricsScroll = 0
 		if msg.err == nil {
 			m.lyricsLines = msg.lines
 		}
@@ -983,9 +1004,12 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 	m.streamTitle = ""
 	m.lyricsLines = nil
 	m.lyricsErr = nil
+	m.lyricsQuery = ""
+	m.lyricsScroll = 0
 	var fetchCmd tea.Cmd
 	if m.showLyrics && track.Artist != "" && track.Title != "" {
 		m.lyricsLoading = true
+		m.lyricsQuery = track.Artist + "\n" + track.Title
 		fetchCmd = fetchLyricsCmd(track.Artist, track.Title)
 	}
 
@@ -1138,6 +1162,55 @@ func (m *Model) togglePlayPause() tea.Cmd {
 	}
 	m.player.TogglePause()
 	return nil
+}
+
+// lyricsArtistTitle resolves the best artist and title for a lyrics lookup.
+// For streams with ICY metadata ("Artist - Song"), it parses the stream title.
+// For regular tracks, it uses the track's metadata fields.
+func (m *Model) lyricsArtistTitle() (artist, title string) {
+	track, idx := m.playlist.Current()
+	if idx < 0 {
+		return "", ""
+	}
+	// For streams, prefer the live ICY stream title which updates per-song.
+	if m.streamTitle != "" && track.Stream {
+		if a, t, ok := strings.Cut(m.streamTitle, " - "); ok {
+			return strings.TrimSpace(a), strings.TrimSpace(t)
+		}
+	}
+	return track.Artist, track.Title
+}
+
+// lyricsSyncable reports whether synced lyrics can track the current playback
+// position. This is true for local files and Navidrome streams (which have
+// accurate position tracking), but false for live radio (ICY — position is
+// from stream start, not song start) and yt-dlp pipe streams (position is 0).
+func (m *Model) lyricsSyncable() bool {
+	track, idx := m.playlist.Current()
+	if idx < 0 {
+		return false
+	}
+	// yt-dlp pipe streams report position 0.
+	if playlist.IsYTDL(track.Path) {
+		return false
+	}
+	// ICY radio streams: position counts from stream connect, not song start.
+	// Navidrome streams have NavidromeID set — those track position correctly.
+	if track.Stream && track.NavidromeID == "" {
+		return false
+	}
+	return true
+}
+
+// lyricsHaveTimestamps reports whether the loaded lyrics have meaningful
+// timestamps (i.e., not all lines at 0).
+func (m *Model) lyricsHaveTimestamps() bool {
+	for _, l := range m.lyricsLines {
+		if l.Start > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // updateSearch filters the playlist by the current search query.

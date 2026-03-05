@@ -77,6 +77,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return m.quit()
 		case "esc", "y":
 			m.showLyrics = false
+		case "up", "k":
+			if !(m.lyricsSyncable() && m.lyricsHaveTimestamps()) && m.lyricsScroll > 0 {
+				m.lyricsScroll--
+			}
+		case "down", "j":
+			if !(m.lyricsSyncable() && m.lyricsHaveTimestamps()) {
+				maxScroll := len(m.lyricsLines) - 1
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.lyricsScroll < maxScroll {
+					m.lyricsScroll++
+				}
+			}
 		}
 		return nil
 	}
@@ -320,11 +334,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "y":
 		m.showLyrics = !m.showLyrics
-		if m.showLyrics && len(m.lyricsLines) == 0 && m.lyricsErr == nil {
-			track, idx := m.playlist.Current()
-			if idx >= 0 && track.Artist != "" && track.Title != "" {
-				m.lyricsLoading = true
-				return fetchLyricsCmd(track.Artist, track.Title)
+		if m.showLyrics && !m.lyricsLoading {
+			artist, title := m.lyricsArtistTitle()
+			if artist != "" && title != "" {
+				q := artist + "\n" + title
+				if q != m.lyricsQuery {
+					m.lyricsQuery = q
+					m.lyricsLoading = true
+					m.lyricsLines = nil
+					m.lyricsErr = nil
+					return fetchLyricsCmd(artist, title)
+				}
 			}
 		}
 

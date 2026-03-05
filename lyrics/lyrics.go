@@ -2,7 +2,9 @@ package lyrics
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -11,11 +13,20 @@ import (
 	"time"
 )
 
-// Line represents a single timestamped lyrical line
+// ErrNotFound is returned when no lyrics could be found from any source.
+var ErrNotFound = errors.New("no lyrics found")
+
+// Line represents a single timestamped lyrical line.
 type Line struct {
 	Start time.Duration
 	Text  string
 }
+
+// httpClient is reused across all lyrics API calls.
+var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// maxResponseBody limits API responses to 2 MB.
+const maxResponseBody = 2 << 20
 
 type lrcResponse struct {
 	SyncedLyrics string `json:"syncedLyrics"`
@@ -37,141 +48,154 @@ type ncmLyricResponse struct {
 }
 
 var lrcRegex = regexp.MustCompile(`\[(\d{2,}):(\d{2})\.(\d{2,3})\](.*)`)
+
+// cleanQuery strips noise from a search query: bracketed text like "[Official Video]",
+// parenthesized text like "(Lyric Video)", and common video/audio label suffixes.
 var noiseRegex = regexp.MustCompile(`(?i)(?:\[.*?\]|\(.*?\)|-?\s*(?:official|lyric|audio|video).*)`)
 
-func clean(str string) string {
+func cleanQuery(str string) string {
 	s := noiseRegex.ReplaceAllString(str, "")
 	return strings.TrimSpace(s)
 }
 
-// Fetch requests lyrics from lrclib.net, with a fallback to NetEase Cloud Music.
+// Fetch requests lyrics for the given artist and title.
+// It tries LRCLIB first, then falls back to NetEase Cloud Music.
+// Returns ErrNotFound if neither source has lyrics.
+//
+// For YouTube/SoundCloud tracks where Artist is the uploader and Title
+// contains "Artist - Song", the title is split to build a better query.
 func Fetch(artist, title string) ([]Line, error) {
-	if artist == "" || title == "" {
-		return nil, fmt.Errorf("artist and title are required")
+	if artist == "" && title == "" {
+		return nil, ErrNotFound
 	}
 
-	query := clean(artist) + " " + clean(title)
+	// YouTube titles often embed the real artist: "Artist - Song (Official Video)".
+	// If the title contains " - ", prefer that split over the uploader name.
+	if a, t, ok := strings.Cut(title, " - "); ok {
+		a = cleanQuery(strings.TrimSpace(a))
+		t = cleanQuery(strings.TrimSpace(t))
+		if a != "" && t != "" {
+			artist = a
+			title = t
+		}
+	}
+
+	query := cleanQuery(artist) + " " + cleanQuery(title)
 	query = strings.TrimSpace(query)
 	if query == "" {
 		query = artist + " " + title
 	}
 
-	// Try LRCLIB first
+	// Try LRCLIB first.
 	lines, err := fetchLRCLIB(query)
 	if err == nil && len(lines) > 0 {
 		return lines, nil
 	}
 
-	// Fallback to NetEase Cloud Music
+	// Fallback to NetEase Cloud Music.
 	lines, err = fetchNetEase(query)
 	if err == nil && len(lines) > 0 {
 		return lines, nil
 	}
 
-	return nil, fmt.Errorf("no lyrics found online")
+	return nil, ErrNotFound
 }
 
 func fetchLRCLIB(query string) ([]Line, error) {
-
 	searchURL := fmt.Sprintf("https://lrclib.net/api/search?q=%s", url.QueryEscape(query))
 
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	// LRCLIB politely asks callers to provide a User-Agent
 	req.Header.Set("User-Agent", "cliamp")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("lrclib API error: %s", resp.Status)
+		return nil, fmt.Errorf("lrclib: %s", resp.Status)
 	}
 
 	var results []lrcResponse
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&results); err != nil {
 		return nil, err
 	}
 
 	if len(results) == 0 {
-		return nil, fmt.Errorf("no lyrics found online")
+		return nil, ErrNotFound
 	}
 
-	for _, best := range results {
-		if best.SyncedLyrics != "" {
-			return ParseLRC(best.SyncedLyrics), nil
+	// Prefer synced lyrics.
+	for _, r := range results {
+		if r.SyncedLyrics != "" {
+			return ParseLRC(r.SyncedLyrics), nil
 		}
 	}
 
-	// Fallback to plain lyrics formatted as start-of-song, if synced isn't available
-	best := results[0]
-	if best.PlainLyrics != "" {
+	// Fallback to plain lyrics (all lines at timestamp 0).
+	if results[0].PlainLyrics != "" {
 		var lines []Line
-		for _, raw := range strings.Split(best.PlainLyrics, "\n") {
+		for _, raw := range strings.Split(results[0].PlainLyrics, "\n") {
 			lines = append(lines, Line{Start: 0, Text: strings.TrimSpace(raw)})
 		}
 		return lines, nil
 	}
 
-	return nil, fmt.Errorf("lyrics missing in response")
+	return nil, ErrNotFound
 }
 
 func fetchNetEase(query string) ([]Line, error) {
-	searchURL := "http://music.163.com/api/search/get/web"
 	data := url.Values{}
 	data.Set("s", query)
 	data.Set("type", "1")
 	data.Set("limit", "1")
 
-	req, err := http.NewRequest("POST", searchURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequest("POST", "http://music.163.com/api/search/get/web", strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Referer", "http://music.163.com")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("netease API error: %s", resp.Status)
+		return nil, fmt.Errorf("netease: %s", resp.Status)
 	}
 
 	var searchRes ncmSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchRes); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(&searchRes); err != nil {
 		return nil, err
 	}
 
 	if len(searchRes.Result.Songs) == 0 {
-		return nil, fmt.Errorf("no songs found on netease")
+		return nil, ErrNotFound
 	}
 
 	songID := searchRes.Result.Songs[0].Id
 	lyricURL := fmt.Sprintf("http://music.163.com/api/song/lyric?id=%d&lv=1&kv=1&tv=-1", songID)
 
-	lresp, err := client.Get(lyricURL)
+	lresp, err := httpClient.Get(lyricURL)
 	if err != nil {
 		return nil, err
 	}
 	defer lresp.Body.Close()
 
 	var lyricRes ncmLyricResponse
-	if err := json.NewDecoder(lresp.Body).Decode(&lyricRes); err != nil {
+	if err := json.NewDecoder(io.LimitReader(lresp.Body, maxResponseBody)).Decode(&lyricRes); err != nil {
 		return nil, err
 	}
 
 	if lyricRes.Lrc.Lyric == "" {
-		return nil, fmt.Errorf("netease song has no lyrics")
+		return nil, ErrNotFound
 	}
 
 	return ParseLRC(lyricRes.Lrc.Lyric), nil
@@ -187,7 +211,7 @@ func ParseLRC(data string) []Line {
 			secs, _ := strconv.Atoi(matches[2])
 			ms, _ := strconv.Atoi(matches[3])
 
-			// If LRC millisecond part is hundredths (2 chars), scale it
+			// If LRC millisecond part is hundredths (2 chars), scale it.
 			if len(matches[3]) == 2 {
 				ms *= 10
 			}
