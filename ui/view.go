@@ -470,6 +470,7 @@ func (m Model) renderJumpOverlay() string {
 	lines = append(lines, "", helpKey("Enter", "Jump ")+helpKey("Esc", "Cancel"))
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
+
 func (m Model) renderHelp() string {
 	if m.focus == focusProvider {
 		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
