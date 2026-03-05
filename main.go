@@ -54,12 +54,16 @@ func run(overrides config.Overrides, positional []string) error {
 
 	defer resolve.CleanupYTDL()
 
-	if len(positional) > 0 && positional[0] == "search" {
+	if len(positional) > 0 && (positional[0] == "search" || positional[0] == "search-sc") {
 		if len(positional) == 1 {
 			return fmt.Errorf("search requires a query string (e.g. cliamp search \"never gonna give you up\")")
 		}
+		prefix := "ytsearch1:"
+		if positional[0] == "search-sc" {
+			prefix = "scsearch1:"
+		}
 		query := strings.Join(positional[1:], " ")
-		positional = []string{"ytsearch1:" + query}
+		positional = []string{prefix + query}
 	}
 
 	resolved, err := resolve.Args(positional)
@@ -171,7 +175,8 @@ Examples:
   cliamp --eq-preset "Bass Boost" ~/Music
   cliamp https://example.com/song.mp3
   cliamp http://radio.example.com/stream.m3u
-  cliamp search "rick astley"
+  cliamp search "rick astley"            # search YouTube
+  cliamp search-sc "lofi beats"            # search SoundCloud
   cliamp https://soundcloud.com/user/sets/playlist
   cliamp https://www.youtube.com/watch?v=...
 

@@ -33,11 +33,11 @@ cliamp --eq-preset "Bass Boost" ~/Music
 Search and play a track directly from the command line (requires [yt-dlp](https://github.com/yt-dlp/yt-dlp)):
 
 ```sh
-cliamp search "never gonna give you up"
-cliamp search "lofi hip hop"
+cliamp search "never gonna give you up"       # search YouTube
+cliamp search-sc "lofi beats"                  # search SoundCloud
 ```
 
-This searches YouTube and immediately starts playing the top result. Press `f` in the player to search interactively while music is playing.
+Press `f` in the player to search YouTube interactively, or `F` (Shift+F) to search SoundCloud.
 
 ## General
 

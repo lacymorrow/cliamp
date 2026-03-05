@@ -114,6 +114,7 @@ type Model struct {
 	// Dynamic internet search
 	netSearching   bool
 	netSearchQuery string
+	netSearchSC    bool // true = SoundCloud (scsearch), false = YouTube (ytsearch)
 
 	// Jump to time mode state
 	jumping   bool

@@ -291,9 +291,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.prevFocus = m.focus
 		m.focus = focusSearch
 
-	case "f":
+	case "f", "F":
 		m.netSearching = true
 		m.netSearchQuery = ""
+		m.netSearchSC = msg.String() == "F"
 		m.prevFocus = m.focus
 		m.focus = focusNetSearch
 
@@ -582,9 +583,13 @@ func (m *Model) handleNetSearchKey(msg tea.KeyMsg) tea.Cmd {
 		m.netSearching = false
 		m.focus = m.prevFocus
 		if strings.TrimSpace(m.netSearchQuery) != "" {
+			prefix := "ytsearch1:"
+			if m.netSearchSC {
+				prefix = "scsearch1:"
+			}
 			m.saveMsg = "Queuing search..."
 			m.saveMsgTTL = 40
-			cmd = fetchNetSearchCmd("ytsearch1:" + strings.TrimSpace(m.netSearchQuery))
+			cmd = fetchNetSearchCmd(prefix + strings.TrimSpace(m.netSearchQuery))
 		}
 		return cmd
 
@@ -898,7 +903,8 @@ var keymapEntries = []keymapEntry{
 	{"z", "Toggle shuffle"},
 	{"x", "Expand/collapse playlist"},
 	{"/", "Search playlist"},
-	{"f", "Find online (queue play next)"},
+	{"f", "Find on YouTube (queue play next)"},
+	{"F", "Find on SoundCloud (queue play next)"},
 	{"Tab", "Toggle focus"},
 	{"Esc", "Back to provider"},
 	{"Ctrl+K", "This keymap"},

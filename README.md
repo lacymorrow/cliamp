@@ -125,10 +125,11 @@ Playlists and albums are supported. Press `S` to save a downloaded track to `~/M
 Search and play directly from the command line:
 
 ```sh
-cliamp search "never gonna give you up"
+cliamp search "never gonna give you up"       # search YouTube
+cliamp search-sc "lofi beats"                  # search SoundCloud
 ```
 
-You can also search interactively while playing by pressing `f` to open the online search bar.
+You can also search interactively while playing by pressing `f` (YouTube) or `F` (SoundCloud).
 
 **Use at your own risk.** Downloading or streaming copyrighted content may violate the terms of service of these platforms. You are responsible for how you use this feature.
 
@@ -249,6 +250,8 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `V` | Full-screen visualizer |
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
+| `f` | Find on YouTube (queue play next) |
+| `F` | Find on SoundCloud (queue play next) |
 | `J` | Jump to time |
 | `x` | Expand/collapse playlist |
 | `o` | Open file browser |

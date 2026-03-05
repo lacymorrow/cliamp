@@ -43,9 +43,11 @@ type Track struct {
 	NavidromeID  string // Subsonic song ID; empty for non-Navidrome tracks
 }
 
-// IsURL reports whether path is an HTTP or HTTPS URL, or a ytsearch protocol strings.
+// IsURL reports whether path is an HTTP or HTTPS URL, or a yt-dlp search protocol string.
 func IsURL(path string) bool {
-	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") || strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:")
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") ||
+		strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") ||
+		strings.HasPrefix(path, "scsearch:") || strings.HasPrefix(path, "scsearch1:")
 }
 
 // IsM3U reports whether the path points to an M3U playlist file (URL or local).
@@ -90,7 +92,8 @@ func IsYTDL(path string) bool {
 	if !IsURL(path) {
 		return false
 	}
-	if strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") {
+	if strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") ||
+		strings.HasPrefix(path, "scsearch:") || strings.HasPrefix(path, "scsearch1:") {
 		return true
 	}
 	u, err := url.Parse(path)
