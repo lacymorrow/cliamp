@@ -474,6 +474,66 @@ func (s *Session) Close() {
 	}
 }
 
+// Reconnect tears down the current session, clears stored credentials, and
+// re-authenticates interactively. This is called automatically when playback
+// encounters an auth-related error (e.g. AES key retrieval failure) so the
+// user doesn't get stuck in an error loop.
+func (s *Session) Reconnect(ctx context.Context) error {
+	s.mu.Lock()
+	// Tear down old session/player.
+	if s.player != nil {
+		s.player.Close()
+		s.player = nil
+	}
+	if s.sess != nil {
+		s.sess.Close()
+		s.sess = nil
+	}
+	clientID := s.clientID
+	s.mu.Unlock()
+
+	// Clear stored credentials so we don't reuse stale ones.
+	if err := deleteCreds(); err != nil {
+		fmt.Fprintf(os.Stderr, "spotify: failed to clear stored credentials: %v\n", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "spotify: session expired, re-authenticating...\n")
+
+	newSess, err := NewSession(ctx, clientID)
+	if err != nil {
+		return fmt.Errorf("spotify: reconnect: %w", err)
+	}
+
+	// Swap in the new session's internals.
+	s.mu.Lock()
+	s.sess = newSess.sess
+	s.player = newSess.player
+	s.devID = newSess.devID
+	s.tokenSource = newSess.tokenSource
+	s.mu.Unlock()
+
+	// Prevent newSess.Close() from tearing down the resources we just adopted.
+	newSess.mu.Lock()
+	newSess.sess = nil
+	newSess.player = nil
+	newSess.mu.Unlock()
+
+	fmt.Fprintf(os.Stderr, "spotify: re-authenticated successfully\n")
+	return nil
+}
+
+// deleteCreds removes the stored credentials file.
+func deleteCreds() error {
+	path, err := credsPath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // openBrowser tries to open a URL in the user's default browser.
 func openBrowser(u string) error {
 	switch runtime.GOOS {
