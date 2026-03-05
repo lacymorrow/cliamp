@@ -122,6 +122,14 @@ Play from YouTube, SoundCloud, and Bandcamp URLs if [yt-dlp](https://github.com/
 
 Playlists and albums are supported. Press `S` to save a downloaded track to `~/Music/cliamp/`.
 
+Search and play directly from the command line:
+
+```sh
+cliamp search "never gonna give you up"
+```
+
+You can also search interactively while playing by pressing `f` to open the online search bar.
+
 **Use at your own risk.** Downloading or streaming copyrighted content may violate the terms of service of these platforms. You are responsible for how you use this feature.
 
 ## Create Your Own Radio Station

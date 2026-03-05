@@ -28,6 +28,17 @@ cliamp --bit-depth 32 track.m4a           # PCM bit depth: 16 (default) or 32 (l
 cliamp --eq-preset "Bass Boost" ~/Music
 ```
 
+## Search
+
+Search and play a track directly from the command line (requires [yt-dlp](https://github.com/yt-dlp/yt-dlp)):
+
+```sh
+cliamp search "never gonna give you up"
+cliamp search "lofi hip hop"
+```
+
+This searches YouTube and immediately starts playing the top result. Press `f` in the player to search interactively while music is playing.
+
 ## General
 
 | Flag | Short | Description |
