@@ -20,6 +20,47 @@ const pcmFrameSize16 = 4
 // pcmFrameSize32 is the byte size of one stereo f32le sample frame (2 channels × 4 bytes).
 const pcmFrameSize32 = 8
 
+// pcmFrameSize returns the byte size of one stereo sample frame for the given format.
+func pcmFrameSize(f32 bool) int {
+	if f32 {
+		return pcmFrameSize32
+	}
+	return pcmFrameSize16
+}
+
+// decodePCMFrame decodes one stereo sample frame from buf into a [2]float64.
+func decodePCMFrame(buf []byte, f32 bool) [2]float64 {
+	if f32 {
+		return [2]float64{
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[0:4]))),
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[4:8]))),
+		}
+	}
+	left := int16(binary.LittleEndian.Uint16(buf[0:2]))
+	right := int16(binary.LittleEndian.Uint16(buf[2:4]))
+	return [2]float64{float64(left) / 32768, float64(right) / 32768}
+}
+
+// streamFromReader is the shared Stream() implementation for all pipe-based
+// PCM streamers. It reads frames from a buffered reader, decodes them, and
+// records the first non-EOF error.
+func streamFromReader(reader *bufio.Reader, samples [][2]float64, buf []byte, f32 bool, errp *error) (int, bool) {
+	fs := pcmFrameSize(f32)
+	n := 0
+	for i := range samples {
+		_, err := io.ReadFull(reader, buf[:fs])
+		if err != nil {
+			if err != io.EOF && err != io.ErrUnexpectedEOF {
+				*errp = err
+			}
+			break
+		}
+		samples[i] = decodePCMFrame(buf[:fs], f32)
+		n++
+	}
+	return n, n > 0
+}
+
 // decodeFFmpeg uses ffmpeg to decode any audio file into raw PCM,
 // returning a seekable beep.StreamSeekCloser.
 // bitDepth selects the output format: 16 (s16le) or 32 (f32le, lossless).
@@ -61,15 +102,8 @@ type pcmStreamer struct {
 	f32  bool // true = f32le (32-bit float), false = s16le (16-bit int)
 }
 
-func (p *pcmStreamer) frameSize() int {
-	if p.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := p.frameSize()
+	fs := pcmFrameSize(p.f32)
 	totalFrames := len(p.data) / fs
 
 	if p.pos >= totalFrames {
@@ -82,15 +116,7 @@ func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
 			break
 		}
 		off := p.pos * fs
-		if p.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(p.data[off : off+4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(p.data[off+4 : off+8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(p.data[off : off+2]))
-			right := int16(binary.LittleEndian.Uint16(p.data[off+2 : off+4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
+		samples[i] = decodePCMFrame(p.data[off:off+fs], p.f32)
 		p.pos++
 		n++
 	}
@@ -100,7 +126,7 @@ func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
 func (p *pcmStreamer) Err() error { return nil }
 
 func (p *pcmStreamer) Len() int {
-	return len(p.data) / p.frameSize()
+	return len(p.data) / pcmFrameSize(p.f32)
 }
 
 func (p *pcmStreamer) Position() int {
@@ -167,36 +193,8 @@ type ffmpegPipeStreamer struct {
 	err    error
 }
 
-func (f *ffmpegPipeStreamer) frameSize() int {
-	if f.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (f *ffmpegPipeStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := f.frameSize()
-	n := 0
-	for i := range samples {
-		_, err := io.ReadFull(f.reader, f.buf[:fs])
-		if err != nil {
-			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				f.err = err
-			}
-			break
-		}
-		if f.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(f.buf[0:4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(f.buf[4:8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(f.buf[0:2]))
-			right := int16(binary.LittleEndian.Uint16(f.buf[2:4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
-		n++
-	}
-	return n, n > 0
+	return streamFromReader(f.reader, samples, f.buf[:], f.f32, &f.err)
 }
 
 func (f *ffmpegPipeStreamer) Err() error { return f.err }
@@ -312,37 +310,10 @@ func (s *localFFmpegStreamer) bitDepth() int {
 	return 16
 }
 
-func (s *localFFmpegStreamer) frameSize() int {
-	if s.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (s *localFFmpegStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := s.frameSize()
-	n := 0
-	for i := range samples {
-		_, err := io.ReadFull(s.reader, s.buf[:fs])
-		if err != nil {
-			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				s.err = err
-			}
-			break
-		}
-		if s.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(s.buf[0:4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(s.buf[4:8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(s.buf[0:2]))
-			right := int16(binary.LittleEndian.Uint16(s.buf[2:4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
-		s.pos++
-		n++
-	}
-	return n, n > 0
+	n, ok := streamFromReader(s.reader, samples, s.buf[:], s.f32, &s.err)
+	s.pos += n
+	return n, ok
 }
 
 func (s *localFFmpegStreamer) Err() error    { return s.err }
@@ -488,37 +459,10 @@ func (s *navFFmpegStreamer) bitDepth() int {
 	return 16
 }
 
-func (s *navFFmpegStreamer) frameSize() int {
-	if s.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (s *navFFmpegStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := s.frameSize()
-	n := 0
-	for i := range samples {
-		_, err := io.ReadFull(s.reader, s.buf[:fs])
-		if err != nil {
-			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				s.err = err
-			}
-			break
-		}
-		if s.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(s.buf[0:4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(s.buf[4:8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(s.buf[0:2]))
-			right := int16(binary.LittleEndian.Uint16(s.buf[2:4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
-		s.pos++
-		n++
-	}
-	return n, n > 0
+	n, ok := streamFromReader(s.reader, samples, s.buf[:], s.f32, &s.err)
+	s.pos += n
+	return n, ok
 }
 
 func (s *navFFmpegStreamer) Err() error    { return s.err }

@@ -96,9 +96,7 @@ func (m *Model) handleFileBrowserKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
 		m.showFileBrowser = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
+		return m.quit()
 
 	case "esc", "o":
 		m.showFileBrowser = false

@@ -3,10 +3,8 @@ package player
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -28,46 +26,19 @@ type ytdlPipeStreamer struct {
 	err       error
 }
 
-func (y *ytdlPipeStreamer) frameSize() int {
-	if y.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (y *ytdlPipeStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := y.frameSize()
-	n := 0
-	for i := range samples {
-		_, err := io.ReadFull(y.reader, y.buf[:fs])
-		if err != nil {
-			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				y.err = err
+	n, ok := streamFromReader(y.reader, samples, y.buf[:], y.f32, &y.err)
+	// On EOF with no frames read, check if yt-dlp failed (e.g. invalid URL).
+	if n == 0 {
+		select {
+		case ytErr := <-y.ytdlErr:
+			if ytErr != nil {
+				y.err = ytErr
 			}
-			// On EOF, check if yt-dlp failed (e.g. invalid URL).
-			if n == 0 {
-				select {
-				case ytErr := <-y.ytdlErr:
-					if ytErr != nil {
-						y.err = ytErr
-					}
-				default:
-				}
-			}
-			break
+		default:
 		}
-		if y.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(y.buf[0:4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(y.buf[4:8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(y.buf[0:2]))
-			right := int16(binary.LittleEndian.Uint16(y.buf[2:4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
-		n++
 	}
-	return n, n > 0
+	return n, ok
 }
 
 func (y *ytdlPipeStreamer) Err() error     { return y.err }
