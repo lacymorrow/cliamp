@@ -12,10 +12,10 @@ import (
 	"cliamp/config"
 	"cliamp/external/local"
 	"cliamp/external/navidrome"
+	"cliamp/lyrics"
 	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
-	"cliamp/resolve"
 	"cliamp/theme"
 )
 
@@ -26,6 +26,7 @@ const (
 	focusEQ
 	focusSearch
 	focusProvider
+	focusNetSearch
 )
 
 type plMgrScreenType int
@@ -73,21 +74,27 @@ const (
 // and any resulting early skip is imperceptible (≤3 s from the true end).
 const streamPreloadLeadTime = 3 * time.Second
 
+// ytdlPreloadLeadTime is the lead time used for yt-dlp (YouTube/SoundCloud)
+// URLs. These need longer because spinning up the yt-dlp | ffmpeg pipe chain
+// takes 3-10 seconds, so we start preloading much earlier.
+const ytdlPreloadLeadTime = 15 * time.Second
+
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
-	player    *player.Player
-	playlist  *playlist.Playlist
-	vis       *Visualizer
-	focus     focusArea
-	eqCursor  int // selected EQ band (0-9)
-	plCursor  int // selected playlist item
-	plScroll  int // scroll offset for playlist view
-	plVisible int // max visible playlist items
-	titleOff  int // scroll offset for long track titles
-	err       error
-	quitting  bool
-	width     int
-	height    int
+	player        *player.Player
+	playlist      *playlist.Playlist
+	vis           *Visualizer
+	seekStepLarge time.Duration
+	focus         focusArea
+	eqCursor      int // selected EQ band (0-9)
+	plCursor      int // selected playlist item
+	plScroll      int // scroll offset for playlist view
+	plVisible     int // max visible playlist items
+	titleOff      int // scroll offset for long track titles
+	err           error
+	quitting      bool
+	width         int
+	height        int
 
 	provider      playlist.Provider
 	localProvider *local.Provider // direct ref for write operations (add-to-playlist)
@@ -109,6 +116,19 @@ type Model struct {
 	searchResults []int // indices into playlist tracks
 	searchCursor  int
 	prevFocus     focusArea // focus to restore on cancel
+
+	// Dynamic internet search
+	netSearching   bool
+	netSearchQuery string
+	netSearchSC    bool // true = SoundCloud (scsearch), false = YouTube (ytsearch)
+
+	// Jump to time mode state
+	jumping   bool
+	jumpInput string
+
+	// URL input mode (load playlist/stream URL at runtime)
+	urlInputting bool
+	urlInput     string
 
 	// Async feed/M3U URL resolution
 	pendingURLs []string
@@ -151,6 +171,14 @@ type Model struct {
 	// Full-screen visualizer mode (Shift+V)
 	fullVis bool
 
+	// Lyrics overlay
+	showLyrics       bool
+	lyricsLines      []lyrics.Line
+	lyricsLoading    bool
+	lyricsErr        error
+	lyricsQuery      string        // "artist\ntitle" of the last fetch, prevents redundant requests
+	lyricsScroll     int           // scroll offset for lyrics view
+
 	// Queue manager overlay
 	showQueue   bool
 	queueCursor int
@@ -167,6 +195,10 @@ type Model struct {
 
 	autoPlay bool // start playing immediately on launch
 
+	// Stream auto-reconnect state
+	reconnectAttempts int       // current retry count (0 = no retries yet)
+	reconnectAt       time.Time // when to attempt next reconnect (zero = not scheduled)
+
 	// File browser overlay
 	showFileBrowser bool
 	fbDir           string
@@ -176,24 +208,25 @@ type Model struct {
 	fbErr           string
 
 	// Navidrome explore browser overlay
-	showNavBrowser  bool
-	navClient       *navidrome.NavidromeClient // nil when Navidrome is not configured
-	navMode         navBrowseModeType
-	navScreen       navBrowseScreenType
-	navCursor       int
-	navScroll       int
-	navArtists      []navidrome.Artist
-	navAlbums       []navidrome.Album
-	navTracks       []playlist.Track
-	navSelArtist    navidrome.Artist
-	navSelAlbum     navidrome.Album
-	navSortType     string // current album sort type, persisted to config
-	navAlbumLoading bool   // true while an album page fetch is in progress
-	navAlbumDone    bool   // true once the server signals no more pages (isLast)
-	navLoading      bool   // general loading flag for artists/tracks
-	navSearching    bool   // true while the nav search bar is open
-	navSearch       string // current nav search query
-	navSearchIdx    []int  // filtered indices into the active list (nil = no filter)
+	showNavBrowser     bool
+	navClient          *navidrome.NavidromeClient // nil when Navidrome is not configured
+	navScrobbleEnabled bool                       // mirrors NavidromeConfig.ScrobbleEnabled(); set at init
+	navMode            navBrowseModeType
+	navScreen          navBrowseScreenType
+	navCursor          int
+	navScroll          int
+	navArtists         []navidrome.Artist
+	navAlbums          []navidrome.Album
+	navTracks          []playlist.Track
+	navSelArtist       navidrome.Artist
+	navSelAlbum        navidrome.Album
+	navSortType        string // current album sort type, persisted to config
+	navAlbumLoading    bool   // true while an album page fetch is in progress
+	navAlbumDone       bool   // true once the server signals no more pages (isLast)
+	navLoading         bool   // general loading flag for artists/tracks
+	navSearching       bool   // true while the nav search bar is open
+	navSearch          string // current nav search query
+	navSearchIdx       []int  // filtered indices into the active list (nil = no filter)
 }
 
 // NewModel creates a Model wired to the given player and playlist.
@@ -207,16 +240,18 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 		sortType = navidrome.SortAlphabeticalByName
 	}
 	m := Model{
-		player:        p,
-		playlist:      pl,
-		vis:           NewVisualizer(float64(p.SampleRate())),
-		plVisible:     5,
-		eqPresetIdx:   -1, // custom until a preset is selected
-		themes:        themes,
-		themeIdx:      -1, // Default (ANSI)
-		localProvider: localProv,
-		navSortType:   sortType,
-		navClient:     nav,
+		player:             p,
+		playlist:           pl,
+		vis:                NewVisualizer(float64(p.SampleRate())),
+		seekStepLarge:      30 * time.Second,
+		plVisible:          5,
+		eqPresetIdx:        -1, // custom until a preset is selected
+		themes:             themes,
+		themeIdx:           -1, // Default (ANSI)
+		localProvider:      localProv,
+		navSortType:        sortType,
+		navClient:          nav,
+		navScrobbleEnabled: navCfg.ScrobbleEnabled(),
 	}
 	if prov != nil {
 		m.provider = prov
@@ -226,6 +261,18 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 
 // SetAutoPlay makes the player start playback immediately on Init.
 func (m *Model) SetAutoPlay(v bool) { m.autoPlay = v }
+
+// SetSeekStepLarge configures the Shift+Left/Right seek jump amount.
+func (m *Model) SetSeekStepLarge(d time.Duration) {
+	switch {
+	case d <= 0:
+		m.seekStepLarge = 30 * time.Second
+	case d <= 5*time.Second:
+		m.seekStepLarge = 6 * time.Second
+	default:
+		m.seekStepLarge = d
+	}
+}
 
 // SetTheme finds a theme by name and applies it. Returns true if found.
 func (m *Model) SetTheme(name string) bool {
@@ -271,7 +318,8 @@ func (m Model) ThemeName() string {
 func (m *Model) isOverlayActive() bool {
 	return m.showKeymap || m.showThemes || m.showFileBrowser ||
 		m.showNavBrowser || m.showPlManager || m.showQueue ||
-		m.showInfo || m.searching
+		m.showInfo || m.searching || m.netSearching || m.jumping ||
+		m.urlInputting
 }
 
 // openThemePicker re-loads themes from disk (picking up new user files)
@@ -400,150 +448,6 @@ func (m *Model) applyEQPreset() {
 	bands := eqPresets[m.eqPresetIdx].Bands
 	for i, gain := range bands {
 		m.player.SetEQBand(i, gain)
-	}
-}
-
-func fetchPlaylistsCmd(prov playlist.Provider) tea.Cmd {
-	return func() tea.Msg {
-		pls, err := prov.Playlists()
-		if err != nil {
-			return err
-		}
-		return pls
-	}
-}
-
-type tracksLoadedMsg []playlist.Track
-
-// feedsLoadedMsg carries tracks resolved from remote feed/M3U URLs.
-type feedsLoadedMsg []playlist.Track
-
-func resolveRemoteCmd(urls []string) tea.Cmd {
-	return func() tea.Msg {
-		tracks, err := resolve.Remote(urls)
-		if err != nil {
-			return err
-		}
-		return feedsLoadedMsg(tracks)
-	}
-}
-
-// streamPlayedMsg signals that async stream Play() completed.
-type streamPlayedMsg struct{ err error }
-
-// streamPreloadedMsg signals that async stream Preload() completed.
-type streamPreloadedMsg struct{}
-
-// ytdlResolvedMsg carries a lazily resolved yt-dlp track (direct audio URL).
-type ytdlResolvedMsg struct {
-	index int
-	track playlist.Track
-	err   error
-}
-
-func resolveYTDLCmd(index int, pageURL string) tea.Cmd {
-	return func() tea.Msg {
-		track, err := resolve.ResolveYTDLTrack(pageURL)
-		return ytdlResolvedMsg{index: index, track: track, err: err}
-	}
-}
-
-func playStreamCmd(p *player.Player, path string, knownDuration time.Duration) tea.Cmd {
-	return func() tea.Msg {
-		return streamPlayedMsg{err: p.Play(path, knownDuration)}
-	}
-}
-
-func preloadStreamCmd(p *player.Player, path string, knownDuration time.Duration) tea.Cmd {
-	return func() tea.Msg {
-		p.Preload(path, knownDuration) // errors silently ignored
-		return streamPreloadedMsg{}
-	}
-}
-
-func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
-	return func() tea.Msg {
-		tracks, err := prov.Tracks(playlistID)
-		if err != nil {
-			return err
-		}
-		return tracksLoadedMsg(tracks)
-	}
-}
-
-// — Navidrome browser message types —
-
-// navArtistsLoadedMsg carries the full artist list from getArtists.
-type navArtistsLoadedMsg []navidrome.Artist
-
-// navAlbumsLoadedMsg carries one page of albums and the fetch offset.
-type navAlbumsLoadedMsg struct {
-	albums []navidrome.Album
-	offset int  // the offset this page was requested at
-	isLast bool // true when the server returned fewer than the requested page size
-}
-
-// navTracksLoadedMsg carries the track list for the selected album/artist.
-type navTracksLoadedMsg []playlist.Track
-
-func fetchNavArtistsCmd(c *navidrome.NavidromeClient) tea.Cmd {
-	return func() tea.Msg {
-		artists, err := c.Artists()
-		if err != nil {
-			return err
-		}
-		return navArtistsLoadedMsg(artists)
-	}
-}
-
-func fetchNavArtistAlbumsCmd(c *navidrome.NavidromeClient, artistID string) tea.Cmd {
-	return func() tea.Msg {
-		albums, err := c.ArtistAlbums(artistID)
-		if err != nil {
-			return err
-		}
-		// Artist album lists are complete in one call — treat as last page.
-		return navAlbumsLoadedMsg{albums: albums, offset: 0, isLast: true}
-	}
-}
-
-const navAlbumPageSize = 100
-
-func fetchNavAlbumListCmd(c *navidrome.NavidromeClient, sortType string, offset int) tea.Cmd {
-	return func() tea.Msg {
-		albums, err := c.AlbumList(sortType, offset, navAlbumPageSize)
-		if err != nil {
-			return err
-		}
-		return navAlbumsLoadedMsg{
-			albums: albums,
-			offset: offset,
-			isLast: len(albums) < navAlbumPageSize,
-		}
-	}
-}
-
-func fetchNavAlbumTracksCmd(c *navidrome.NavidromeClient, albumID string) tea.Cmd {
-	return func() tea.Msg {
-		tracks, err := c.AlbumTracks(albumID)
-		if err != nil {
-			return err
-		}
-		return navTracksLoadedMsg(tracks)
-	}
-}
-
-func fetchNavArtistTracksCmd(c *navidrome.NavidromeClient, albums []navidrome.Album) tea.Cmd {
-	return func() tea.Msg {
-		var all []playlist.Track
-		for _, album := range albums {
-			tracks, err := c.AlbumTracks(album.ID)
-			if err != nil {
-				return err
-			}
-			all = append(all, tracks...)
-		}
-		return navTracksLoadedMsg(all)
 	}
 }
 
@@ -714,13 +618,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.saveMsg = ""
 			}
 		}
-		// Surface stream errors (e.g., connection drops) before checking track done
+		// Surface stream errors (e.g., connection drops) and auto-reconnect streams.
 		if err := m.player.StreamErr(); err != nil {
-			m.err = err
+			track, idx := m.playlist.Current()
+			isStream := idx >= 0 && (track.Stream || playlist.IsYTDL(track.Path))
+			if isStream && m.reconnectAttempts < 5 {
+				// Schedule reconnect with exponential backoff: 1s, 2s, 4s, 8s, 16s
+				if m.reconnectAt.IsZero() {
+					delay := time.Second << m.reconnectAttempts
+					m.reconnectAt = time.Now().Add(delay)
+					m.reconnectAttempts++
+					m.err = fmt.Errorf("Reconnecting in %s...", delay)
+				}
+			} else {
+				m.err = err
+				m.reconnectAt = time.Time{}
+			}
 		}
+		var lyricCmd tea.Cmd
 		// Poll ICY stream title for live radio display.
-		if title := m.player.StreamTitle(); title != "" {
+		if title := m.player.StreamTitle(); title != "" && title != m.streamTitle {
 			m.streamTitle = title
+			// Auto-fetch lyrics when the stream song changes and lyrics overlay is open.
+			if m.showLyrics && !m.lyricsLoading {
+				if artist, song, ok := strings.Cut(title, " - "); ok {
+					q := artist + "\n" + song
+					if q != m.lyricsQuery {
+						m.lyricsQuery = q
+						m.lyricsLoading = true
+						m.lyricsLines = nil
+						m.lyricsErr = nil
+						m.lyricsScroll = 0
+						lyricCmd = fetchLyricsCmd(artist, song)
+					}
+				}
+			}
 		}
 		// Update network throughput every ~1 second (20 ticks at 50ms).
 		m.lastSpeedTick++
@@ -741,9 +673,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastSpeedBytes = downloaded
 			m.lastSpeedTick = 0
 		}
+		// Fire scheduled reconnect when the timer expires.
+		if !m.reconnectAt.IsZero() && time.Now().After(m.reconnectAt) {
+			m.reconnectAt = time.Time{}
+			m.player.Stop()
+			if track, idx := m.playlist.Current(); idx >= 0 {
+				return m, tea.Batch(m.playTrack(track), tickCmd())
+			}
+		}
 		var cmds []tea.Cmd
+		if lyricCmd != nil {
+			cmds = append(cmds, lyricCmd)
+		}
 		// Check gapless transition (audio already playing next track)
 		if m.player.GaplessAdvanced() {
+			// Capture the track that just finished before advancing the playlist.
+			// For gapless, the track played fully (100% ≥ 50%), so elapsed = duration.
+			finishedTrack, _ := m.playlist.Current()
+			fullDur := time.Duration(finishedTrack.DurationSecs) * time.Second
+			m.maybeScrobble(finishedTrack, fullDur, fullDur)
+
 			m.playlist.Next()
 			m.plCursor = m.playlist.Index()
 			m.adjustScroll()
@@ -756,13 +705,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// not a user-visible problem. Clear any pending error so the red
 			// message doesn't flash at every track transition.
 			m.err = nil
+			// Fire now-playing notification for the track the audio engine just
+			// started. playTrack() is not called on this path, so we must notify
+			// here explicitly.
+			if newTrack, idx := m.playlist.Current(); idx >= 0 {
+				m.nowPlaying(newTrack)
+			}
 			cmds = append(cmds, m.preloadNext())
 			m.notifyMPRIS()
 		}
 		// Check if gapless drained (end of playlist, no preloaded next).
 		// Skip if already buffering a yt-dlp download to avoid advancing
 		// the playlist on every tick while waiting for the resolve.
-		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() && !m.buffering {
+		if m.player.IsPlaying() && !m.player.IsPaused() && m.player.Drained() && !m.buffering && m.reconnectAt.IsZero() {
+			// Track drained to end — always ≥ 50%.
+			finishedTrack, _ := m.playlist.Current()
+			drainDur := time.Duration(finishedTrack.DurationSecs) * time.Second
+			m.maybeScrobble(finishedTrack, drainDur, drainDur)
+
+			// Stop the player before dispatching the async nextTrack command.
+			// This clears the gapless streamer so the finished track cannot
+			// replay while waiting for a yt-dlp pipe chain to spin up.
+			m.player.Stop()
 			cmds = append(cmds, m.nextTrack())
 			m.notifyMPRIS()
 		}
@@ -852,11 +816,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case feedsLoadedMsg:
 		m.feedLoading = false
-		m.playlist.Add(msg...)
-		if m.playlist.Len() > 0 && !m.player.IsPlaying() {
-			cmd := m.playCurrentTrack()
-			m.notifyMPRIS()
-			return m, cmd
+		if len(msg) > 0 {
+			m.playlist.Add(msg...)
+			m.saveMsg = fmt.Sprintf("Loaded %d track(s)", len(msg))
+			m.saveMsgTTL = 60
+			if m.playlist.Len() > 0 && !m.player.IsPlaying() {
+				cmd := m.playCurrentTrack()
+				m.notifyMPRIS()
+				return m, cmd
+			}
+		} else {
+			m.saveMsg = "No tracks found at URL."
+			m.saveMsgTTL = 60
+		}
+		return m, nil
+
+	case netSearchLoadedMsg:
+		if len(msg) > 0 {
+			startIdx := m.playlist.Len()
+			m.playlist.Add(msg...)
+			for i := startIdx; i < m.playlist.Len(); i++ {
+				m.playlist.Queue(i)
+			}
+			m.saveMsg = fmt.Sprintf("Added to Queue: %s", msg[0].DisplayName())
+			m.saveMsgTTL = 60
+			if !m.player.IsPlaying() {
+
+				cmd := m.playCurrentTrack()
+				m.notifyMPRIS()
+				return m, cmd
+			}
+		} else {
+			m.saveMsg = "No tracks found online."
+			m.saveMsgTTL = 60
+		}
+		return m, nil
+
+	case lyricsLoadedMsg:
+		m.lyricsLoading = false
+		m.lyricsErr = msg.err
+		m.lyricsScroll = 0
+		if msg.err == nil {
+			m.lyricsLines = msg.lines
 		}
 		return m, nil
 
@@ -894,12 +895,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.err = nil
+			m.reconnectAttempts = 0
+			m.reconnectAt = time.Time{}
 		}
 		m.notifyMPRIS()
 		return m, m.preloadNext()
 
 	case streamPreloadedMsg:
 		m.preloading = false
+		return m, nil
+
+	case ytdlSavedMsg:
+		if msg.err != nil {
+			m.saveMsg = fmt.Sprintf("Download failed: %s", msg.err)
+		} else {
+			m.saveMsg = fmt.Sprintf("Saved to %s", msg.path)
+		}
+		m.saveMsgTTL = 80
 		return m, nil
 
 	case ytdlResolvedMsg:
@@ -932,11 +944,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case mpris.NextMsg:
+		m.scrobbleCurrent()
 		cmd := m.nextTrack()
 		m.notifyMPRIS()
 		return m, cmd
 
 	case mpris.PrevMsg:
+		m.scrobbleCurrent()
 		cmd := m.prevTrack()
 		m.notifyMPRIS()
 		return m, cmd
@@ -1026,26 +1040,48 @@ func (m *Model) playCurrentTrack() tea.Cmd {
 }
 
 // playTrack plays a track, using async HTTP for streams and sync I/O for local files.
-// yt-dlp URLs are lazily resolved to direct audio streams before playback.
+// yt-dlp URLs are streamed via a piped yt-dlp | ffmpeg chain for instant playback.
 func (m *Model) playTrack(track playlist.Track) tea.Cmd {
+	m.reconnectAttempts = 0
+	m.reconnectAt = time.Time{}
 	m.streamTitle = ""
-	// Lazy-resolve yt-dlp URLs (SoundCloud, YouTube, etc.) to direct audio streams.
+	m.lyricsLines = nil
+	m.lyricsErr = nil
+	m.lyricsQuery = ""
+	m.lyricsScroll = 0
+	var fetchCmd tea.Cmd
+	if m.showLyrics && track.Artist != "" && track.Title != "" {
+		m.lyricsLoading = true
+		m.lyricsQuery = track.Artist + "\n" + track.Title
+		fetchCmd = fetchLyricsCmd(track.Artist, track.Title)
+	}
+
+	// Stream yt-dlp URLs (SoundCloud, YouTube, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
 		m.buffering = true
 		m.err = nil
-		_, idx := m.playlist.Current()
-		return resolveYTDLCmd(idx, track.Path)
+		dur := time.Duration(track.DurationSecs) * time.Second
+		if fetchCmd != nil {
+			return tea.Batch(playYTDLStreamCmd(m.player, track.Path, dur), fetchCmd)
+		}
+		return playYTDLStreamCmd(m.player, track.Path, dur)
 	}
+	// Fire now-playing notification for Navidrome tracks.
+	m.nowPlaying(track)
 	dur := time.Duration(track.DurationSecs) * time.Second
 	if track.Stream {
 		m.buffering = true
 		m.err = nil
-		return playStreamCmd(m.player, track.Path, dur)
+		return tea.Batch(playStreamCmd(m.player, track.Path, dur), fetchCmd)
 	}
 	if err := m.player.Play(track.Path, dur); err != nil {
 		m.err = err
 	} else {
 		m.err = nil
+	}
+
+	if fetchCmd != nil {
+		return tea.Batch(m.preloadNext(), fetchCmd)
 	}
 	return m.preloadNext()
 }
@@ -1066,9 +1102,18 @@ func (m *Model) preloadNext() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	// Can't preload yt-dlp tracks — they need lazy resolution first.
+	// Preload yt-dlp tracks with the same lead-time deferral as HTTP streams.
 	if playlist.IsYTDL(next.Path) {
-		return nil
+		dur := m.player.Duration()
+		if dur > 0 {
+			remaining := dur - m.player.Position()
+			if remaining > ytdlPreloadLeadTime {
+				return nil
+			}
+		}
+		nextDur := time.Duration(next.DurationSecs) * time.Second
+		m.preloading = true
+		return preloadYTDLStreamCmd(m.player, next.Path, nextDur)
 	}
 	if next.Stream {
 		// For streams, only arm gapless if we're within the lead-time window.
@@ -1204,13 +1249,62 @@ func (m *Model) togglePlayPause() tea.Cmd {
 	}
 	if m.player.IsPaused() {
 		track, idx := m.playlist.Current()
-		if idx >= 0 && track.Stream {
+		if idx >= 0 && track.IsLive() {
 			m.player.Stop()
 			return m.playTrack(track)
 		}
 	}
 	m.player.TogglePause()
 	return nil
+}
+
+// lyricsArtistTitle resolves the best artist and title for a lyrics lookup.
+// For streams with ICY metadata ("Artist - Song"), it parses the stream title.
+// For regular tracks, it uses the track's metadata fields.
+func (m *Model) lyricsArtistTitle() (artist, title string) {
+	track, idx := m.playlist.Current()
+	if idx < 0 {
+		return "", ""
+	}
+	// For streams, prefer the live ICY stream title which updates per-song.
+	if m.streamTitle != "" && track.Stream {
+		if a, t, ok := strings.Cut(m.streamTitle, " - "); ok {
+			return strings.TrimSpace(a), strings.TrimSpace(t)
+		}
+	}
+	return track.Artist, track.Title
+}
+
+// lyricsSyncable reports whether synced lyrics can track the current playback
+// position. This is true for local files and Navidrome streams (which have
+// accurate position tracking), but false for live radio (ICY — position is
+// from stream start, not song start) and yt-dlp pipe streams (position is 0).
+func (m *Model) lyricsSyncable() bool {
+	track, idx := m.playlist.Current()
+	if idx < 0 {
+		return false
+	}
+	// yt-dlp pipe streams report position 0.
+	if playlist.IsYTDL(track.Path) {
+		return false
+	}
+	// ICY radio streams: position counts from stream connect, not song start.
+	// Navidrome streams have NavidromeID set — those track position correctly.
+	if track.Stream && track.NavidromeID == "" {
+		return false
+	}
+	return true
+}
+
+// lyricsHaveTimestamps reports whether the loaded lyrics have meaningful
+// timestamps (i.e., not all lines at 0).
+func (m *Model) lyricsHaveTimestamps() bool {
+	for _, l := range m.lyricsLines {
+		if l.Start > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // updateSearch filters the playlist by the current search query.
@@ -1226,4 +1320,41 @@ func (m *Model) updateSearch() {
 			m.searchResults = append(m.searchResults, i)
 		}
 	}
+}
+
+// maybeScrobble fires a submission scrobble for the given track if all
+// conditions are met:
+//   - navClient is configured
+//   - scrobbling is enabled in config
+//   - the track has a NavidromeID (i.e. it came from Navidrome)
+//   - elapsed is at least 50% of the track's known duration
+//
+// The call is dispatched in a goroutine so it never blocks the UI.
+func (m *Model) maybeScrobble(track playlist.Track, elapsed, duration time.Duration) {
+	if m.navClient == nil || !m.navScrobbleEnabled {
+		return
+	}
+	if track.NavidromeID == "" {
+		return
+	}
+	if duration <= 0 {
+		// Unknown duration: use DurationSecs metadata as fallback.
+		duration = time.Duration(track.DurationSecs) * time.Second
+	}
+	if duration <= 0 {
+		return // still unknown — skip
+	}
+	if elapsed < duration/2 {
+		return // less than 50% played
+	}
+	id := track.NavidromeID
+	go m.navClient.Scrobble(id, true)
+}
+
+// nowPlaying fires a now-playing notification for the given track if configured.
+func (m *Model) nowPlaying(track playlist.Track) {
+	if m.navClient == nil || !m.navScrobbleEnabled || track.NavidromeID == "" {
+		return
+	}
+	go m.navClient.Scrobble(track.NavidromeID, false)
 }

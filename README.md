@@ -6,7 +6,7 @@ Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](
 
 Listen to our radio channel:
 ```bash
-cliamp http://cliamp.stream/public/iamdothash/playlist.pls
+cliamp https://radio.cliamp.stream/lofi/stream.pls
 ```
 
 
@@ -130,7 +130,35 @@ Play from YouTube, SoundCloud, and Bandcamp URLs if [yt-dlp](https://github.com/
 
 Playlists and albums are supported. Press `S` to save a downloaded track to `~/Music/cliamp/`.
 
+Search and play directly from the command line:
+
+```sh
+cliamp search "never gonna give you up"       # search YouTube
+cliamp search-sc "lofi beats"                  # search SoundCloud
+```
+
+You can also search interactively while playing by pressing `f` (YouTube) or `F` (SoundCloud).
+
 **Use at your own risk.** Downloading or streaming copyrighted content may violate the terms of service of these platforms. You are responsible for how you use this feature.
+
+## Lyrics
+
+Press `y` to show lyrics for the current track. Lyrics are fetched from LRCLIB and NetEase Cloud Music.
+
+- **Synced lyrics** — for local files and Navidrome tracks, lyrics auto-scroll and highlight the active line in time with playback.
+- **Scroll mode** — for streams and plain lyrics without timestamps, use `j`/`k` or arrow keys to scroll manually.
+- **Streams** — lyrics auto-update when the ICY metadata changes (e.g., internet radio station transitions).
+- **YouTube/SoundCloud** — titles like "Artist - Song (Official Video)" are parsed to build better search queries.
+
+## Load URL at Runtime
+
+Press `u` while playing to load a new stream or playlist URL without restarting. Supports the same URL types as CLI arguments: direct audio URLs, M3U/PLS playlists, RSS podcast feeds, and yt-dlp compatible links.
+
+## Create Your Own Radio Station
+
+Run your own internet radio with [cliamp-server](https://github.com/bjarneo/cliamp-server) — point it at a directory of audio files and it starts broadcasting:
+
+Supports multiple stations, live metadata, on-the-fly transcoding. See the [cliamp-server README](https://github.com/bjarneo/cliamp-server) for the full setup guide.
 
 ## Navidrome
 
@@ -204,6 +232,9 @@ shuffle = false
 # Start with mono output (L+R downmix)
 mono = false
 
+# Shift+Left/Right seek jump in seconds
+seek_large_step_sec = 30
+
 # EQ preset: "Flat", "Rock", "Pop", "Jazz", "Classical",
 #             "Bass Boost", "Treble Boost", "Vocal", "Electronic", "Acoustic"
 # Leave empty or "Custom" to use manual eq values below
@@ -249,6 +280,7 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `>` `.` | Next track |
 | `<` `,` | Previous track |
 | `Left` `Right` | Seek -/+5s |
+| `Shift+Left` `Shift+Right` | Seek -/+30s (configurable) |
 | `+` `-` | Volume up/down |
 | `m` | Toggle mono |
 | `Tab` | Toggle focus (Playlist / EQ) |
@@ -261,6 +293,11 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `V` | Full-screen visualizer |
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
+| `f` | Find on YouTube (queue play next) |
+| `F` | Find on SoundCloud (queue play next) |
+| `u` | Load URL (stream/playlist) |
+| `y` | Show lyrics |
+| `J` | Jump to time |
 | `x` | Expand/collapse playlist |
 | `o` | Open file browser |
 | `N` | Navidrome browser |

@@ -1,0 +1,213 @@
+package ui
+
+import (
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"cliamp/external/navidrome"
+	"cliamp/lyrics"
+	"cliamp/player"
+	"cliamp/playlist"
+	"cliamp/resolve"
+)
+
+// — Message types used by tea.Cmd constructors —
+
+type tracksLoadedMsg []playlist.Track
+
+// feedsLoadedMsg carries tracks resolved from remote feed/M3U URLs.
+type feedsLoadedMsg []playlist.Track
+
+// lyricsLoadedMsg carries parsed LRC output.
+type lyricsLoadedMsg struct {
+	lines []lyrics.Line
+	err   error
+}
+
+// netSearchLoadedMsg carries tracks dynamically searched from the internet.
+type netSearchLoadedMsg []playlist.Track
+
+// streamPlayedMsg signals that async stream Play() completed.
+type streamPlayedMsg struct{ err error }
+
+// streamPreloadedMsg signals that async stream Preload() completed.
+type streamPreloadedMsg struct{}
+
+// ytdlResolvedMsg carries a lazily resolved yt-dlp track (direct audio URL).
+type ytdlResolvedMsg struct {
+	index int
+	track playlist.Track
+	err   error
+}
+
+// ytdlSavedMsg signals that an async yt-dlp download-to-disk completed.
+type ytdlSavedMsg struct {
+	path string
+	err  error
+}
+
+// — Navidrome browser message types —
+
+// navArtistsLoadedMsg carries the full artist list from getArtists.
+type navArtistsLoadedMsg []navidrome.Artist
+
+// navAlbumsLoadedMsg carries one page of albums and the fetch offset.
+type navAlbumsLoadedMsg struct {
+	albums []navidrome.Album
+	offset int  // the offset this page was requested at
+	isLast bool // true when the server returned fewer than the requested page size
+}
+
+// navTracksLoadedMsg carries the track list for the selected album/artist.
+type navTracksLoadedMsg []playlist.Track
+
+// — Command constructors —
+
+func fetchPlaylistsCmd(prov playlist.Provider) tea.Cmd {
+	return func() tea.Msg {
+		pls, err := prov.Playlists()
+		if err != nil {
+			return err
+		}
+		return pls
+	}
+}
+
+func resolveRemoteCmd(urls []string) tea.Cmd {
+	return func() tea.Msg {
+		tracks, err := resolve.Remote(urls)
+		if err != nil {
+			return err
+		}
+		return feedsLoadedMsg(tracks)
+	}
+}
+
+func fetchLyricsCmd(artist, title string) tea.Cmd {
+	return func() tea.Msg {
+		lines, err := lyrics.Fetch(artist, title)
+		return lyricsLoadedMsg{lines: lines, err: err}
+	}
+}
+
+func fetchNetSearchCmd(query string) tea.Cmd {
+	return func() tea.Msg {
+		tracks, err := resolve.Remote([]string{query})
+		if err != nil {
+			return err
+		}
+		return netSearchLoadedMsg(tracks)
+	}
+}
+
+func resolveYTDLCmd(index int, pageURL string) tea.Cmd {
+	return func() tea.Msg {
+		track, err := resolve.ResolveYTDLTrack(pageURL)
+		return ytdlResolvedMsg{index: index, track: track, err: err}
+	}
+}
+
+func playStreamCmd(p *player.Player, path string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		return streamPlayedMsg{err: p.Play(path, knownDuration)}
+	}
+}
+
+func preloadStreamCmd(p *player.Player, path string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		p.Preload(path, knownDuration) // errors silently ignored
+		return streamPreloadedMsg{}
+	}
+}
+
+func playYTDLStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		return streamPlayedMsg{err: p.PlayYTDL(pageURL, knownDuration)}
+	}
+}
+
+func preloadYTDLStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		p.PreloadYTDL(pageURL, knownDuration) // errors silently ignored
+		return streamPreloadedMsg{}
+	}
+}
+
+func saveYTDLCmd(pageURL string, saveDir string) tea.Cmd {
+	return func() tea.Msg {
+		path, err := resolve.DownloadYTDL(pageURL, saveDir)
+		return ytdlSavedMsg{path: path, err: err}
+	}
+}
+
+func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
+	return func() tea.Msg {
+		tracks, err := prov.Tracks(playlistID)
+		if err != nil {
+			return err
+		}
+		return tracksLoadedMsg(tracks)
+	}
+}
+
+const navAlbumPageSize = 100
+
+func fetchNavArtistsCmd(c *navidrome.NavidromeClient) tea.Cmd {
+	return func() tea.Msg {
+		artists, err := c.Artists()
+		if err != nil {
+			return err
+		}
+		return navArtistsLoadedMsg(artists)
+	}
+}
+
+func fetchNavArtistAlbumsCmd(c *navidrome.NavidromeClient, artistID string) tea.Cmd {
+	return func() tea.Msg {
+		albums, err := c.ArtistAlbums(artistID)
+		if err != nil {
+			return err
+		}
+		// Artist album lists are complete in one call — treat as last page.
+		return navAlbumsLoadedMsg{albums: albums, offset: 0, isLast: true}
+	}
+}
+
+func fetchNavAlbumListCmd(c *navidrome.NavidromeClient, sortType string, offset int) tea.Cmd {
+	return func() tea.Msg {
+		albums, err := c.AlbumList(sortType, offset, navAlbumPageSize)
+		if err != nil {
+			return err
+		}
+		return navAlbumsLoadedMsg{
+			albums: albums,
+			offset: offset,
+			isLast: len(albums) < navAlbumPageSize,
+		}
+	}
+}
+
+func fetchNavAlbumTracksCmd(c *navidrome.NavidromeClient, albumID string) tea.Cmd {
+	return func() tea.Msg {
+		tracks, err := c.AlbumTracks(albumID)
+		if err != nil {
+			return err
+		}
+		return navTracksLoadedMsg(tracks)
+	}
+}
+
+func fetchNavArtistTracksCmd(c *navidrome.NavidromeClient, albums []navidrome.Album) tea.Cmd {
+	return func() tea.Msg {
+		var all []playlist.Track
+		for _, album := range albums {
+			tracks, err := c.AlbumTracks(album.ID)
+			if err != nil {
+				return err
+			}
+			all = append(all, tracks...)
+		}
+		return navTracksLoadedMsg(all)
+	}
+}

@@ -20,6 +20,47 @@ const pcmFrameSize16 = 4
 // pcmFrameSize32 is the byte size of one stereo f32le sample frame (2 channels × 4 bytes).
 const pcmFrameSize32 = 8
 
+// pcmFrameSize returns the byte size of one stereo sample frame for the given format.
+func pcmFrameSize(f32 bool) int {
+	if f32 {
+		return pcmFrameSize32
+	}
+	return pcmFrameSize16
+}
+
+// decodePCMFrame decodes one stereo sample frame from buf into a [2]float64.
+func decodePCMFrame(buf []byte, f32 bool) [2]float64 {
+	if f32 {
+		return [2]float64{
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[0:4]))),
+			float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[4:8]))),
+		}
+	}
+	left := int16(binary.LittleEndian.Uint16(buf[0:2]))
+	right := int16(binary.LittleEndian.Uint16(buf[2:4]))
+	return [2]float64{float64(left) / 32768, float64(right) / 32768}
+}
+
+// streamFromReader is the shared Stream() implementation for all pipe-based
+// PCM streamers. It reads frames from a buffered reader, decodes them, and
+// records the first non-EOF error.
+func streamFromReader(reader *bufio.Reader, samples [][2]float64, buf []byte, f32 bool, errp *error) (int, bool) {
+	fs := pcmFrameSize(f32)
+	n := 0
+	for i := range samples {
+		_, err := io.ReadFull(reader, buf[:fs])
+		if err != nil {
+			if err != io.EOF && err != io.ErrUnexpectedEOF {
+				*errp = err
+			}
+			break
+		}
+		samples[i] = decodePCMFrame(buf[:fs], f32)
+		n++
+	}
+	return n, n > 0
+}
+
 // decodeFFmpeg uses ffmpeg to decode any audio file into raw PCM,
 // returning a seekable beep.StreamSeekCloser.
 // bitDepth selects the output format: 16 (s16le) or 32 (f32le, lossless).
@@ -61,15 +102,8 @@ type pcmStreamer struct {
 	f32  bool // true = f32le (32-bit float), false = s16le (16-bit int)
 }
 
-func (p *pcmStreamer) frameSize() int {
-	if p.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := p.frameSize()
+	fs := pcmFrameSize(p.f32)
 	totalFrames := len(p.data) / fs
 
 	if p.pos >= totalFrames {
@@ -82,15 +116,7 @@ func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
 			break
 		}
 		off := p.pos * fs
-		if p.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(p.data[off : off+4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(p.data[off+4 : off+8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(p.data[off : off+2]))
-			right := int16(binary.LittleEndian.Uint16(p.data[off+2 : off+4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
+		samples[i] = decodePCMFrame(p.data[off:off+fs], p.f32)
 		p.pos++
 		n++
 	}
@@ -100,7 +126,7 @@ func (p *pcmStreamer) Stream(samples [][2]float64) (int, bool) {
 func (p *pcmStreamer) Err() error { return nil }
 
 func (p *pcmStreamer) Len() int {
-	return len(p.data) / p.frameSize()
+	return len(p.data) / pcmFrameSize(p.f32)
 }
 
 func (p *pcmStreamer) Position() int {
@@ -167,36 +193,8 @@ type ffmpegPipeStreamer struct {
 	err    error
 }
 
-func (f *ffmpegPipeStreamer) frameSize() int {
-	if f.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (f *ffmpegPipeStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := f.frameSize()
-	n := 0
-	for i := range samples {
-		_, err := io.ReadFull(f.reader, f.buf[:fs])
-		if err != nil {
-			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				f.err = err
-			}
-			break
-		}
-		if f.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(f.buf[0:4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(f.buf[4:8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(f.buf[0:2]))
-			right := int16(binary.LittleEndian.Uint16(f.buf[2:4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
-		n++
-	}
-	return n, n > 0
+	return streamFromReader(f.reader, samples, f.buf[:], f.f32, &f.err)
 }
 
 func (f *ffmpegPipeStreamer) Err() error { return f.err }
@@ -312,37 +310,10 @@ func (s *localFFmpegStreamer) bitDepth() int {
 	return 16
 }
 
-func (s *localFFmpegStreamer) frameSize() int {
-	if s.f32 {
-		return pcmFrameSize32
-	}
-	return pcmFrameSize16
-}
-
 func (s *localFFmpegStreamer) Stream(samples [][2]float64) (int, bool) {
-	fs := s.frameSize()
-	n := 0
-	for i := range samples {
-		_, err := io.ReadFull(s.reader, s.buf[:fs])
-		if err != nil {
-			if err != io.EOF && err != io.ErrUnexpectedEOF {
-				s.err = err
-			}
-			break
-		}
-		if s.f32 {
-			samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(s.buf[0:4])))
-			samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(s.buf[4:8])))
-		} else {
-			left := int16(binary.LittleEndian.Uint16(s.buf[0:2]))
-			right := int16(binary.LittleEndian.Uint16(s.buf[2:4]))
-			samples[i][0] = float64(left) / 32768
-			samples[i][1] = float64(right) / 32768
-		}
-		s.pos++
-		n++
-	}
-	return n, n > 0
+	n, ok := streamFromReader(s.reader, samples, s.buf[:], s.f32, &s.err)
+	s.pos += n
+	return n, ok
 }
 
 func (s *localFFmpegStreamer) Err() error    { return s.err }
@@ -361,6 +332,173 @@ func (s *localFFmpegStreamer) Seek(pos int) error {
 }
 
 func (s *localFFmpegStreamer) Close() error {
+	s.stop()
+	return nil
+}
+
+// decodeFFmpegReader decodes audio from an io.Reader by piping it to ffmpeg
+// stdin. Blocks until the reader reaches EOF (i.e. until the full navBuffer
+// has been downloaded). Returns a fully seekable pcmStreamer.
+//
+// Used for Navidrome tracks in formats that require FFmpeg (opus, aac, etc.)
+// where the audio data is already being downloaded into a navBuffer.
+func decodeFFmpegReader(r io.Reader, sr beep.SampleRate, bitDepth int) (beep.StreamSeekCloser, beep.Format, error) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg is required to decode this format — install it with your package manager")
+	}
+
+	pcmFmt, codec, precision := ffmpegPCMArgs(bitDepth)
+	cmd := exec.Command("ffmpeg",
+		"-i", "pipe:0",
+		"-f", pcmFmt,
+		"-acodec", codec,
+		"-ar", strconv.Itoa(int(sr)),
+		"-ac", "2",
+		"-loglevel", "error",
+		"pipe:1",
+	)
+	cmd.Stdin = r
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg decode from reader: %w", err)
+	}
+
+	format := beep.Format{
+		SampleRate:  sr,
+		NumChannels: 2,
+		Precision:   precision,
+	}
+	return &pcmStreamer{data: out, f32: bitDepth == 32}, format, nil
+}
+
+// decodeNavFFmpeg starts ffmpeg with the navBuffer as stdin, returning a
+// navFFmpegStreamer that begins producing PCM immediately as bytes arrive.
+// Seeking kills ffmpeg, repositions the navBuffer, and restarts ffmpeg from
+// the new position — no HTTP reconnect required.
+func decodeNavFFmpeg(nb *navBuffer, sr beep.SampleRate, bitDepth int, totalFrames int) (*navFFmpegStreamer, beep.Format, error) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg is required to decode this format — install it with your package manager")
+	}
+	_, _, precision := ffmpegPCMArgs(bitDepth)
+	s := &navFFmpegStreamer{nb: nb, sr: sr, total: totalFrames, f32: bitDepth == 32}
+	if err := s.start(0); err != nil {
+		return nil, beep.Format{}, err
+	}
+	format := beep.Format{
+		SampleRate:  sr,
+		NumChannels: 2,
+		Precision:   precision,
+	}
+	return s, format, nil
+}
+
+// navFFmpegStreamer streams PCM from a running ffmpeg subprocess whose stdin
+// is a *navBuffer. Playback starts immediately — ffmpeg reads from the buffer
+// as bytes arrive from the background download. Seeking kills the current
+// ffmpeg process, repositions the navBuffer to the target byte offset, and
+// restarts ffmpeg so it reads from that position onwards.
+type navFFmpegStreamer struct {
+	nb     *navBuffer
+	sr     beep.SampleRate
+	cmd    *exec.Cmd
+	reader *bufio.Reader
+	pipe   io.ReadCloser
+	buf    [pcmFrameSize32]byte
+	f32    bool
+	err    error
+	pos    int // current sample frame
+	total  int // total frames (from track metadata; 0 if unknown)
+}
+
+// start launches ffmpeg reading from nb at nb's current position.
+func (s *navFFmpegStreamer) start(seekPos int) error {
+	pcmFmt, codec, _ := ffmpegPCMArgs(s.bitDepth())
+	cmd := exec.Command("ffmpeg",
+		"-i", "pipe:0",
+		"-f", pcmFmt,
+		"-acodec", codec,
+		"-ar", strconv.Itoa(int(s.sr)),
+		"-ac", "2",
+		"-loglevel", "error",
+		"pipe:1",
+	)
+	cmd.Stdin = s.nb
+
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("ffmpeg nav pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("ffmpeg nav start: %w", err)
+	}
+
+	s.cmd = cmd
+	s.pipe = pipe
+	s.reader = bufio.NewReaderSize(pipe, 64*1024)
+	s.pos = seekPos
+	s.err = nil
+	return nil
+}
+
+// stop kills the running ffmpeg process and cleans up.
+func (s *navFFmpegStreamer) stop() {
+	if s.pipe != nil {
+		s.pipe.Close()
+	}
+	if s.cmd != nil && s.cmd.Process != nil {
+		s.cmd.Process.Kill()
+		s.cmd.Wait()
+	}
+}
+
+func (s *navFFmpegStreamer) bitDepth() int {
+	if s.f32 {
+		return 32
+	}
+	return 16
+}
+
+func (s *navFFmpegStreamer) Stream(samples [][2]float64) (int, bool) {
+	n, ok := streamFromReader(s.reader, samples, s.buf[:], s.f32, &s.err)
+	s.pos += n
+	return n, ok
+}
+
+func (s *navFFmpegStreamer) Err() error    { return s.err }
+func (s *navFFmpegStreamer) Len() int      { return s.total }
+func (s *navFFmpegStreamer) Position() int { return s.pos }
+
+// Seek repositions playback to the given sample frame. Kills the current
+// ffmpeg process, seeks the navBuffer to the proportional byte offset, and
+// restarts ffmpeg reading from that position.
+func (s *navFFmpegStreamer) Seek(targetFrame int) error {
+	if targetFrame < 0 {
+		targetFrame = 0
+	}
+	if s.total > 0 && targetFrame > s.total {
+		targetFrame = s.total
+	}
+
+	// Compute the byte offset in the navBuffer proportional to the seek position.
+	byteOffset := int64(0)
+	if s.total > 0 && s.nb.total > 0 {
+		ratio := float64(targetFrame) / float64(s.total)
+		byteOffset = int64(ratio * float64(s.nb.total))
+	}
+
+	s.stop()
+
+	// Reposition the navBuffer to the target byte offset.
+	// navBuffer.Seek blocks if the target hasn't downloaded yet.
+	if _, err := s.nb.Seek(byteOffset, io.SeekStart); err != nil {
+		return fmt.Errorf("nav ffmpeg seek: %w", err)
+	}
+
+	return s.start(targetFrame)
+}
+
+func (s *navFFmpegStreamer) Close() error {
 	s.stop()
 	return nil
 }

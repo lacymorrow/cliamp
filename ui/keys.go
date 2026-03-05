@@ -13,9 +13,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"cliamp/config"
-	"cliamp/external/navidrome"
 	"cliamp/playlist"
 )
+
+// quit shuts down the player and signals the TUI to exit.
+func (m *Model) quit() tea.Cmd {
+	m.player.Close()
+	m.quitting = true
+	return tea.Quit
+}
+
+// scrobbleCurrent fires a scrobble for the currently playing track if applicable.
+func (m *Model) scrobbleCurrent() {
+	if track, _ := m.playlist.Current(); track.NavidromeID != "" {
+		m.maybeScrobble(track, m.player.Position(), m.player.Duration())
+	}
+}
 
 // handleKey processes a single key press and returns an optional command.
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
@@ -52,26 +65,58 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	if m.showInfo {
 		switch msg.String() {
 		case "ctrl+c":
-			m.showInfo = false
-			m.player.Close()
-			m.quitting = true
-			return tea.Quit
+			return m.quit()
 		case "esc", "i":
 			m.showInfo = false
 		}
 		return nil
 	}
 
+	// Lyrics overlay
+	if m.showLyrics {
+		switch msg.String() {
+		case "ctrl+c":
+			return m.quit()
+		case "esc", "y":
+			m.showLyrics = false
+		case "up", "k":
+			if !(m.lyricsSyncable() && m.lyricsHaveTimestamps()) && m.lyricsScroll > 0 {
+				m.lyricsScroll--
+			}
+		case "down", "j":
+			if !(m.lyricsSyncable() && m.lyricsHaveTimestamps()) {
+				maxScroll := len(m.lyricsLines) - 1
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.lyricsScroll < maxScroll {
+					m.lyricsScroll++
+				}
+			}
+		}
+		return nil
+	}
+
+	if m.jumping {
+		return m.handleJumpKey(msg)
+	}
+
+	if m.urlInputting {
+		return m.handleURLInputKey(msg)
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
+	}
+
+	if m.netSearching {
+		return m.handleNetSearchKey(msg)
 	}
 
 	if m.focus == focusProvider {
 		switch msg.String() {
 		case "q", "ctrl+c":
-			m.player.Close()
-			m.quitting = true
-			return tea.Quit
+			return m.quit()
 		case "up", "k":
 			if m.provCursor > 0 {
 				m.provCursor--
@@ -97,15 +142,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.navClient != nil {
 				m.openNavBrowser()
 			}
+		case "J":
+			m.openJumpMode()
 		}
 		return nil
 	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
+		return m.quit()
 	case "esc", "backspace", "b":
 		if m.fullVis {
 			m.fullVis = false
@@ -124,11 +169,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.notifyMPRIS()
 
 	case ">", ".":
+		m.scrobbleCurrent()
 		cmd := m.nextTrack()
 		m.notifyMPRIS()
 		return cmd
 
 	case "<", ",":
+		m.scrobbleCurrent()
 		cmd := m.prevTrack()
 		m.notifyMPRIS()
 		return cmd
@@ -145,6 +192,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
+	case "shift+left":
+		m.player.Seek(-m.seekStepLarge)
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+
 	case "right":
 		if m.focus == focusEQ {
 			if m.eqCursor < numBands-1 {
@@ -155,6 +208,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.mpris != nil {
 				m.mpris.EmitSeeked(m.player.Position().Microseconds())
 			}
+		}
+
+	case "shift+right":
+		m.player.Seek(m.seekStepLarge)
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
 		}
 
 	case "up", "k":
@@ -183,6 +242,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "enter":
 		if m.focus == focusPlaylist {
+			m.scrobbleCurrent()
 			m.playlist.SetIndex(m.plCursor)
 			cmd := m.playCurrentTrack()
 			m.notifyMPRIS()
@@ -253,7 +313,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "S":
-		m.saveTrack()
+		return m.saveTrack()
 
 	case "m":
 		m.player.ToggleMono()
@@ -266,6 +326,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.prevFocus = m.focus
 		m.focus = focusSearch
 
+	case "f", "F":
+		m.netSearching = true
+		m.netSearchQuery = ""
+		m.netSearchSC = msg.String() == "F"
+		m.prevFocus = m.focus
+		m.focus = focusNetSearch
+
+	case "J":
+		m.openJumpMode()
 	case "p":
 		if m.localProvider != nil {
 			m.openPlaylistManager()
@@ -277,8 +346,28 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "i":
 		m.showInfo = true
 
+	case "y":
+		m.showLyrics = !m.showLyrics
+		if m.showLyrics && !m.lyricsLoading {
+			artist, title := m.lyricsArtistTitle()
+			if artist != "" && title != "" {
+				q := artist + "\n" + title
+				if q != m.lyricsQuery {
+					m.lyricsQuery = q
+					m.lyricsLoading = true
+					m.lyricsLines = nil
+					m.lyricsErr = nil
+					return fetchLyricsCmd(artist, title)
+				}
+			}
+		}
+
 	case "o":
 		m.openFileBrowser()
+
+	case "u":
+		m.urlInputting = true
+		m.urlInput = ""
 
 	case "N":
 		if m.navClient != nil {
@@ -322,34 +411,42 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 // saveTrack copies the current track to ~/Music/cliamp/ with a clean filename.
-// Only works for downloaded yt-dlp tracks (temp files).
-func (m *Model) saveTrack() {
+// For yt-dlp tracks (piped streams), triggers an async download via yt-dlp.
+// For local temp files, copies synchronously.
+func (m *Model) saveTrack() tea.Cmd {
 	track, idx := m.playlist.Current()
 	if idx < 0 {
 		m.saveMsg = "Nothing to save"
 		m.saveMsgTTL = 40 // ~2s at 50ms ticks
-		return
-	}
-
-	// Only save local temp files (yt-dlp downloads), not streams or user's own files.
-	if track.Stream || !strings.HasPrefix(track.Path, os.TempDir()) {
-		m.saveMsg = "Only downloaded tracks can be saved"
-		m.saveMsgTTL = 40
-		return
+		return nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		m.saveMsg = fmt.Sprintf("Save failed: %s", err)
 		m.saveMsgTTL = 40
-		return
+		return nil
 	}
 
 	saveDir := filepath.Join(home, "Music", "cliamp")
 	if err := os.MkdirAll(saveDir, 0o755); err != nil {
 		m.saveMsg = fmt.Sprintf("Save failed: %s", err)
 		m.saveMsgTTL = 40
-		return
+		return nil
+	}
+
+	// yt-dlp tracks: async download directly to ~/Music/cliamp/.
+	if playlist.IsYTDL(track.Path) {
+		m.saveMsg = "Downloading..."
+		m.saveMsgTTL = 600 // cleared by ytdlSavedMsg
+		return saveYTDLCmd(track.Path, saveDir)
+	}
+
+	// Only save local temp files (yt-dlp downloads), not streams or user's own files.
+	if track.Stream || !strings.HasPrefix(track.Path, os.TempDir()) {
+		m.saveMsg = "Only downloaded tracks can be saved"
+		m.saveMsgTTL = 40
+		return nil
 	}
 
 	ext := filepath.Ext(track.Path)
@@ -370,11 +467,12 @@ func (m *Model) saveTrack() {
 	if err := copyFile(track.Path, dest); err != nil {
 		m.saveMsg = fmt.Sprintf("Save failed: %s", err)
 		m.saveMsgTTL = 40
-		return
+		return nil
 	}
 
 	m.saveMsg = fmt.Sprintf("Saved to ~/Music/cliamp/%s", name+ext)
 	m.saveMsgTTL = 60 // ~3s
+	return nil
 }
 
 func copyFile(src, dst string) error {
@@ -398,6 +496,63 @@ func copyFile(src, dst string) error {
 	if closeErr != nil {
 		os.Remove(dst)
 		return closeErr
+	}
+	return nil
+}
+
+func (m *Model) resetJumpInput() {
+	m.jumpInput = ""
+}
+
+func (m *Model) openJumpMode() {
+	m.jumping = true
+	m.resetJumpInput()
+}
+
+func (m *Model) closeJumpMode() {
+	m.jumping = false
+	m.resetJumpInput()
+}
+
+// handleJumpKey processes key presses while in jump-time mode.
+func (m *Model) handleJumpKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "ctrl+c":
+		m.closeJumpMode()
+		return m.quit()
+	}
+
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.closeJumpMode()
+		return nil
+	case tea.KeyEnter:
+		target, err := parseJumpTarget(m.jumpInput)
+		if err != nil {
+			m.resetJumpInput()
+			return nil
+		}
+		if dur := m.player.Duration(); dur > 0 && target > dur {
+			m.resetJumpInput()
+			return nil
+		}
+		m.player.Seek(target - m.player.Position())
+		m.notifyMPRIS()
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+		m.closeJumpMode()
+		return nil
+	case tea.KeyBackspace:
+		if len(m.jumpInput) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.jumpInput)
+			m.jumpInput = m.jumpInput[:len(m.jumpInput)-size]
+		}
+		return nil
+	}
+
+	if msg.Type == tea.KeyRunes {
+		m.jumpInput += string(msg.Runes)
 	}
 	return nil
 }
@@ -470,6 +625,79 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// handleNetSearchKey processes key presses while in net search mode.
+func (m *Model) handleNetSearchKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "ctrl+k":
+		m.showKeymap = true
+		return nil
+	}
+
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.netSearching = false
+		m.focus = m.prevFocus
+
+	case tea.KeyEnter:
+		var cmd tea.Cmd
+		m.netSearching = false
+		m.focus = m.prevFocus
+		if strings.TrimSpace(m.netSearchQuery) != "" {
+			prefix := "ytsearch1:"
+			if m.netSearchSC {
+				prefix = "scsearch1:"
+			}
+			m.saveMsg = "Queuing search..."
+			m.saveMsgTTL = 40
+			cmd = fetchNetSearchCmd(prefix + strings.TrimSpace(m.netSearchQuery))
+		}
+		return cmd
+
+	case tea.KeyBackspace:
+		if len(m.netSearchQuery) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.netSearchQuery)
+			m.netSearchQuery = m.netSearchQuery[:len(m.netSearchQuery)-size]
+		}
+
+	case tea.KeySpace:
+		m.netSearchQuery += " "
+
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.netSearchQuery += string(msg.Runes)
+		}
+	}
+
+	return nil
+}
+
+// handleURLInputKey processes key presses while in URL input mode.
+func (m *Model) handleURLInputKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.urlInputting = false
+	case tea.KeyEnter:
+		m.urlInputting = false
+		input := strings.TrimSpace(m.urlInput)
+		if input != "" {
+			m.feedLoading = true
+			m.saveMsg = "Loading URL..."
+			m.saveMsgTTL = 120
+			return resolveRemoteCmd([]string{input})
+		}
+	case tea.KeyBackspace:
+		if len(m.urlInput) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.urlInput)
+			m.urlInput = m.urlInput[:len(m.urlInput)-size]
+		}
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.urlInput += string(msg.Runes)
+		}
+	}
+	return nil
+}
+
 // handlePlaylistManagerKey dispatches keys to the active manager screen.
 func (m *Model) handlePlaylistManagerKey(msg tea.KeyMsg) tea.Cmd {
 	switch m.plMgrScreen {
@@ -511,9 +739,7 @@ func (m *Model) handlePlMgrListKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
 		m.showPlManager = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
+		return m.quit()
 	case "up", "k":
 		if m.plMgrCursor > 0 {
 			m.plMgrCursor--
@@ -551,9 +777,7 @@ func (m *Model) handlePlMgrTracksKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
 		m.showPlManager = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
+		return m.quit()
 	case "up", "k":
 		if m.plMgrCursor > 0 {
 			m.plMgrCursor--
@@ -673,9 +897,7 @@ func (m *Model) handleThemeKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
 		m.themePickerCancel()
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
+		return m.quit()
 	case "up", "k":
 		if m.themeCursor > 0 {
 			m.themeCursor--
@@ -701,9 +923,7 @@ func (m *Model) handleQueueKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
 		m.showQueue = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
+		return m.quit()
 	case "ctrl+k":
 		m.showKeymap = true
 	case "up", "k":
@@ -740,6 +960,7 @@ var keymapEntries = []keymapEntry{
 	{"> .", "Next track"},
 	{"< ,", "Previous track"},
 	{"← →", "Seek ±5s"},
+	{"Shift+← →", "Seek ±large step"},
 	{"+ -", "Volume up/down"},
 	{"z", "Toggle shuffle"},
 	{"r", "Cycle repeat"},
@@ -755,11 +976,16 @@ var keymapEntries = []keymapEntry{
 	{"A", "Queue manager"},
 	{"o", "Open file browser"},
 	{"N", "Navidrome browser"},
+	{"J", "Jump to time"},
 	{"p", "Playlist manager"},
 	{"i", "Track info / metadata"},
-	{"S", "Save track to ~/Music"},
+	{"S", "Save/download track to ~/Music"},
 	{"x", "Expand/collapse playlist"},
 	{"/", "Search playlist"},
+	{"f", "Find on YouTube (queue play next)"},
+	{"F", "Find on SoundCloud (queue play next)"},
+	{"u", "Load URL (stream/playlist)"},
+	{"y", "Show lyrics"},
 	{"Tab", "Toggle focus"},
 	{"Esc", "Back to provider"},
 	{"Ctrl+K", "This keymap"},
@@ -799,9 +1025,7 @@ func (m *Model) handleKeymapKey(msg tea.KeyMsg) tea.Cmd {
 		switch msg.String() {
 		case "ctrl+c":
 			m.showKeymap = false
-			m.player.Close()
-			m.quitting = true
-			return tea.Quit
+			return m.quit()
 		default:
 			if msg.Type == tea.KeyRunes {
 				m.keymapSearch += string(msg.Runes)
@@ -828,457 +1052,3 @@ func (m *Model) updateKeymapFilter() {
 	}
 }
 
-// handleNavBrowserKey processes key presses while the Navidrome browser is open.
-func (m *Model) handleNavBrowserKey(msg tea.KeyMsg) tea.Cmd {
-	navClient := m.navClient
-	if navClient == nil {
-		m.showNavBrowser = false
-		return nil
-	}
-
-	// Search bar: active on any list/track screen (not the mode menu).
-	if m.navMode != navBrowseModeMenu {
-		if m.navSearching {
-			return m.handleNavSearchKey(msg)
-		}
-		if msg.String() == "/" {
-			// Toggle: if already filtered, clear; otherwise open.
-			if m.navSearch != "" {
-				m.navClearSearch()
-			} else {
-				m.navSearching = true
-			}
-			return nil
-		}
-	}
-
-	switch m.navMode {
-	case navBrowseModeMenu:
-		return m.handleNavMenuKey(msg, navClient)
-	case navBrowseModeByAlbum:
-		return m.handleNavByAlbumKey(msg, navClient)
-	case navBrowseModeByArtist:
-		return m.handleNavByArtistKey(msg, navClient)
-	case navBrowseModeByArtistAlbum:
-		return m.handleNavByArtistAlbumKey(msg, navClient)
-	}
-	return nil
-}
-
-func (m *Model) handleNavMenuKey(msg tea.KeyMsg, navClient *navidrome.NavidromeClient) tea.Cmd {
-	const menuItems = 3
-	switch msg.String() {
-	case "ctrl+c":
-		m.showNavBrowser = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
-	case "up", "k":
-		if m.navCursor > 0 {
-			m.navCursor--
-		}
-	case "down", "j":
-		if m.navCursor < menuItems-1 {
-			m.navCursor++
-		}
-	case "enter", "l", "right":
-		switch m.navCursor {
-		case 0: // By Album
-			m.navMode = navBrowseModeByAlbum
-			m.navScreen = navBrowseScreenList
-			m.navCursor = 0
-			m.navScroll = 0
-			m.navAlbums = nil
-			m.navAlbumLoading = true
-			m.navAlbumDone = false
-			m.navLoading = false
-			return fetchNavAlbumListCmd(navClient, m.navSortType, 0)
-		case 1: // By Artist
-			m.navMode = navBrowseModeByArtist
-			m.navScreen = navBrowseScreenList
-			m.navCursor = 0
-			m.navScroll = 0
-			m.navArtists = nil
-			m.navLoading = true
-			return fetchNavArtistsCmd(navClient)
-		case 2: // By Artist / Album
-			m.navMode = navBrowseModeByArtistAlbum
-			m.navScreen = navBrowseScreenList
-			m.navCursor = 0
-			m.navScroll = 0
-			m.navArtists = nil
-			m.navLoading = true
-			return fetchNavArtistsCmd(navClient)
-		}
-	case "esc", "N", "backspace", "b":
-		m.showNavBrowser = false
-	}
-	return nil
-}
-
-func (m *Model) handleNavByAlbumKey(msg tea.KeyMsg, navClient *navidrome.NavidromeClient) tea.Cmd {
-	switch m.navScreen {
-	case navBrowseScreenList:
-		return m.handleNavAlbumListKey(msg, navClient, false)
-	case navBrowseScreenTracks:
-		return m.handleNavTrackListKey(msg)
-	}
-	return nil
-}
-
-func (m *Model) handleNavByArtistKey(msg tea.KeyMsg, navClient *navidrome.NavidromeClient) tea.Cmd {
-	switch m.navScreen {
-	case navBrowseScreenList:
-		return m.handleNavArtistListKey(msg, navClient)
-	case navBrowseScreenTracks:
-		return m.handleNavTrackListKey(msg)
-	}
-	return nil
-}
-
-func (m *Model) handleNavByArtistAlbumKey(msg tea.KeyMsg, navClient *navidrome.NavidromeClient) tea.Cmd {
-	switch m.navScreen {
-	case navBrowseScreenList:
-		return m.handleNavArtistListKey(msg, navClient)
-	case navBrowseScreenAlbums:
-		return m.handleNavAlbumListKey(msg, navClient, true)
-	case navBrowseScreenTracks:
-		return m.handleNavTrackListKey(msg)
-	}
-	return nil
-}
-
-// handleNavArtistListKey handles the artist list screen (used by both By Artist and By Artist/Album modes).
-func (m *Model) handleNavArtistListKey(msg tea.KeyMsg, navClient *navidrome.NavidromeClient) tea.Cmd {
-	// Determine effective list length (filtered or full).
-	listLen := len(m.navArtists)
-	if len(m.navSearchIdx) > 0 {
-		listLen = len(m.navSearchIdx)
-	}
-
-	switch msg.String() {
-	case "ctrl+c":
-		m.showNavBrowser = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
-	case "up", "k":
-		if m.navCursor > 0 {
-			m.navCursor--
-			m.navMaybeAdjustScroll()
-		}
-	case "down", "j":
-		if m.navCursor < listLen-1 {
-			m.navCursor++
-			m.navMaybeAdjustScroll()
-		}
-	case "enter", "l", "right":
-		if m.navLoading || len(m.navArtists) == 0 {
-			return nil
-		}
-		// Resolve raw index (filtered or direct).
-		rawIdx := m.navCursor
-		if len(m.navSearchIdx) > 0 && m.navCursor < len(m.navSearchIdx) {
-			rawIdx = m.navSearchIdx[m.navCursor]
-		}
-		artist := m.navArtists[rawIdx]
-		m.navSelArtist = artist
-		m.navLoading = true
-		if m.navMode == navBrowseModeByArtistAlbum {
-			// Drill into album list for this artist.
-			m.navAlbums = nil
-			m.navAlbumLoading = false
-			m.navScreen = navBrowseScreenAlbums
-			m.navCursor = 0
-			m.navScroll = 0
-			m.navClearSearch()
-			return fetchNavArtistAlbumsCmd(navClient, artist.ID)
-		}
-		// By Artist: fetch all albums first, then all tracks via a two-step command.
-		// We use a dedicated command that fetches albums then tracks in one shot.
-		return m.fetchNavArtistAllTracksCmd(navClient, artist.ID)
-	case "esc", "h", "left", "backspace":
-		// Back to menu.
-		m.navClearSearch()
-		m.navMode = navBrowseModeMenu
-		m.navScreen = navBrowseScreenList
-	}
-	return nil
-}
-
-// handleNavAlbumListKey handles the album list screen.
-// artistAlbums=true means this is the artist's album sub-screen (ArtistAlbum mode), not the global list.
-func (m *Model) handleNavAlbumListKey(msg tea.KeyMsg, navClient *navidrome.NavidromeClient, artistAlbums bool) tea.Cmd {
-	// Determine effective list length (filtered or full).
-	listLen := len(m.navAlbums)
-	if len(m.navSearchIdx) > 0 {
-		listLen = len(m.navSearchIdx)
-	}
-
-	switch msg.String() {
-	case "ctrl+c":
-		m.showNavBrowser = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
-	case "up", "k":
-		if m.navCursor > 0 {
-			m.navCursor--
-			m.navMaybeAdjustScroll()
-		}
-	case "down", "j":
-		if m.navCursor < listLen-1 {
-			m.navCursor++
-			m.navMaybeAdjustScroll()
-			// Lazy-load next page: only trigger on the raw (unfiltered) list.
-			if !artistAlbums && len(m.navSearchIdx) == 0 && !m.navAlbumLoading && !m.navAlbumDone && m.navCursor >= len(m.navAlbums)-10 {
-				m.navAlbumLoading = true
-				return fetchNavAlbumListCmd(navClient, m.navSortType, len(m.navAlbums))
-			}
-		}
-	case "enter", "l", "right":
-		if (m.navLoading && !artistAlbums) || len(m.navAlbums) == 0 {
-			return nil
-		}
-		// Resolve raw index (filtered or direct).
-		rawIdx := m.navCursor
-		if len(m.navSearchIdx) > 0 && m.navCursor < len(m.navSearchIdx) {
-			rawIdx = m.navSearchIdx[m.navCursor]
-		}
-		album := m.navAlbums[rawIdx]
-		m.navSelAlbum = album
-		m.navLoading = true
-		m.navClearSearch()
-		return fetchNavAlbumTracksCmd(navClient, album.ID)
-	case "s":
-		if artistAlbums {
-			return nil // Sort only applies to global album list.
-		}
-		// Cycle to the next sort type.
-		m.navSortType = navNextSort(m.navSortType)
-		m.navAlbums = nil
-		m.navCursor = 0
-		m.navScroll = 0
-		m.navAlbumLoading = true
-		m.navAlbumDone = false
-		m.navClearSearch()
-		// Persist the new sort preference.
-		if err := config.SaveNavidromeSort(m.navSortType); err != nil {
-			m.saveMsg = fmt.Sprintf("Sort save failed: %s", err)
-			m.saveMsgTTL = 60
-		}
-		return fetchNavAlbumListCmd(navClient, m.navSortType, 0)
-	case "esc", "h", "left", "backspace":
-		m.navClearSearch()
-		if artistAlbums {
-			// Back to artist list.
-			m.navScreen = navBrowseScreenList
-		} else {
-			// Back to menu.
-			m.navMode = navBrowseModeMenu
-			m.navScreen = navBrowseScreenList
-		}
-	}
-	return nil
-}
-
-// handleNavTrackListKey handles the final track-list screen (used by all modes).
-func (m *Model) handleNavTrackListKey(msg tea.KeyMsg) tea.Cmd {
-	// Determine effective list length (filtered or full).
-	listLen := len(m.navTracks)
-	if len(m.navSearchIdx) > 0 {
-		listLen = len(m.navSearchIdx)
-	}
-
-	switch msg.String() {
-	case "ctrl+c":
-		m.showNavBrowser = false
-		m.player.Close()
-		m.quitting = true
-		return tea.Quit
-	case "up", "k":
-		if m.navCursor > 0 {
-			m.navCursor--
-			m.navMaybeAdjustScroll()
-		}
-	case "down", "j":
-		if m.navCursor < listLen-1 {
-			m.navCursor++
-			m.navMaybeAdjustScroll()
-		}
-	case "enter":
-		// Play the selected track immediately, then enqueue everything from that
-		// position to the end of the list (capped at 500 total tracks added).
-		if len(m.navTracks) == 0 {
-			return nil
-		}
-		rawIdx := m.navCursor
-		if len(m.navSearchIdx) > 0 && m.navCursor < len(m.navSearchIdx) {
-			rawIdx = m.navSearchIdx[m.navCursor]
-		}
-		if rawIdx < len(m.navTracks) {
-			const maxAdd = 500
-			m.player.Stop()
-			m.player.ClearPreload()
-
-			// Build the slice of tracks to add: from rawIdx to end (or 500 max).
-			var toAdd []playlist.Track
-			if len(m.navSearchIdx) > 0 {
-				// Filtered: use positions from navCursor onward in the filtered list.
-				for j := m.navCursor; j < len(m.navSearchIdx) && len(toAdd) < maxAdd; j++ {
-					toAdd = append(toAdd, m.navTracks[m.navSearchIdx[j]])
-				}
-			} else {
-				for i := rawIdx; i < len(m.navTracks) && len(toAdd) < maxAdd; i++ {
-					toAdd = append(toAdd, m.navTracks[i])
-				}
-			}
-
-			m.playlist.Add(toAdd...)
-			newIdx := m.playlist.Len() - len(toAdd)
-			m.playlist.SetIndex(newIdx)
-			m.plCursor = newIdx
-			m.adjustScroll()
-			if len(toAdd) > 1 {
-				m.saveMsg = fmt.Sprintf("Playing: %s (+%d queued)", toAdd[0].DisplayName(), len(toAdd)-1)
-			} else {
-				m.saveMsg = fmt.Sprintf("Playing: %s", toAdd[0].DisplayName())
-			}
-			m.saveMsgTTL = 80
-			cmd := m.playCurrentTrack()
-			m.notifyMPRIS()
-			return cmd
-		}
-	case "R":
-		// Replace playlist with all displayed tracks and close browser.
-		tracks := m.navTracks
-		if len(m.navSearchIdx) > 0 {
-			// Replace with only the filtered subset.
-			filtered := make([]playlist.Track, 0, len(m.navSearchIdx))
-			for _, i := range m.navSearchIdx {
-				filtered = append(filtered, m.navTracks[i])
-			}
-			tracks = filtered
-		}
-		if len(tracks) > 0 {
-			m.player.Stop()
-			m.player.ClearPreload()
-			m.playlist.Replace(tracks)
-			m.plCursor = 0
-			m.plScroll = 0
-			m.playlist.SetIndex(0)
-			m.focus = focusPlaylist
-			m.showNavBrowser = false
-			cmd := m.playCurrentTrack()
-			m.notifyMPRIS()
-			return cmd
-		}
-	case "a":
-		// Append all displayed tracks to the playlist (keep current playback).
-		tracks := m.navTracks
-		if len(m.navSearchIdx) > 0 {
-			filtered := make([]playlist.Track, 0, len(m.navSearchIdx))
-			for _, i := range m.navSearchIdx {
-				filtered = append(filtered, m.navTracks[i])
-			}
-			tracks = filtered
-		}
-		if len(tracks) > 0 {
-			wasEmpty := m.playlist.Len() == 0
-			m.playlist.Add(tracks...)
-			m.saveMsg = fmt.Sprintf("Added %d tracks", len(tracks))
-			m.saveMsgTTL = 80
-			if wasEmpty || !m.player.IsPlaying() {
-				m.playlist.SetIndex(0)
-				cmd := m.playCurrentTrack()
-				m.notifyMPRIS()
-				return cmd
-			}
-		}
-	case "q":
-		// Add selected track to playlist and queue it to play next.
-		if len(m.navTracks) == 0 {
-			return nil
-		}
-		rawIdx := m.navCursor
-		if len(m.navSearchIdx) > 0 && m.navCursor < len(m.navSearchIdx) {
-			rawIdx = m.navSearchIdx[m.navCursor]
-		}
-		if rawIdx < len(m.navTracks) {
-			t := m.navTracks[rawIdx]
-			m.playlist.Add(t)
-			newIdx := m.playlist.Len() - 1
-			m.playlist.Queue(newIdx)
-			m.saveMsg = fmt.Sprintf("Queued: %s", t.DisplayName())
-			m.saveMsgTTL = 80
-		}
-	case "esc", "h", "left", "backspace":
-		// Navigate back one level depending on the mode and how we got here.
-		m.navClearSearch()
-		m.navCursor = 0
-		m.navScroll = 0
-		switch m.navMode {
-		case navBrowseModeByAlbum:
-			m.navScreen = navBrowseScreenList
-		case navBrowseModeByArtist:
-			m.navScreen = navBrowseScreenList
-		case navBrowseModeByArtistAlbum:
-			m.navScreen = navBrowseScreenAlbums
-		}
-	}
-	return nil
-}
-
-// handleNavSearchKey handles key input while the nav search bar is open.
-func (m *Model) handleNavSearchKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.Type {
-	case tea.KeyEscape:
-		// Close the search bar; keep the filter active so the user can act on results.
-		m.navSearching = false
-		return nil
-	case tea.KeyEnter:
-		m.navSearching = false
-		return nil
-	case tea.KeyBackspace, tea.KeyDelete:
-		if len(m.navSearch) > 0 {
-			_, size := utf8.DecodeLastRuneInString(m.navSearch)
-			m.navSearch = m.navSearch[:len(m.navSearch)-size]
-			m.navCursor = 0
-			m.navScroll = 0
-			m.navUpdateSearch()
-		}
-		return nil
-	}
-	// Printable character — append to query.
-	if msg.Type == tea.KeyRunes {
-		m.navSearch += string(msg.Runes)
-		m.navCursor = 0
-		m.navScroll = 0
-		m.navUpdateSearch()
-	}
-	return nil
-}
-
-// navNextSort returns the sort type that follows s in SortTypes, wrapping around.
-func navNextSort(s string) string {
-	for i, t := range navidrome.SortTypes {
-		if t == s {
-			return navidrome.SortTypes[(i+1)%len(navidrome.SortTypes)]
-		}
-	}
-	return navidrome.SortTypes[0]
-}
-
-// navMaybeAdjustScroll keeps navCursor visible within the rendered list window.
-func (m *Model) navMaybeAdjustScroll() {
-	visible := m.plVisible
-	if visible < 5 {
-		visible = 5
-	}
-	if m.navCursor < m.navScroll {
-		m.navScroll = m.navCursor
-	}
-	if m.navCursor >= m.navScroll+visible {
-		m.navScroll = m.navCursor - visible + 1
-	}
-}

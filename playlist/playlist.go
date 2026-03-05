@@ -38,13 +38,16 @@ type Track struct {
 	Genre        string
 	Year         int
 	TrackNumber  int
-	Stream       bool // true for HTTP/HTTPS URLs
-	DurationSecs int  // known duration in seconds (0 = unknown)
+	Stream       bool   // true for HTTP/HTTPS URLs
+	DurationSecs int    // known duration in seconds (0 = unknown)
+	NavidromeID  string // Subsonic song ID; empty for non-Navidrome tracks
 }
 
-// IsURL reports whether path is an HTTP or HTTPS URL.
+// IsURL reports whether path is an HTTP or HTTPS URL, or a yt-dlp search protocol string.
 func IsURL(path string) bool {
-	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") ||
+		strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") ||
+		strings.HasPrefix(path, "scsearch:") || strings.HasPrefix(path, "scsearch1:")
 }
 
 // IsM3U reports whether the path points to an M3U playlist file (URL or local).
@@ -84,10 +87,14 @@ func IsLocalPLS(path string) bool {
 }
 
 // IsYTDL reports whether the URL points to a site supported by yt-dlp
-// (SoundCloud, YouTube, Bandcamp, etc.).
+// (SoundCloud, YouTube, Bandcamp, ytsearch: protocol, etc.).
 func IsYTDL(path string) bool {
 	if !IsURL(path) {
 		return false
+	}
+	if strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") ||
+		strings.HasPrefix(path, "scsearch:") || strings.HasPrefix(path, "scsearch1:") {
+		return true
 	}
 	u, err := url.Parse(path)
 	if err != nil {
@@ -156,6 +163,11 @@ func trackFromURL(rawURL string) Track {
 	// Fallback: use hostname
 	t.Title = u.Hostname()
 	return t
+}
+
+// IsLive reports whether the track is a live stream (e.g. Icecast radio)
+func (t Track) IsLive() bool {
+	return t.Stream && t.DurationSecs == 0
 }
 
 // DisplayName returns a formatted display string for the track.
