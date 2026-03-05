@@ -61,6 +61,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	// Lyrics overlay
+	if m.showLyrics {
+		switch msg.String() {
+		case "ctrl+c":
+			m.showLyrics = false
+			m.player.Close()
+			m.quitting = true
+			return tea.Quit
+		case "esc", "y":
+			m.showLyrics = false
+		}
+		return nil
+	}
+
 	if m.jumping {
 		return m.handleJumpKey(msg)
 	}
@@ -300,7 +314,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "J":
 		m.openJumpMode()
-
 	case "p":
 		if m.localProvider != nil {
 			m.openPlaylistManager()
@@ -311,6 +324,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "i":
 		m.showInfo = true
+
+	case "y":
+		m.showLyrics = !m.showLyrics
+		if m.showLyrics && len(m.lyricsLines) == 0 && m.lyricsErr == nil {
+			track, idx := m.playlist.Current()
+			if idx >= 0 && track.Artist != "" && track.Title != "" {
+				m.lyricsLoading = true
+				return fetchLyricsCmd(track.Artist, track.Title)
+			}
+		}
 
 	case "o":
 		m.openFileBrowser()

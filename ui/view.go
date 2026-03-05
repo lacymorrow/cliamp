@@ -59,6 +59,10 @@ func (m Model) View() string {
 		return m.renderNetSearchOverlay()
 	}
 
+	if m.showLyrics {
+		return m.renderLyricsOverlay()
+	}
+
 	if m.jumping {
 		return m.renderJumpOverlay()
 	}
@@ -483,7 +487,7 @@ func (m Model) renderHelp() string {
 		parts += helpKey("←→", "Seek ")
 	}
 
-	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("f", "Find ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
+	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("f", "Find ") + helpKey("y", "Lyrics ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
 
 	return parts
 }

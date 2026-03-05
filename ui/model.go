@@ -11,6 +11,7 @@ import (
 	"cliamp/config"
 	"cliamp/external/local"
 	"cliamp/external/navidrome"
+	"cliamp/lyrics"
 	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
@@ -72,6 +73,11 @@ const (
 // most servers won't enforce a concurrency limit for such a brief overlap,
 // and any resulting early skip is imperceptible (≤3 s from the true end).
 const streamPreloadLeadTime = 3 * time.Second
+
+// ytdlPreloadLeadTime is the lead time used for yt-dlp (YouTube/SoundCloud)
+// URLs. These need longer because spinning up the yt-dlp | ffmpeg pipe chain
+// takes 3-10 seconds, so we start preloading much earlier.
+const ytdlPreloadLeadTime = 15 * time.Second
 
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
@@ -160,6 +166,12 @@ type Model struct {
 
 	// Full-screen visualizer mode (Shift+V)
 	fullVis bool
+
+	// Lyrics overlay
+	showLyrics    bool
+	lyricsLines   []lyrics.Line
+	lyricsLoading bool
+	lyricsErr     error
 
 	// Queue manager overlay
 	showQueue   bool
@@ -450,6 +462,19 @@ func resolveRemoteCmd(urls []string) tea.Cmd {
 			return err
 		}
 		return feedsLoadedMsg(tracks)
+	}
+}
+
+// lyricsLoadedMsg carries parsed LRC output.
+type lyricsLoadedMsg struct {
+	lines []lyrics.Line
+	err   error
+}
+
+func fetchLyricsCmd(artist, title string) tea.Cmd {
+	return func() tea.Msg {
+		lines, err := lyrics.Fetch(artist, title)
+		return lyricsLoadedMsg{lines: lines, err: err}
 	}
 }
 
@@ -817,6 +842,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			drainDur := time.Duration(finishedTrack.DurationSecs) * time.Second
 			m.maybeScrobble(finishedTrack, drainDur, drainDur)
 
+			// Stop the player before dispatching the async nextTrack command.
+			// This clears the gapless streamer so the finished track cannot
+			// replay while waiting for a yt-dlp pipe chain to spin up.
+			m.player.Stop()
 			cmds = append(cmds, m.nextTrack())
 			m.notifyMPRIS()
 		}
@@ -929,6 +958,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.saveMsg = "No tracks found online."
 			m.saveMsgTTL = 60
+		}
+		return m, nil
+
+	case lyricsLoadedMsg:
+		m.lyricsLoading = false
+		m.lyricsErr = msg.err
+		if msg.err == nil {
+			m.lyricsLines = msg.lines
 		}
 		return m, nil
 
@@ -1116,11 +1153,22 @@ func (m *Model) playCurrentTrack() tea.Cmd {
 // yt-dlp URLs are streamed via a piped yt-dlp | ffmpeg chain for instant playback.
 func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 	m.streamTitle = ""
+	m.lyricsLines = nil
+	m.lyricsErr = nil
+	var fetchCmd tea.Cmd
+	if m.showLyrics && track.Artist != "" && track.Title != "" {
+		m.lyricsLoading = true
+		fetchCmd = fetchLyricsCmd(track.Artist, track.Title)
+	}
+
 	// Stream yt-dlp URLs (SoundCloud, YouTube, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
 		m.buffering = true
 		m.err = nil
 		dur := time.Duration(track.DurationSecs) * time.Second
+		if fetchCmd != nil {
+			return tea.Batch(playYTDLStreamCmd(m.player, track.Path, dur), fetchCmd)
+		}
 		return playYTDLStreamCmd(m.player, track.Path, dur)
 	}
 	// Fire now-playing notification for Navidrome tracks.
@@ -1129,12 +1177,16 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 	if track.Stream {
 		m.buffering = true
 		m.err = nil
-		return playStreamCmd(m.player, track.Path, dur)
+		return tea.Batch(playStreamCmd(m.player, track.Path, dur), fetchCmd)
 	}
 	if err := m.player.Play(track.Path, dur); err != nil {
 		m.err = err
 	} else {
 		m.err = nil
+	}
+
+	if fetchCmd != nil {
+		return tea.Batch(m.preloadNext(), fetchCmd)
 	}
 	return m.preloadNext()
 }
@@ -1160,7 +1212,7 @@ func (m *Model) preloadNext() tea.Cmd {
 		dur := m.player.Duration()
 		if dur > 0 {
 			remaining := dur - m.player.Position()
-			if remaining > streamPreloadLeadTime {
+			if remaining > ytdlPreloadLeadTime {
 				return nil
 			}
 		}

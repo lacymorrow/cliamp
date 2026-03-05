@@ -312,3 +312,56 @@ func (m Model) renderNetSearchOverlay() string {
 	}
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
+
+func (m Model) renderLyricsOverlay() string {
+	lines := []string{
+		titleStyle.Render("S Y N C E D   L Y R I C S"),
+		"",
+	}
+
+	if m.lyricsLoading {
+		lines = append(lines, dimStyle.Render("  Fetching lyrics from lrclib.net..."))
+	} else if m.lyricsErr != nil {
+		lines = append(lines, helpStyle.Render("  Error: "+m.lyricsErr.Error()))
+	} else if len(m.lyricsLines) == 0 {
+		lines = append(lines, dimStyle.Render("  No lyrics available for this track."))
+	} else {
+		pos := m.player.Position()
+		activeIdx := -1
+		for i, line := range m.lyricsLines {
+			if line.Start <= pos {
+				activeIdx = i
+			} else {
+				break
+			}
+		}
+
+		startIdx := activeIdx - 4
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		endIdx := activeIdx + 7
+		if endIdx > len(m.lyricsLines) {
+			endIdx = len(m.lyricsLines)
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			text := m.lyricsLines[i].Text
+			if text == "" {
+				text = "♪"
+			}
+			if i == activeIdx {
+				lines = append(lines, playlistSelectedStyle.Render("  "+text))
+			} else {
+				lines = append(lines, dimStyle.Render("  "+text))
+			}
+		}
+	}
+
+	for len(lines) < 14 {
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, "", helpKey("y", "Close Lyric View"))
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
