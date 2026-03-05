@@ -20,9 +20,9 @@ import (
 type ytdlPipeStreamer struct {
 	ytdlCmd   *exec.Cmd
 	ffmpegCmd *exec.Cmd
-	pipe      io.ReadCloser  // ffmpeg stdout (PCM output)
-	reader    *bufio.Reader  // buffered reader over pipe
-	ytdlErr   chan error      // yt-dlp exit error from monitoring goroutine
+	pipe      io.ReadCloser // ffmpeg stdout (PCM output)
+	reader    *bufio.Reader // buffered reader over pipe
+	ytdlErr   chan error    // yt-dlp exit error from monitoring goroutine
 	buf       [pcmFrameSize32]byte
 	f32       bool // true = f32le, false = s16le
 	err       error
@@ -70,9 +70,9 @@ func (y *ytdlPipeStreamer) Stream(samples [][2]float64) (int, bool) {
 	return n, n > 0
 }
 
-func (y *ytdlPipeStreamer) Err() error    { return y.err }
-func (y *ytdlPipeStreamer) Len() int      { return 0 }
-func (y *ytdlPipeStreamer) Position() int { return 0 }
+func (y *ytdlPipeStreamer) Err() error     { return y.err }
+func (y *ytdlPipeStreamer) Len() int       { return 0 }
+func (y *ytdlPipeStreamer) Position() int  { return 0 }
 func (y *ytdlPipeStreamer) Seek(int) error { return nil }
 
 func (y *ytdlPipeStreamer) Close() error {

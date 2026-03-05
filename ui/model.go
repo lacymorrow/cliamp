@@ -75,9 +75,9 @@ const streamPreloadLeadTime = 3 * time.Second
 
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
-	player   *player.Player
-	playlist *playlist.Playlist
-	vis      *Visualizer
+	player        *player.Player
+	playlist      *playlist.Playlist
+	vis           *Visualizer
 	seekStepLarge time.Duration
 	focus         focusArea
 	eqCursor      int // selected EQ band (0-9)
@@ -217,17 +217,17 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 		sortType = navidrome.SortAlphabeticalByName
 	}
 	m := Model{
-		player:        p,
-		playlist:      pl,
-		vis:           NewVisualizer(float64(p.SampleRate())),
-		seekStepLarge: 30 * time.Second,
-		plVisible:     5,
-		eqPresetIdx:   -1, // custom until a preset is selected
-		themes:        themes,
-		themeIdx:      -1, // Default (ANSI)
-		localProvider: localProv,
-		navSortType:   sortType,
-		navClient:     nav,
+		player:             p,
+		playlist:           pl,
+		vis:                NewVisualizer(float64(p.SampleRate())),
+		seekStepLarge:      30 * time.Second,
+		plVisible:          5,
+		eqPresetIdx:        -1, // custom until a preset is selected
+		themes:             themes,
+		themeIdx:           -1, // Default (ANSI)
+		localProvider:      localProv,
+		navSortType:        sortType,
+		navClient:          nav,
 		navScrobbleEnabled: navCfg.ScrobbleEnabled(),
 	}
 	if prov != nil {
