@@ -478,17 +478,14 @@ func (s *Session) Close() {
 // re-authenticates interactively. This is called automatically when playback
 // encounters an auth-related error (e.g. AES key retrieval failure) so the
 // user doesn't get stuck in an error loop.
+//
+// The new session is established before tearing down the old one to avoid a
+// window where s.sess/s.player are nil (which would crash concurrent callers
+// like NewStream or WebApi).
 func (s *Session) Reconnect(ctx context.Context) error {
+	// Capture clientID without holding the lock during the (potentially long)
+	// interactive OAuth2 flow.
 	s.mu.Lock()
-	// Tear down old session/player.
-	if s.player != nil {
-		s.player.Close()
-		s.player = nil
-	}
-	if s.sess != nil {
-		s.sess.Close()
-		s.sess = nil
-	}
 	clientID := s.clientID
 	s.mu.Unlock()
 
@@ -499,18 +496,30 @@ func (s *Session) Reconnect(ctx context.Context) error {
 
 	fmt.Fprintf(os.Stderr, "spotify: session expired, re-authenticating...\n")
 
+	// Create the new session outside the lock — this may open a browser and
+	// block for user interaction.
 	newSess, err := NewSession(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("spotify: reconnect: %w", err)
 	}
 
-	// Swap in the new session's internals.
+	// Now acquire the lock and atomically swap internals.
 	s.mu.Lock()
+	oldPlayer := s.player
+	oldSess := s.sess
 	s.sess = newSess.sess
 	s.player = newSess.player
 	s.devID = newSess.devID
 	s.tokenSource = newSess.tokenSource
 	s.mu.Unlock()
+
+	// Tear down old session/player after the swap so there's no nil window.
+	if oldPlayer != nil {
+		oldPlayer.Close()
+	}
+	if oldSess != nil {
+		oldSess.Close()
+	}
 
 	// Prevent newSess.Close() from tearing down the resources we just adopted.
 	newSess.mu.Lock()
