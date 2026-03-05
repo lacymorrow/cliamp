@@ -59,6 +59,10 @@ func (m Model) View() string {
 		return m.renderNetSearchOverlay()
 	}
 
+	if m.jumping {
+		return m.renderJumpOverlay()
+	}
+
 	if m.fullVis {
 		return m.renderFullVisualizer()
 	}
@@ -446,6 +450,26 @@ func (m Model) renderPlaylist() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m Model) renderJumpOverlay() string {
+	pos := m.player.Position()
+	dur := m.player.Duration()
+	timeLine := fmt.Sprintf("%s / %s", formatJumpClock(pos), formatJumpClock(dur))
+	inputLine := dimStyle.Faint(true).Render("  " + formatJumpPlaceholder(dur))
+	if m.jumpInput != "" {
+		inputLine = playlistSelectedStyle.Render("  " + m.jumpInput + "_")
+	}
+
+	lines := []string{
+		titleStyle.Render("J U M P  T O  T I M E"),
+		"",
+		dimStyle.Render("  " + timeLine),
+		"",
+		inputLine,
+	}
+
+	lines = append(lines, "", helpKey("Enter", "Jump ")+helpKey("Esc", "Cancel"))
+	return m.centerOverlay(strings.Join(lines, "\n"))
+}
 func (m Model) renderHelp() string {
 	if m.focus == focusProvider {
 		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")

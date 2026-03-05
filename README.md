@@ -180,6 +180,9 @@ shuffle = false
 # Start with mono output (L+R downmix)
 mono = false
 
+# Shift+Left/Right seek jump in seconds
+seek_large_step_sec = 30
+
 # EQ preset: "Flat", "Rock", "Pop", "Jazz", "Classical",
 #             "Bass Boost", "Treble Boost", "Vocal", "Electronic", "Acoustic"
 # Leave empty or "Custom" to use manual eq values below
@@ -225,6 +228,7 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `>` `.` | Next track |
 | `<` `,` | Previous track |
 | `Left` `Right` | Seek -/+5s |
+| `Shift+Left` `Shift+Right` | Seek -/+30s (configurable) |
 | `+` `-` | Volume up/down |
 | `m` | Toggle mono |
 | `Tab` | Toggle focus (Playlist / EQ) |
@@ -237,6 +241,7 @@ Flags can appear before, after, or between file arguments. See [docs/cli.md](doc
 | `V` | Full-screen visualizer |
 | `S` | Save track to ~/Music |
 | `/` | Search playlist |
+| `J` | Jump to time |
 | `x` | Expand/collapse playlist |
 | `o` | Open file browser |
 | `N` | Navidrome browser |

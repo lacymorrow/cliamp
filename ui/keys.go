@@ -61,6 +61,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	if m.jumping {
+		return m.handleJumpKey(msg)
+	}
+
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -100,6 +104,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.navClient != nil {
 				m.openNavBrowser()
 			}
+		case "J":
+			m.openJumpMode()
 		}
 		return nil
 	}
@@ -156,6 +162,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
+	case "shift+left":
+		m.player.Seek(-m.seekStepLarge)
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+
 	case "right":
 		if m.focus == focusEQ {
 			if m.eqCursor < numBands-1 {
@@ -166,6 +178,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.mpris != nil {
 				m.mpris.EmitSeeked(m.player.Position().Microseconds())
 			}
+		}
+
+	case "shift+right":
+		m.player.Seek(m.seekStepLarge)
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
 		}
 
 	case "up", "k":
@@ -278,6 +296,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.netSearchQuery = ""
 		m.prevFocus = m.focus
 		m.focus = focusNetSearch
+
+	case "J":
+		m.openJumpMode()
 
 	case "p":
 		if m.localProvider != nil {
@@ -412,6 +433,65 @@ func copyFile(src, dst string) error {
 	if closeErr != nil {
 		os.Remove(dst)
 		return closeErr
+	}
+	return nil
+}
+
+func (m *Model) resetJumpInput() {
+	m.jumpInput = ""
+}
+
+func (m *Model) openJumpMode() {
+	m.jumping = true
+	m.resetJumpInput()
+}
+
+func (m *Model) closeJumpMode() {
+	m.jumping = false
+	m.resetJumpInput()
+}
+
+// handleJumpKey processes key presses while in jump-time mode.
+func (m *Model) handleJumpKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "ctrl+c":
+		m.closeJumpMode()
+		m.player.Close()
+		m.quitting = true
+		return tea.Quit
+	}
+
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.closeJumpMode()
+		return nil
+	case tea.KeyEnter:
+		target, err := parseJumpTarget(m.jumpInput)
+		if err != nil {
+			m.resetJumpInput()
+			return nil
+		}
+		if dur := m.player.Duration(); dur > 0 && target > dur {
+			m.resetJumpInput()
+			return nil
+		}
+		m.player.Seek(target - m.player.Position())
+		m.notifyMPRIS()
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+		m.closeJumpMode()
+		return nil
+	case tea.KeyBackspace:
+		if len(m.jumpInput) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.jumpInput)
+			m.jumpInput = m.jumpInput[:len(m.jumpInput)-size]
+		}
+		return nil
+	}
+
+	if msg.Type == tea.KeyRunes {
+		m.jumpInput += string(msg.Runes)
 	}
 	return nil
 }
@@ -796,6 +876,7 @@ var keymapEntries = []keymapEntry{
 	{"> .", "Next track"},
 	{"< ,", "Previous track"},
 	{"← →", "Seek ±5s"},
+	{"Shift+← →", "Seek ±large step"},
 	{"+ -", "Volume up/down"},
 	{"m", "Toggle mono"},
 	{"e", "Cycle EQ preset"},
@@ -809,6 +890,7 @@ var keymapEntries = []keymapEntry{
 	{"A", "Queue manager"},
 	{"o", "Open file browser"},
 	{"N", "Navidrome browser"},
+	{"J", "Jump to time"},
 	{"p", "Playlist manager"},
 	{"i", "Track info / metadata"},
 	{"S", "Save/download track to ~/Music"},

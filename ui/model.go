@@ -75,19 +75,20 @@ const streamPreloadLeadTime = 3 * time.Second
 
 // Model is the Bubbletea model for the CLIAMP TUI.
 type Model struct {
-	player    *player.Player
-	playlist  *playlist.Playlist
-	vis       *Visualizer
-	focus     focusArea
-	eqCursor  int // selected EQ band (0-9)
-	plCursor  int // selected playlist item
-	plScroll  int // scroll offset for playlist view
-	plVisible int // max visible playlist items
-	titleOff  int // scroll offset for long track titles
-	err       error
-	quitting  bool
-	width     int
-	height    int
+	player   *player.Player
+	playlist *playlist.Playlist
+	vis      *Visualizer
+	seekStepLarge time.Duration
+	focus         focusArea
+	eqCursor      int // selected EQ band (0-9)
+	plCursor      int // selected playlist item
+	plScroll      int // scroll offset for playlist view
+	plVisible     int // max visible playlist items
+	titleOff      int // scroll offset for long track titles
+	err           error
+	quitting      bool
+	width         int
+	height        int
 
 	provider      playlist.Provider
 	localProvider *local.Provider // direct ref for write operations (add-to-playlist)
@@ -113,6 +114,10 @@ type Model struct {
 	// Dynamic internet search
 	netSearching   bool
 	netSearchQuery string
+
+	// Jump to time mode state
+	jumping   bool
+	jumpInput string
 
 	// Async feed/M3U URL resolution
 	pendingURLs []string
@@ -212,16 +217,17 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 		sortType = navidrome.SortAlphabeticalByName
 	}
 	m := Model{
-		player:             p,
-		playlist:           pl,
-		vis:                NewVisualizer(float64(p.SampleRate())),
-		plVisible:          5,
-		eqPresetIdx:        -1, // custom until a preset is selected
-		themes:             themes,
-		themeIdx:           -1, // Default (ANSI)
-		localProvider:      localProv,
-		navSortType:        sortType,
-		navClient:          nav,
+		player:        p,
+		playlist:      pl,
+		vis:           NewVisualizer(float64(p.SampleRate())),
+		seekStepLarge: 30 * time.Second,
+		plVisible:     5,
+		eqPresetIdx:   -1, // custom until a preset is selected
+		themes:        themes,
+		themeIdx:      -1, // Default (ANSI)
+		localProvider: localProv,
+		navSortType:   sortType,
+		navClient:     nav,
 		navScrobbleEnabled: navCfg.ScrobbleEnabled(),
 	}
 	if prov != nil {
@@ -232,6 +238,18 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 
 // SetAutoPlay makes the player start playback immediately on Init.
 func (m *Model) SetAutoPlay(v bool) { m.autoPlay = v }
+
+// SetSeekStepLarge configures the Shift+Left/Right seek jump amount.
+func (m *Model) SetSeekStepLarge(d time.Duration) {
+	switch {
+	case d <= 0:
+		m.seekStepLarge = 30 * time.Second
+	case d <= 5*time.Second:
+		m.seekStepLarge = 6 * time.Second
+	default:
+		m.seekStepLarge = d
+	}
+}
 
 // SetTheme finds a theme by name and applies it. Returns true if found.
 func (m *Model) SetTheme(name string) bool {
@@ -277,7 +295,7 @@ func (m Model) ThemeName() string {
 func (m *Model) isOverlayActive() bool {
 	return m.showKeymap || m.showThemes || m.showFileBrowser ||
 		m.showNavBrowser || m.showPlManager || m.showQueue ||
-		m.showInfo || m.searching || m.netSearching
+		m.showInfo || m.searching || m.netSearching || m.jumping
 }
 
 // openThemePicker re-loads themes from disk (picking up new user files)
