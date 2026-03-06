@@ -19,29 +19,42 @@ case "$OS" in
     *) echo "Unsupported OS: $OS" >&2; exit 1 ;;
 esac
 
-BINARY="cliamp-${OS}-${ARCH}"
-if [ "$OS" = "windows" ]; then
-    BINARY="${BINARY}.exe"
-fi
+BASE_URL="https://github.com/${REPO}/releases/latest/download"
+ARCHIVE="cliamp-${OS}-${ARCH}.tar.gz"
+BARE="cliamp-${OS}-${ARCH}"
 
-URL="https://github.com/${REPO}/releases/latest/download/${BINARY}"
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "Downloading ${BINARY}..."
-TMP=$(mktemp)
-if command -v curl > /dev/null; then
-    curl -fSL -o "$TMP" "$URL"
-elif command -v wget > /dev/null; then
-    wget -qO "$TMP" "$URL"
+download() {
+    url="$1"
+    dest="$2"
+    if command -v curl > /dev/null; then
+        curl -fSL -o "$dest" "$url"
+    elif command -v wget > /dev/null; then
+        wget -qO "$dest" "$url"
+    else
+        echo "Error: curl or wget required" >&2; exit 1
+    fi
+}
+
+# Try GoReleaser archive (.tar.gz) first, fall back to bare binary
+if download "${BASE_URL}/${ARCHIVE}" "${TMP_DIR}/${ARCHIVE}" 2>/dev/null; then
+    echo "Extracting ${ARCHIVE}..."
+    tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "$TMP_DIR" cliamp
+    BINARY="${TMP_DIR}/cliamp"
 else
-    echo "Error: curl or wget required" >&2; exit 1
+    echo "Archive not found, trying bare binary..."
+    download "${BASE_URL}/${BARE}" "${TMP_DIR}/cliamp"
+    BINARY="${TMP_DIR}/cliamp"
 fi
 
-chmod +x "$TMP"
+chmod +x "$BINARY"
 
 if [ -w "$INSTALL_DIR" ]; then
-    mv "$TMP" "${INSTALL_DIR}/cliamp"
+    mv "$BINARY" "${INSTALL_DIR}/cliamp"
 else
-    sudo mv "$TMP" "${INSTALL_DIR}/cliamp"
+    sudo mv "$BINARY" "${INSTALL_DIR}/cliamp"
 fi
 
 echo "Installed cliamp to ${INSTALL_DIR}/cliamp"

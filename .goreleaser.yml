@@ -1,0 +1,81 @@
+version: 2
+
+project_name: cliamp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: cliamp
+    binary: cliamp
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: cliamp
+    builds: [cliamp]
+    name_template: "cliamp-{{ .Os }}-{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - config.toml.example
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: bjarneo
+    name: cliamp
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+
+brews:
+  - name: cliamp
+    ids: [cliamp]
+    repository:
+      owner: bjarneo
+      name: homebrew-cliamp
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/bjarneo/cliamp"
+    description: "Retro terminal music player inspired by Winamp 2.x"
+    license: MIT
+    skip_upload: auto
+    install: |
+      bin.install "cliamp"
+    test: |
+      system "#{bin}/cliamp --version"
+
+aurs:
+  - name: cliamp-bin
+    ids: [cliamp]
+    homepage: "https://github.com/bjarneo/cliamp"
+    description: "Retro terminal music player inspired by Winamp 2.x"
+    maintainers:
+      - "bjarneo <maintainer@example.com>"
+    license: MIT
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/cliamp-bin.git"
+    skip_upload: auto
+    provides:
+      - cliamp
+    conflicts:
+      - cliamp
+    depends:
+      - alsa-lib
+    package: |-
+      install -Dm755 ./cliamp "${pkgdir}/usr/bin/cliamp"
+      install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/cliamp/LICENSE"
+      install -Dm644 ./README.md "${pkgdir}/usr/share/doc/cliamp/README.md"
