@@ -56,8 +56,13 @@ Press `Ctrl+K` to see all keybindings.
 
 ## Docs
 
+- [Configuration](docs/configuration.md)
+- [Keybindings](docs/keybindings.md)
 - [CLI Flags](docs/cli.md)
+- [Streaming](docs/streaming.md)
 - [Playlists](docs/playlists.md)
+- [YouTube, SoundCloud and Bandcamp](docs/yt-dlp.md)
+- [Lyrics](docs/lyrics.md)
 - [Spotify](docs/spotify.md)
 - [Navidrome](docs/navidrome.md)
 - [Themes](docs/themes.md)
