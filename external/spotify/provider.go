@@ -58,9 +58,14 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 		var result struct {
 			Items []struct {
-				ID     string `json:"id"`
-				Name   string `json:"name"`
-				Tracks struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				// Feb 2026 API: "tracks" renamed to "items" in playlist objects.
+				// Parse both for backwards compatibility.
+				Items *struct {
+					Total int `json:"total"`
+				} `json:"items"`
+				Tracks *struct {
 					Total int `json:"total"`
 				} `json:"tracks"`
 			} `json:"items"`
@@ -71,10 +76,16 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		}
 
 		for _, item := range result.Items {
+			count := 0
+			if item.Items != nil {
+				count = item.Items.Total
+			} else if item.Tracks != nil {
+				count = item.Tracks.Total
+			}
 			all = append(all, playlist.PlaylistInfo{
 				ID:         item.ID,
 				Name:       item.Name,
-				TrackCount: item.Tracks.Total,
+				TrackCount: count,
 			})
 		}
 
@@ -103,27 +114,32 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 			"offset": {fmt.Sprintf("%d", offset)},
 		}
 
-		path := fmt.Sprintf("/v1/playlists/%s/tracks", playlistID)
+		// Feb 2026 API: /tracks renamed to /items
+		path := fmt.Sprintf("/v1/playlists/%s/items", playlistID)
 		resp, err := p.webAPI(ctx, "GET", path, query)
 		if err != nil {
 			return nil, fmt.Errorf("spotify: list tracks: %w", err)
 		}
 
+		// Feb 2026 API: "track" renamed to "item" in response.
+		// Parse both for backwards compatibility.
+		type trackObj struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Artists []struct {
+				Name string `json:"name"`
+			} `json:"artists"`
+			Album struct {
+				Name        string `json:"name"`
+				ReleaseDate string `json:"release_date"`
+			} `json:"album"`
+			DurationMs  int `json:"duration_ms"`
+			TrackNumber int `json:"track_number"`
+		}
 		var result struct {
 			Items []struct {
-				Track *struct {
-					ID      string `json:"id"`
-					Name    string `json:"name"`
-					Artists []struct {
-						Name string `json:"name"`
-					} `json:"artists"`
-					Album struct {
-						Name        string `json:"name"`
-						ReleaseDate string `json:"release_date"`
-					} `json:"album"`
-					DurationMs  int `json:"duration_ms"`
-					TrackNumber int `json:"track_number"`
-				} `json:"track"`
+				Item  *trackObj `json:"item"`
+				Track *trackObj `json:"track"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
@@ -132,7 +148,10 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		}
 
 		for _, item := range result.Items {
-			t := item.Track
+			t := item.Item
+			if t == nil {
+				t = item.Track // fallback for old API
+			}
 			if t == nil || t.ID == "" {
 				continue // skip local/unavailable tracks
 			}

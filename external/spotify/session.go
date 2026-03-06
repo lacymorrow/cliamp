@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -134,6 +133,11 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 // apps and cause "Illegal scope" errors:
 //   app-remote-control, playlist-modify, playlist-read, user-modify,
 //   user-modify-private, user-personalized, user-read-birthdate
+//
+// Feb 2026 API changes:
+//   - user-read-email removed (email no longer returned by GET /me)
+//   - country, followers, product removed from GET /me
+//   - popularity, available_markets removed from track/album/artist responses
 var oauthScopes = []string{
 	// Playlist browsing
 	"playlist-read-collaborative",
@@ -148,7 +152,6 @@ var oauthScopes = []string{
 	"user-library-modify",
 	// User profile
 	"user-read-private",
-	"user-read-email",
 	// Playback state (current track, queue)
 	"user-read-playback-state",
 	"user-modify-playback-state",
@@ -379,23 +382,10 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 // decoded AudioSources — audio output is routed through cliamp's Beep pipeline,
 // not go-librespot's output backend.
 func (s *Session) initPlayer() error {
-	// Fetch user's country for media restriction checks.
-	countryCode := "US" // fallback
-	if resp, err := s.WebApi(context.Background(), "GET", "/v1/me", nil); err != nil {
-		fmt.Fprintf(os.Stderr, "spotify: failed to get user profile for country: %v\n", err)
-	} else {
-		defer resp.Body.Close()
-		var me struct {
-			Country string `json:"country"`
-		}
-		if data, err := io.ReadAll(resp.Body); err != nil {
-			fmt.Fprintf(os.Stderr, "spotify: failed to read user profile: %v\n", err)
-		} else if err := json.Unmarshal(data, &me); err != nil {
-			fmt.Fprintf(os.Stderr, "spotify: failed to parse user profile: %v\n", err)
-		} else if me.Country != "" {
-			countryCode = me.Country
-		}
-	}
+	// Feb 2026 API: country field removed from GET /v1/me.
+	// Default to "US" — go-librespot uses this for media restriction checks
+	// but Premium accounts can play all tracks regardless.
+	countryCode := "US"
 	p, err := librespotPlayer.NewPlayer(&librespotPlayer.Options{
 		Spclient:             s.sess.Spclient(),
 		AudioKey:             s.sess.AudioKey(),
