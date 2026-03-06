@@ -109,12 +109,96 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Compute GoReleaser skip flags
+        id: flags
+        run: |
+          SKIP=""
+          [ -z "$AUR_KEY" ] && SKIP="$SKIP --skip=aur"
+          echo "extra=${SKIP}" >> "$GITHUB_OUTPUT"
+        env:
+          AUR_KEY: ${{ secrets.AUR_KEY }}
+
       - name: Release with GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --skip=build
+          args: release --skip=build ${{ steps.flags.outputs.extra }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           AUR_KEY: ${{ secrets.AUR_KEY }}
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download checksums
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          curl -sL "https://github.com/bjarneo/cliamp/releases/download/${TAG}/checksums.txt" -o checksums.txt
+          cat checksums.txt
+
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "SHA_DARWIN_ARM64=$(grep 'cliamp-darwin-arm64\.tar\.gz' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_DARWIN_AMD64=$(grep 'cliamp-darwin-amd64\.tar\.gz' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_LINUX_ARM64=$(grep 'cliamp-linux-arm64\.tar\.gz' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_LINUX_AMD64=$(grep 'cliamp-linux-amd64\.tar\.gz' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Generate and push formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/bjarneo/homebrew-cliamp.git"
+          cd homebrew-cliamp
+          mkdir -p Formula
+
+          cat > Formula/cliamp.rb << FORMULA
+          class Cliamp < Formula
+            desc "A retro terminal music player inspired by Winamp 2.x"
+            homepage "https://github.com/bjarneo/cliamp"
+            version "${VERSION}"
+            license "MIT"
+
+            depends_on "ffmpeg" => :recommended
+            depends_on "yt-dlp" => :recommended
+
+            on_macos do
+              on_arm do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-darwin-amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-linux-amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              bin.install "cliamp"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/cliamp --version")
+            end
+          end
+          FORMULA
+
+          sed -i 's/^          //' Formula/cliamp.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/cliamp.rb
+          git commit -m "Update cliamp to ${VERSION}"
+          git push

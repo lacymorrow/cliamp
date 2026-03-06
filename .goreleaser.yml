@@ -42,21 +42,7 @@ release:
   prerelease: auto
   name_template: "v{{ .Version }}"
 
-brews:
-  - name: cliamp
-    ids: [cliamp]
-    repository:
-      owner: bjarneo
-      name: homebrew-cliamp
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/bjarneo/cliamp"
-    description: "Retro terminal music player inspired by Winamp 2.x"
-    license: MIT
-    skip_upload: auto
-    install: |
-      bin.install "cliamp"
-    test: |
-      system "#{bin}/cliamp --version"
+# Homebrew tap is updated by the update-homebrew job in release.yml using GITHUB_TOKEN.
 
 aurs:
   - name: cliamp-bin
