@@ -22,9 +22,9 @@ builds:
 
 archives:
   - id: cliamp
-    builds: [cliamp]
+    ids: [cliamp]
     name_template: "cliamp-{{ .Os }}-{{ .Arch }}"
-    format: tar.gz
+    formats: [tar.gz]
     files:
       - LICENSE
       - README.md
@@ -35,9 +35,6 @@ checksum:
   algorithm: sha256
 
 release:
-  github:
-    owner: bjarneo
-    name: cliamp
   draft: false
   prerelease: auto
   name_template: "v{{ .Version }}"

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="bjarneo/cliamp"
+REPO="${REPO:-bjarneo/cliamp}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')

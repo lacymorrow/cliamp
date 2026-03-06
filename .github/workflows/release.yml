@@ -135,7 +135,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#v}"
-          curl -sL "https://github.com/bjarneo/cliamp/releases/download/${TAG}/checksums.txt" -o checksums.txt
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${TAG}/checksums.txt" -o checksums.txt
           cat checksums.txt
 
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
@@ -148,15 +148,31 @@ jobs:
       - name: Generate and push formula
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
         run: |
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/bjarneo/homebrew-cliamp.git"
-          cd homebrew-cliamp
+          # Resolve tap repo:
+          # 1. HOMEBREW_TAP_REPO variable (set in repo Settings → Variables)
+          # 2. homebrew-cliamp (maintainer's dedicated tap, if it exists)
+          # 3. homebrew-tap (general fallback)
+          if [ -n "${HOMEBREW_TAP_REPO}" ]; then
+            TAP_REPO="${HOMEBREW_TAP_REPO}"
+          elif curl -sf -H "Authorization: Bearer ${GH_TOKEN}" \
+               "https://api.github.com/repos/${REPO_OWNER}/homebrew-cliamp" > /dev/null; then
+            TAP_REPO="homebrew-cliamp"
+          else
+            TAP_REPO="homebrew-tap"
+          fi
+          echo "Using tap: ${REPO_OWNER}/${TAP_REPO}"
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO_OWNER}/${TAP_REPO}.git"
+          cd "${TAP_REPO}"
           mkdir -p Formula
 
           cat > Formula/cliamp.rb << FORMULA
           class Cliamp < Formula
             desc "A retro terminal music player inspired by Winamp 2.x"
-            homepage "https://github.com/bjarneo/cliamp"
+            homepage "https://github.com/${GITHUB_REPOSITORY}"
             version "${VERSION}"
             license "MIT"
 
@@ -165,22 +181,22 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-darwin-arm64.tar.gz"
+                url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/cliamp-darwin-arm64.tar.gz"
                 sha256 "${SHA_DARWIN_ARM64}"
               end
               on_intel do
-                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-darwin-amd64.tar.gz"
+                url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/cliamp-darwin-amd64.tar.gz"
                 sha256 "${SHA_DARWIN_AMD64}"
               end
             end
 
             on_linux do
               on_arm do
-                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-linux-arm64.tar.gz"
+                url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/cliamp-linux-arm64.tar.gz"
                 sha256 "${SHA_LINUX_ARM64}"
               end
               on_intel do
-                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-linux-amd64.tar.gz"
+                url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/cliamp-linux-amd64.tar.gz"
                 sha256 "${SHA_LINUX_AMD64}"
               end
             end
