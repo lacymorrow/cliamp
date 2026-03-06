@@ -123,7 +123,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 					} `json:"album"`
 					DurationMs  int `json:"duration_ms"`
 					TrackNumber int `json:"track_number"`
-				} `json:"item"`
+				} `json:"track"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
