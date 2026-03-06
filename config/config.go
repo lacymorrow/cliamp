@@ -74,11 +74,14 @@ type Config struct {
 }
 
 // Default returns a Config with sensible defaults.
+// SampleRate defaults to 0, which means "auto-detect from the system's default
+// output device" (see player.DeviceSampleRate). This ensures USB audio devices
+// that require a specific rate (commonly 48 kHz) work out of the box.
 func Default() Config {
 	return Config{
 		Repeat:          "off",
 		SeekStepLarge:   30,
-		SampleRate:      44100,
+		SampleRate:      0,
 		BufferMs:        100,
 		ResampleQuality: 4,
 		BitDepth:        16,
@@ -391,7 +394,11 @@ func (c *Config) clamp() {
 }
 
 // clampSampleRate returns the nearest valid sample rate from the allowed set.
+// A value of 0 is preserved as-is to signal "auto-detect" to the player.
 func clampSampleRate(v int) int {
+	if v == 0 {
+		return 0 // auto-detect
+	}
 	allowed := []int{22050, 44100, 48000, 96000, 192000}
 	best := allowed[0]
 	bestDist := abs(v - best)

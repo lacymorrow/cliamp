@@ -16,9 +16,10 @@ mono = false
 # Shift+Left/Right seek jump in seconds (6-600)
 seek_large_step_sec = 30
 
-# Output sample rate in Hz (22050, 44100, 48000, 96000, 192000)
+# Output sample rate in Hz (0=auto, 22050, 44100, 48000, 96000, 192000)
+# 0 = auto-detect from system default output device (recommended for USB audio)
 # Higher values preserve more detail from hi-res files but use more CPU
-sample_rate = 44100
+# sample_rate = 0
 
 # Speaker buffer size in milliseconds (50-500)
 # Lower = less latency, higher = more stable
