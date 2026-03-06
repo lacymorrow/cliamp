@@ -374,10 +374,36 @@ func (m Model) renderProviderList() string {
 		return dimStyle.Render("  No playlists found.\n  Add playlists to ~/.config/cliamp/playlists/")
 	}
 
+	var lines []string
+
+	if m.provSearching {
+		lines = append(lines, playlistSelectedStyle.Render("  / "+m.provSearchQuery+"_"))
+
+		if m.provSearchQuery == "" {
+			lines = append(lines, dimStyle.Render("  Type to filter…"))
+		} else if len(m.provSearchResults) == 0 {
+			lines = append(lines, dimStyle.Render("  No matches"))
+		} else {
+			visible := min(m.plVisible-1, len(m.provSearchResults))
+			scroll := max(0, m.provSearchCursor-visible+1)
+			for j := scroll; j < scroll+visible && j < len(m.provSearchResults); j++ {
+				idx := m.provSearchResults[j]
+				p := m.providerLists[idx]
+				prefix, style := "  ", playlistItemStyle
+				if j == m.provSearchCursor {
+					style = playlistSelectedStyle
+					prefix = "> "
+				}
+				lines = append(lines, style.Render(fmt.Sprintf("%s%s (%d tracks)", prefix, p.Name, p.TrackCount)))
+			}
+			lines = append(lines, dimStyle.Render(fmt.Sprintf("  %d/%d playlists", len(m.provSearchResults), len(m.providerLists))))
+		}
+		return strings.Join(lines, "\n")
+	}
+
 	visible := min(m.plVisible, len(m.providerLists))
 	scroll := max(0, m.provCursor-visible+1)
 
-	var lines []string
 	for j := scroll; j < scroll+visible && j < len(m.providerLists); j++ {
 		p := m.providerLists[j]
 		prefix, style := "  ", playlistItemStyle

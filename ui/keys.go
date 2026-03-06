@@ -113,6 +113,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleNetSearchKey(msg)
 	}
 
+	if m.provSearching {
+		return m.handleProvSearchKey(msg)
+	}
+
 	if m.focus == focusProvider {
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -136,6 +140,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.playlist.Len() > 0 {
 				m.focus = focusPlaylist
 			}
+		case "/":
+			m.provSearching = true
+			m.provSearchQuery = ""
+			m.provSearchResults = nil
+			m.provSearchCursor = 0
 		case "o":
 			m.openFileBrowser()
 		case "N":
@@ -558,6 +567,59 @@ func (m *Model) handleJumpKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 // handleSearchKey processes key presses while in search mode.
+// handleProvSearchKey processes key presses while filtering the provider playlist list.
+func (m *Model) handleProvSearchKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.provSearching = false
+	case tea.KeyEnter:
+		if len(m.provSearchResults) > 0 && !m.provLoading {
+			idx := m.provSearchResults[m.provSearchCursor]
+			m.provCursor = idx
+			m.provLoading = true
+			m.provSearching = false
+			return fetchTracksCmd(m.provider, m.providerLists[idx].ID)
+		}
+	case tea.KeyUp:
+		if m.provSearchCursor > 0 {
+			m.provSearchCursor--
+		}
+	case tea.KeyDown:
+		if m.provSearchCursor < len(m.provSearchResults)-1 {
+			m.provSearchCursor++
+		}
+	case tea.KeyBackspace:
+		if len(m.provSearchQuery) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.provSearchQuery)
+			m.provSearchQuery = m.provSearchQuery[:len(m.provSearchQuery)-size]
+			m.updateProvSearch()
+		}
+	case tea.KeySpace:
+		m.provSearchQuery += " "
+		m.updateProvSearch()
+	default:
+		if msg.Type == tea.KeyRunes {
+			m.provSearchQuery += string(msg.Runes)
+			m.updateProvSearch()
+		}
+	}
+	return nil
+}
+
+func (m *Model) updateProvSearch() {
+	m.provSearchResults = nil
+	m.provSearchCursor = 0
+	if m.provSearchQuery == "" {
+		return
+	}
+	q := strings.ToLower(m.provSearchQuery)
+	for i, pl := range m.providerLists {
+		if strings.Contains(strings.ToLower(pl.Name), q) {
+			m.provSearchResults = append(m.provSearchResults, i)
+		}
+	}
+}
+
 func (m *Model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 	// Allow opening overlays during search (ctrl combos don't conflict with text input).
 	switch msg.String() {
