@@ -15,6 +15,12 @@ https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
 
 ## Install
 
+### Install script
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
+```
+
 ### Pre-built binaries
 
 Download from [GitHub Releases](https://github.com/bjarneo/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon) and Linux (amd64/arm64).
