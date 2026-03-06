@@ -45,11 +45,8 @@ func run(overrides config.Overrides, positional []string) error {
 	// Build Spotify provider if enabled in config.
 	var spotifyProv *spotify.SpotifyProvider
 	var spotifySession *spotify.Session
-	if cfg.Spotify.IsSet() {
-		spotifyClientID := cfg.Spotify.ResolveClientID(spotify.FallbackClientID)
-		if spotifyClientID == "" {
-			fmt.Fprintf(os.Stderr, "spotify: no client_id configured and no fallback tokens available\n")
-		}
+	spotifyClientID := cfg.Spotify.ResolveClientID(spotify.FallbackClientID)
+	if cfg.Spotify.IsSet() && spotifyClientID != "" {
 		sess, err := spotify.NewSession(context.Background(), spotifyClientID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "spotify: %v\n", err)

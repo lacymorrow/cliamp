@@ -52,7 +52,8 @@ type SpotifyConfig struct {
 }
 
 // IsSet reports whether the Spotify provider is enabled.
-// Returns true when enabled, even without an explicit client_id (fallback pool is used).
+// Note: callers should also verify that a client ID is available
+// (via ResolveClientID) before starting a session.
 func (s SpotifyConfig) IsSet() bool {
 	return s.Enabled
 }
