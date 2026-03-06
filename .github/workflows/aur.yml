@@ -12,10 +12,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Extract version
         id: version
-        run: echo "pkgver=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+        run: |
+          # workflow_run sets head_branch to the tag name (e.g. "v1.2.3")
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          echo "pkgver=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Generate PKGBUILD
         env:
@@ -57,8 +62,8 @@ jobs:
           # Remove leading whitespace from heredoc
           sed -i 's/^          //' PKGBUILD
           # Replace placeholders with actual values
-          sed -i "s/PKGVER_PLACEHOLDER/${PKGVER}/" PKGBUILD
-          sed -i "s/SHA256_PLACEHOLDER/${SHA256}/" PKGBUILD
+          sed -i "s|PKGVER_PLACEHOLDER|${PKGVER}|" PKGBUILD
+          sed -i "s|SHA256_PLACEHOLDER|${SHA256}|" PKGBUILD
 
           cat PKGBUILD
 
