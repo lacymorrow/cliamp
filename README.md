@@ -193,7 +193,7 @@ client_id = "your_client_id_here"
 4. Run `cliamp` — first launch opens OAuth2 in your browser
 5. Credentials are cached automatically; subsequent launches don't require the browser
 
-Browse your playlists with `Esc`/`b` to open the provider browser, then select Spotify.
+Browse your playlists with `Esc`/`b` to open the provider browser, then select Spotify. See [docs/spotify.md](docs/spotify.md) for the full guide.
 
 ### ffmpeg (optional)
 
