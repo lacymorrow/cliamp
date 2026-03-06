@@ -203,6 +203,9 @@ jobs:
 
             head "https://github.com/bjarneo/cliamp.git", branch: "main"
 
+            depends_on "flac"
+            depends_on "libvorbis"
+            depends_on "libogg"
             depends_on "ffmpeg" => :recommended
             depends_on "yt-dlp" => :recommended
             depends_on "go" => :build
