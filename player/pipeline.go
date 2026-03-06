@@ -91,6 +91,26 @@ func (p *Player) buildPipelineAt(path string, byteOffset int64, timeOffset time.
 	// Clear stream title on each new pipeline build.
 	p.streamTitle.Store("")
 
+	// Custom URI schemes (e.g., spotify:track:xxx) are handled by the
+	// registered StreamerFactory, bypassing normal file/HTTP decoding.
+	if p.customFactory != nil && isCustomURI(path) {
+		decoder, format, dur, err := p.customFactory(path)
+		if err != nil {
+			return nil, fmt.Errorf("custom streamer: %w", err)
+		}
+		var s beep.Streamer = decoder
+		if format.SampleRate != p.sr {
+			s = beep.Resample(p.resampleQuality, format.SampleRate, p.sr, s)
+		}
+		return &trackPipeline{
+			decoder:       decoder,
+			stream:        s,
+			format:        format,
+			seekable:      true, // StreamerFactory returns beep.StreamSeekCloser — Seek() is supported
+			knownDuration: dur,
+		}, nil
+	}
+
 	// For HTTP URLs, pass the ICY metadata callback; for local files, nil.
 	var onMeta func(string)
 	if isURL(path) {

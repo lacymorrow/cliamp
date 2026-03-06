@@ -15,9 +15,15 @@ https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
 
 ## Install
 
+### Go (recommended)
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bjarneo/cliamp/HEAD/install.sh | sh
+go install github.com/lacymorrow/cliamp@latest
 ```
+
+### Pre-built binaries
+
+Download from [GitHub Releases](https://github.com/lacymorrow/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon), Linux (amd64/arm64), and Windows.
 
 ### Homebrew (macOS / Linux)
 
@@ -31,9 +37,11 @@ brew install bjarneo/cliamp/cliamp
 yay -S cliamp
 ```
 
-## Build
+### Build from source
 
 ```sh
+git clone https://github.com/lacymorrow/cliamp.git
+cd cliamp
 go build -o cliamp .
 ```
 
@@ -164,6 +172,28 @@ export NAVIDROME_PASS="your-password"
 ```
 
 The app starts in provider mode, letting you browse and play your Navidrome playlists.
+
+## Spotify
+
+Stream your Spotify library directly through cliamp's audio pipeline — EQ, visualizer, and all effects apply. Requires a [Spotify Premium](https://www.spotify.com/premium/) account.
+
+### Setup
+
+1. Create a Spotify app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+2. Add redirect URI: `http://127.0.0.1:19872/login`
+3. Add to your config:
+
+```toml
+# ~/.config/cliamp/config.toml
+[spotify]
+enabled = true
+client_id = "your_client_id_here"
+```
+
+4. Run `cliamp` — first launch opens OAuth2 in your browser
+5. Credentials are cached automatically; subsequent launches don't require the browser
+
+Browse your playlists with `Esc`/`b` to open the provider browser, then select Spotify.
 
 ### ffmpeg (optional)
 

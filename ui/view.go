@@ -404,26 +404,30 @@ func (m Model) renderPlaylist() string {
 	}
 
 	currentIdx := m.playlist.Index()
-	visible := min(m.plVisible, len(tracks))
 
-	scroll := m.plScroll
-	if scroll+visible > len(tracks) {
-		scroll = len(tracks) - visible
+	scroll := max(0, m.plScroll)
+	if scroll >= len(tracks) {
+		scroll = max(0, len(tracks)-1)
 	}
-	scroll = max(0, scroll)
 
-	lines := make([]string, 0, visible)
+	// plVisible is the number of rendered lines available (tracks + album
+	// separators combined). The loop below counts every appended line
+	// against this budget so the playlist never overflows its area.
+	budget := m.plVisible
+
+	lines := make([]string, 0, budget) // tracks + separators
 	prevAlbum := ""
 	if scroll > 0 {
 		prevAlbum = tracks[scroll-1].Album
 	}
-	for i := scroll; i < len(tracks) && len(lines) < visible; i++ {
+	for i := scroll; i < len(tracks) && len(lines) < budget; i++ {
 		// Insert album separator when album changes
 		if album := tracks[i].Album; album != "" && album != prevAlbum {
-			lines = append(lines, albumSeparator(album, tracks[i].Year))
-			if len(lines) >= visible {
+			// Need room for separator + track line (2 lines).
+			if len(lines)+2 > budget {
 				break
 			}
+			lines = append(lines, albumSeparator(album, tracks[i].Year))
 		}
 		prevAlbum = tracks[i].Album
 
@@ -484,16 +488,80 @@ func (m Model) renderHelp() string {
 		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
 	}
 
-	parts := helpKey("Spc", "⏯ ") + helpKey("<>", "Trk ")
+	// Build help hints with priority (lower = dropped first when too wide).
+	var hints []helpHint
+
+	hints = append(hints, helpHint{helpKey("Spc", "⏯ "), 100})
+	hints = append(hints, helpHint{helpKey("<>", "Trk "), 90})
 
 	track, _ := m.playlist.Current()
 	if !track.Stream || m.player.Seekable() {
-		parts += helpKey("←→", "Seek ")
+		hints = append(hints, helpHint{helpKey("←→", "Seek "), 70})
 	}
 
-	parts += helpKey("+-", "Vol ") + helpKey("/", "Search ") + helpKey("f", "Find ") + helpKey("y", "Lyrics ") + helpKey("a", "Queue ") + helpKey("Tab", "Focus ") + helpKey("Ctrl+K", "Keys ") + helpKey("Q", "Quit")
+	hints = append(hints,
+		helpHint{helpKey("+-", "Vol "), 80},
+		helpHint{helpKey("z", "Shfl "), 20},
+		helpHint{helpKey("r", "Rpt "), 20},
+		helpHint{helpKey("/", "Search "), 40},
+		helpHint{helpKey("f", "Find "), 35},
+		helpHint{helpKey("y", "Lyrics "), 25},
+		helpHint{helpKey("a", "Queue "), 30},
+		helpHint{helpKey("Tab", "Focus "), 50},
+		helpHint{helpKey("Ctrl+K", "Keys "), 60},
+		helpHint{helpKey("Q", "Quit"), 95},
+	)
 
-	return parts
+	return fitHints(hints, m.width)
+}
+
+// helpHint is a rendered help key with an associated display priority.
+type helpHint struct {
+	text     string
+	priority int
+}
+
+// fitHints drops lowest-priority hints until they fit within maxWidth.
+func fitHints(hints []helpHint, maxWidth int) string {
+	// Start with all hints; drop lowest priority until it fits.
+	active := make([]bool, len(hints))
+	for i := range active {
+		active[i] = true
+	}
+
+	for {
+		var total int
+		for i, h := range hints {
+			if active[i] {
+				total += lipgloss.Width(h.text)
+			}
+		}
+		if total <= maxWidth {
+			break
+		}
+
+		// Find lowest-priority active hint and drop it.
+		minPri := 1<<31 - 1
+		minIdx := -1
+		for i, h := range hints {
+			if active[i] && h.priority < minPri {
+				minPri = h.priority
+				minIdx = i
+			}
+		}
+		if minIdx < 0 {
+			break // nothing left to drop
+		}
+		active[minIdx] = false
+	}
+
+	var result string
+	for i, h := range hints {
+		if active[i] {
+			result += h.text
+		}
+	}
+	return result
 }
 
 // renderStreamStatus shows a network stats line for HTTP streams:

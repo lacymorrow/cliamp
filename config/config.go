@@ -43,6 +43,17 @@ func (n NavidromeConfig) ScrobbleEnabled() bool {
 	return !n.ScrobbleDisabled
 }
 
+// SpotifyConfig holds settings for the Spotify provider.
+// Requires a Spotify Premium account and a registered Spotify Developer app.
+type SpotifyConfig struct {
+	Enabled  bool
+	ClientID string // Spotify Developer app client ID (required for Web API)
+}
+
+// IsSet reports whether the Spotify provider is enabled with a client ID.
+func (s SpotifyConfig) IsSet() bool {
+	return s.Enabled && s.ClientID != ""
+}
 // Config holds user preferences loaded from the config file.
 type Config struct {
 	Volume          float64     // dB, range [-30, +6]
@@ -59,6 +70,7 @@ type Config struct {
 	ResampleQuality int             // beep resample quality factor (1–4)
 	BitDepth        int             // PCM bit depth for FFmpeg output: 16 or 32
 	Navidrome       NavidromeConfig // optional Navidrome/Subsonic server credentials
+	Spotify         SpotifyConfig   // optional Spotify provider (requires Premium)
 }
 
 // Default returns a Config with sensible defaults.
@@ -127,6 +139,13 @@ func Load() (Config, error) {
 			case "scrobble":
 				// Opt-out: only mark disabled when the value is explicitly "false".
 				cfg.Navidrome.ScrobbleDisabled = strings.ToLower(val) == "false"
+			}
+		case "spotify":
+			switch key {
+			case "enabled":
+				cfg.Spotify.Enabled = val == "true"
+			case "client_id":
+				cfg.Spotify.ClientID = strings.Trim(val, `"'`)
 			}
 		default:
 			switch key {

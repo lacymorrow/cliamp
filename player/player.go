@@ -19,6 +19,11 @@ type Quality struct {
 	BitDepth        int // PCM bit depth for FFmpeg output: 16 or 32 (32 = lossless)
 }
 
+// StreamerFactory creates a beep.StreamSeekCloser for a custom URI scheme
+// (e.g., spotify:track:xxx). Returns the streamer, its format, the track
+// duration, and any error.
+type StreamerFactory func(uri string) (beep.StreamSeekCloser, beep.Format, time.Duration, error)
+
 // Player is the audio engine managing the playback pipeline:
 //
 //	[Gapless] -> [10x Biquad EQ] -> [Volume] -> [Tap] -> [Ctrl] -> speaker
@@ -44,7 +49,8 @@ type Player struct {
 
 	gaplessAdvance atomic.Bool // set when gapless transition fires
 
-	streamTitle atomic.Value // stores string, set by ICY reader callback
+	streamTitle    atomic.Value    // stores string, set by ICY reader callback
+	customFactory  StreamerFactory // optional factory for custom URI schemes (e.g., spotify:)
 }
 
 // New creates a Player and initializes the speaker with the given quality settings.
@@ -536,6 +542,15 @@ func (p *Player) StreamBytes() (downloaded, total int64) {
 	}
 	total = cur.contentLength
 	return downloaded, total
+}
+
+// SetStreamerFactory registers a factory function for custom URI schemes.
+// When buildPipeline encounters a URI that isn't a local file or HTTP URL,
+// it calls this factory to create the decoder.
+func (p *Player) SetStreamerFactory(f StreamerFactory) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.customFactory = f
 }
 
 // Close fully stops the speaker and cleans up all resources.

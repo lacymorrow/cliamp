@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"cliamp/config"
 	"cliamp/external/local"
@@ -578,9 +579,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Dynamic frame width: use terminal width (capped at a reasonable max).
+		frameW := min(msg.Width, max(80, msg.Width-2))
+		frameStyle = frameStyle.Width(frameW)
+		panelWidth = frameW - 6 // subtract horizontal padding (3 left + 3 right)
 		if m.fullVis {
 			m.vis.Rows = max(defaultVisRows, (m.height-10)*4/5)
 		}
+		// Dynamic playlist height: render all non-playlist sections, measure
+		// total height, then give the remaining space to the playlist.
+		// This avoids fragile manual line counting.
+		m.plVisible = 3 // temporary minimal value for measurement
+		probe := strings.Join([]string{
+			m.renderTitle(),
+			m.renderTrackInfo(),
+			m.renderTimeStatus(),
+			"",
+			m.renderSpectrum(),
+			m.renderSeekBar(),
+			"",
+			m.renderControls(),
+			"",
+			m.renderPlaylistHeader(),
+			"x", // placeholder for playlist (1 line)
+			"",
+			m.renderHelp(),
+			m.renderStreamStatus(),
+		}, "\n")
+		probeFrame := frameStyle.Render(probe)
+		fixedLines := lipgloss.Height(probeFrame) - 1 // subtract the 1-line placeholder
+		m.plVisible = max(3, m.height-fixedLines)
 
 	case tickMsg:
 		// Expire temporary status messages.
@@ -732,14 +760,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tracksLoadedMsg:
-		m.player.Stop()
-		m.player.ClearPreload()
+		wasPlaying := m.player.IsPlaying()
+		if !wasPlaying {
+			m.player.Stop()
+			m.player.ClearPreload()
+		}
 		m.playlist.Replace(msg)
 		m.plCursor = 0
 		m.plScroll = 0
 		m.focus = focusPlaylist
 		m.provLoading = false
-		if m.playlist.Len() > 0 {
+		if m.playlist.Len() > 0 && !wasPlaying {
 			cmd := m.playCurrentTrack()
 			m.notifyMPRIS()
 			return m, cmd
@@ -1108,13 +1139,64 @@ func (m *Model) preloadNext() tea.Cmd {
 	return nil
 }
 
+// renderedLineCount returns how many rendered lines tracks[from..to) would
+// take, including album separator lines between different albums.
+func renderedLineCount(tracks []playlist.Track, from, to int) int {
+	lines := 0
+	prevAlbum := ""
+	if from > 0 {
+		prevAlbum = tracks[from-1].Album
+	}
+	for i := from; i < to && i < len(tracks); i++ {
+		if album := tracks[i].Album; album != "" && album != prevAlbum {
+			lines++ // album separator
+		}
+		prevAlbum = tracks[i].Album
+		lines++ // track line
+	}
+	return lines
+}
+
 // adjustScroll ensures plCursor is visible in the playlist view.
+// It accounts for album separator lines that reduce the number of
+// tracks that fit in the visible window.
 func (m *Model) adjustScroll() {
+	tracks := m.playlist.Tracks()
+	if len(tracks) == 0 {
+		return
+	}
+	// Scrolling up: cursor above the scroll window.
 	if m.plCursor < m.plScroll {
 		m.plScroll = m.plCursor
+		return
 	}
-	if m.plCursor >= m.plScroll+m.plVisible {
-		m.plScroll = m.plCursor - m.plVisible + 1
+	// Scrolling down: check if cursor is still within the visible area.
+	// Count rendered lines from plScroll up to and including plCursor.
+	lines := renderedLineCount(tracks, m.plScroll, m.plCursor+1)
+	if lines <= m.plVisible {
+		return // cursor is visible, nothing to do
+	}
+	// Cursor has scrolled past the visible area. Walk backward from
+	// plCursor to find the scroll offset that fits it on screen.
+	m.plScroll = m.plCursor
+	lines = 1 // the cursor track itself
+	for i := m.plCursor - 1; i >= 0; i-- {
+		add := 1 // track line
+		if tracks[i+1].Album != "" && tracks[i+1].Album != tracks[i].Album {
+			add++ // separator above track i+1
+		}
+		if lines+add > m.plVisible {
+			break
+		}
+		lines += add
+		m.plScroll = i
+	}
+	// Account for separator at the top of the window.
+	if m.plScroll > 0 && tracks[m.plScroll].Album != "" && tracks[m.plScroll].Album != tracks[m.plScroll-1].Album {
+		// There's a separator above plScroll — if it would overflow, bump scroll down.
+		if lines+1 > m.plVisible {
+			m.plScroll++
+		}
 	}
 }
 

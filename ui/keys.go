@@ -10,7 +10,9 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
+	"cliamp/config"
 	"cliamp/playlist"
 )
 
@@ -257,11 +259,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "r":
 		m.playlist.CycleRepeat()
+		if err := config.Save("repeat", fmt.Sprintf("%q", m.playlist.Repeat().String())); err != nil {
+			m.saveMsg = fmt.Sprintf("Config save failed: %s", err)
+			m.saveMsgTTL = 60
+		}
 		m.player.ClearPreload()
 		return m.preloadNext()
 
 	case "z":
 		m.playlist.ToggleShuffle()
+		if err := config.Save("shuffle", fmt.Sprintf("%v", m.playlist.Shuffled())); err != nil {
+			m.saveMsg = fmt.Sprintf("Config save failed: %s", err)
+			m.saveMsgTTL = 60
+		}
 		m.player.ClearPreload()
 		return m.preloadNext()
 
@@ -377,8 +387,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "x":
 		if m.focus == focusPlaylist {
-			if m.plVisible == 5 {
-				m.plVisible = 20
+			if m.plVisible <= 5 {
+				// Expand: recalculate dynamic max from terminal height.
+				probe := strings.Join([]string{
+					m.renderTitle(), m.renderTrackInfo(), m.renderTimeStatus(), "",
+					m.renderSpectrum(), m.renderSeekBar(), "",
+					m.renderControls(), "", m.renderPlaylistHeader(),
+					"x", "", m.renderHelp(), m.renderStreamStatus(),
+				}, "\n")
+				fixedLines := lipgloss.Height(frameStyle.Render(probe)) - 1
+				m.plVisible = max(5, m.height-fixedLines)
 			} else {
 				m.plVisible = 5
 			}
@@ -944,6 +962,8 @@ var keymapEntries = []keymapEntry{
 	{"← →", "Seek ±5s"},
 	{"Shift+← →", "Seek ±large step"},
 	{"+ -", "Volume up/down"},
+	{"z", "Toggle shuffle"},
+	{"r", "Cycle repeat"},
 	{"m", "Toggle mono"},
 	{"e", "Cycle EQ preset"},
 	{"t", "Choose theme"},
@@ -960,8 +980,6 @@ var keymapEntries = []keymapEntry{
 	{"p", "Playlist manager"},
 	{"i", "Track info / metadata"},
 	{"S", "Save/download track to ~/Music"},
-	{"r", "Cycle repeat"},
-	{"z", "Toggle shuffle"},
 	{"x", "Expand/collapse playlist"},
 	{"/", "Search playlist"},
 	{"f", "Find on YouTube (queue play next)"},
