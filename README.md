@@ -15,12 +15,6 @@ https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
 
 ## Install
 
-### Go (recommended)
-
-```sh
-go install github.com/lacymorrow/cliamp@latest
-```
-
 ### Pre-built binaries
 
 Download from [GitHub Releases](https://github.com/lacymorrow/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon), Linux (amd64/arm64), and Windows.
