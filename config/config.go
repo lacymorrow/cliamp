@@ -44,15 +44,30 @@ func (n NavidromeConfig) ScrobbleEnabled() bool {
 }
 
 // SpotifyConfig holds settings for the Spotify provider.
-// Requires a Spotify Premium account and a registered Spotify Developer app.
+// Requires a Spotify Premium account.
+// If no client_id is set, a random built-in fallback is used automatically.
 type SpotifyConfig struct {
 	Enabled  bool
-	ClientID string // Spotify Developer app client ID (required for Web API)
+	ClientID string // Spotify Developer app client ID (overrides built-in fallback)
 }
 
-// IsSet reports whether the Spotify provider is enabled with a client ID.
+// IsSet reports whether the Spotify provider is enabled.
+// Returns true when enabled, even without an explicit client_id (fallback pool is used).
 func (s SpotifyConfig) IsSet() bool {
-	return s.Enabled && s.ClientID != ""
+	return s.Enabled
+}
+
+// ResolveClientID returns the user's configured client ID, or a random
+// fallback from the built-in pool if none is set.  Returns "" only when
+// the pool is also empty.
+func (s SpotifyConfig) ResolveClientID(fallbackFn func() string) string {
+	if s.ClientID != "" {
+		return s.ClientID
+	}
+	if fallbackFn != nil {
+		return fallbackFn()
+	}
+	return ""
 }
 // Config holds user preferences loaded from the config file.
 type Config struct {
