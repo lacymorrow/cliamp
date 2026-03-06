@@ -61,10 +61,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libflac-dev:arm64 libvorbis-dev:arm64 libogg-dev:arm64
 
-      - name: Install deps (macOS)
-        if: matrix.goos == 'darwin'
+      - name: Install deps (macOS arm64)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
         run: brew install flac libvorbis libogg pkg-config
 
+      - name: Install deps (macOS amd64 cross)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
+        run: |
+          # Install x86_64 Homebrew under /usr/local via Rosetta 2
+          NONINTERACTIVE=1 arch -x86_64 /bin/bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 /usr/local/bin/brew install flac libvorbis libogg pkg-config
 
       - name: Build (Linux)
         if: matrix.goos == 'linux'
@@ -87,6 +94,13 @@ jobs:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
         run: |
+          if [ "$GOARCH" = "amd64" ]; then
+            # Cross-compile for x86_64 using Rosetta 2 installed libs
+            export CC="clang -arch x86_64"
+            export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+            export CGO_CFLAGS="-I/usr/local/include"
+            export CGO_LDFLAGS="-L/usr/local/lib"
+          fi
           BINARY="cliamp-darwin-${GOARCH}"
           VERSION="${GITHUB_REF#refs/tags/}"
           go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
