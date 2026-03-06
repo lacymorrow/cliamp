@@ -103,7 +103,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 			"offset": {fmt.Sprintf("%d", offset)},
 		}
 
-		path := fmt.Sprintf("/v1/playlists/%s/tracks", playlistID)
+		path := fmt.Sprintf("/v1/playlists/%s/items", playlistID)
 		resp, err := p.webAPI(ctx, "GET", path, query)
 		if err != nil {
 			return nil, fmt.Errorf("spotify: list tracks: %w", err)
@@ -123,7 +123,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 					} `json:"album"`
 					DurationMs  int `json:"duration_ms"`
 					TrackNumber int `json:"track_number"`
-				} `json:"track"`
+				} `json:"item"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
