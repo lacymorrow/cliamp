@@ -15,15 +15,20 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
+            runner: ubuntu-latest
           - goos: linux
             goarch: arm64
+            runner: ubuntu-latest
           - goos: darwin
             goarch: amd64
+            runner: macos-13
           - goos: darwin
             goarch: arm64
+            runner: macos-latest
           - goos: windows
             goarch: amd64
-    runs-on: ubuntu-latest
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,13 +38,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install ALSA dev (amd64)
+      - name: Install deps (Linux amd64)
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev
+          sudo apt-get install -y libasound2-dev libflac-dev
 
-      - name: Install ALSA dev and cross-compiler (arm64)
+      - name: Install deps (Linux arm64 cross)
         if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
         run: |
           sudo dpkg --add-architecture arm64
@@ -57,28 +62,50 @@ jobs:
           deb [arch=arm64] http://ports.ubuntu.com/ ${CODENAME}-security main restricted universe multiverse
           EOF
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libflac-dev:arm64
 
-      - name: Build
+      - name: Install deps (macOS)
+        if: matrix.goos == 'darwin'
+        run: brew install flac pkg-config
+
+      - name: Install deps (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          choco install pkgconfiglite -y
+          vcpkg install flac:x64-windows
+          echo "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      - name: Build (Linux)
+        if: matrix.goos == 'linux'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
         run: |
+          if [ "$GOARCH" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+          fi
           BINARY="cliamp-${GOOS}-${GOARCH}"
-          if [ "$GOOS" = "windows" ]; then
-            BINARY="${BINARY}.exe"
-          fi
-          if [ "$GOOS" = "linux" ]; then
-            export CGO_ENABLED=1
-            if [ "$GOARCH" = "arm64" ]; then
-              export CC=aarch64-linux-gnu-gcc
-              export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
-            fi
-          else
-            export CGO_ENABLED=0
-          fi
           VERSION="${GITHUB_REF#refs/tags/}"
           go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
+
+      - name: Build (macOS)
+        if: matrix.goos == 'darwin'
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          BINARY="cliamp-darwin-${{ matrix.goarch }}"
+          VERSION="${GITHUB_REF#refs/tags/}"
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
+
+      - name: Build (Windows)
+        if: matrix.goos == 'windows'
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o "cliamp-windows-amd64.exe" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
