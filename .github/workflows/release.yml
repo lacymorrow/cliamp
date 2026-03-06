@@ -42,7 +42,7 @@ jobs:
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libflac-dev
+          sudo apt-get install -y libasound2-dev libflac-dev libvorbis-dev libogg-dev
 
       - name: Install deps (Linux arm64 cross)
         if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
@@ -62,17 +62,17 @@ jobs:
           deb [arch=arm64] http://ports.ubuntu.com/ ${CODENAME}-security main restricted universe multiverse
           EOF
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libflac-dev:arm64
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libflac-dev:arm64 libvorbis-dev:arm64 libogg-dev:arm64
 
       - name: Install deps (macOS)
         if: matrix.goos == 'darwin'
-        run: brew install flac pkg-config
+        run: brew install flac libvorbis libogg pkg-config
 
       - name: Install deps (Windows)
         if: matrix.goos == 'windows'
         run: |
           choco install pkgconfiglite -y
-          vcpkg install flac:x64-windows
+          vcpkg install flac:x64-windows libvorbis:x64-windows libogg:x64-windows
           echo "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\lib\pkgconfig" >> $env:GITHUB_ENV
 
       - name: Build (Linux)
