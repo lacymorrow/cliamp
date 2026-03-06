@@ -13,6 +13,7 @@ import (
 var fallbackClientIDs = []string{
 	// Add your Spotify app client IDs here, one per line.
 	// "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+	"9cff76da7237414892754bfe1c841d9f", // @lacymorrow
 }
 
 // FallbackClientID returns a random client ID from the built-in pool,
