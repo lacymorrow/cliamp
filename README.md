@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/bjarneo/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon), Linux (amd64/arm64), and Windows.
+Download from [GitHub Releases](https://github.com/bjarneo/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon) and Linux (amd64/arm64).
 
 ### Homebrew (macOS / Linux)
 
