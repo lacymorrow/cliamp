@@ -21,7 +21,7 @@ jobs:
             runner: ubuntu-latest
           - goos: darwin
             goarch: amd64
-            runner: macos-13
+            runner: macos-latest
           - goos: darwin
             goarch: arm64
             runner: macos-latest
@@ -85,8 +85,9 @@ jobs:
         if: matrix.goos == 'darwin'
         env:
           CGO_ENABLED: "1"
+          GOARCH: ${{ matrix.goarch }}
         run: |
-          BINARY="cliamp-darwin-${{ matrix.goarch }}"
+          BINARY="cliamp-darwin-${GOARCH}"
           VERSION="${GITHUB_REF#refs/tags/}"
           go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
 
