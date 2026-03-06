@@ -17,6 +17,7 @@ import (
 	"cliamp/player"
 	"cliamp/playlist"
 	"cliamp/resolve"
+	"cliamp/telemetry"
 	"cliamp/theme"
 	"cliamp/ui"
 	"cliamp/upgrade"
@@ -254,6 +255,8 @@ func main() {
 		}
 		return
 	}
+
+	telemetry.Ping(version)
 
 	if err := run(overrides, positional); err != nil {
 		fmt.Fprintln(os.Stderr, err)
