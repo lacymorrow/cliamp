@@ -98,9 +98,13 @@ type Model struct {
 
 	provider      playlist.Provider
 	localProvider *local.Provider // direct ref for write operations (add-to-playlist)
-	providerLists []playlist.PlaylistInfo
-	provCursor    int
-	provLoading   bool
+	providerLists     []playlist.PlaylistInfo
+	provCursor        int
+	provLoading       bool
+	provSearching     bool
+	provSearchQuery   string
+	provSearchResults []int // indices into providerLists
+	provSearchCursor  int
 	// EQ preset state (-1 = custom, 0+ = index into eqPresets)
 	eqPresetIdx int
 

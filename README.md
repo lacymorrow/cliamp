@@ -15,15 +15,15 @@ https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
 
 ## Install
 
-### Go (recommended)
+### Install with Go
 
 ```sh
-go install github.com/lacymorrow/cliamp@latest
+go install github.com/bjarneo/cliamp@latest
 ```
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/lacymorrow/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon), Linux (amd64/arm64), and Windows.
+Download from [GitHub Releases](https://github.com/bjarneo/cliamp/releases/latest) — available for macOS (Intel/Apple Silicon) and Linux (amd64/arm64).
 
 ### Homebrew (macOS / Linux)
 
@@ -40,7 +40,7 @@ yay -S cliamp
 ### Build from source
 
 ```sh
-git clone https://github.com/lacymorrow/cliamp.git
+git clone https://github.com/bjarneo/cliamp.git
 cd cliamp
 go build -o cliamp .
 ```
@@ -193,8 +193,7 @@ client_id = "your_client_id_here"
 4. Run `cliamp` — first launch opens OAuth2 in your browser
 5. Credentials are cached automatically; subsequent launches don't require the browser
 
-Browse your playlists with `Esc`/`b` to open the provider browser, then select Spotify.
-
+Browse your playlists with `Esc`/`b` to open the provider browser, then select Spotify. See [docs/spotify.md](docs/spotify.md) for the full guide.
 ### ffmpeg (optional)
 
 AAC, ALAC (`.m4a`), Opus, and WMA playback requires [ffmpeg](https://ffmpeg.org/) installed:

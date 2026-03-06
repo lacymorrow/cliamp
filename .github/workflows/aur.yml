@@ -1,20 +1,26 @@
 name: Publish to AUR
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 jobs:
   aur:
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Extract version
         id: version
-        run: echo "pkgver=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+        run: |
+          # workflow_run sets head_branch to the tag name (e.g. "v1.2.3")
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          echo "pkgver=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Generate PKGBUILD
         env:
@@ -34,7 +40,7 @@ jobs:
           arch=('x86_64' 'aarch64')
           url='https://github.com/bjarneo/cliamp'
           license=('MIT')
-          depends=('alsa-lib' 'ffmpeg' 'yt-dlp')
+          depends=('alsa-lib' 'flac' 'libvorbis' 'libogg' 'ffmpeg' 'yt-dlp')
           makedepends=('go')
           source=("${pkgname}-${pkgver}.tar.gz::https://github.com/bjarneo/cliamp/archive/refs/tags/v${pkgver}.tar.gz")
           sha256sums=('SHA256_PLACEHOLDER')
@@ -56,8 +62,8 @@ jobs:
           # Remove leading whitespace from heredoc
           sed -i 's/^          //' PKGBUILD
           # Replace placeholders with actual values
-          sed -i "s/PKGVER_PLACEHOLDER/${PKGVER}/" PKGBUILD
-          sed -i "s/SHA256_PLACEHOLDER/${SHA256}/" PKGBUILD
+          sed -i "s|PKGVER_PLACEHOLDER|${PKGVER}|" PKGBUILD
+          sed -i "s|SHA256_PLACEHOLDER|${SHA256}|" PKGBUILD
 
           cat PKGBUILD
 

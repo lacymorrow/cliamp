@@ -103,8 +103,20 @@ func run(overrides config.Overrides, positional []string) error {
 	pl := playlist.New()
 	pl.Add(resolved.Tracks...)
 
+	// Resolve sample rate: 0 means auto-detect from the system's default
+	// output audio device (e.g. 48 kHz for USB-C headphones). Falls back
+	// to 44100 Hz if detection is unavailable or returns an unusable value.
+	sampleRate := cfg.SampleRate
+	if sampleRate == 0 {
+		if detected := player.DeviceSampleRate(); detected > 0 {
+			sampleRate = detected
+		} else {
+			sampleRate = 44100
+		}
+	}
+
 	p, err := player.New(player.Quality{
-		SampleRate:      cfg.SampleRate,
+		SampleRate:      sampleRate,
 		BufferMs:        cfg.BufferMs,
 		ResampleQuality: cfg.ResampleQuality,
 		BitDepth:        cfg.BitDepth,
@@ -180,7 +192,7 @@ Playback:
   --auto-play             Start playback immediately
 
 Audio engine:
-  --sample-rate <Hz>      Output sample rate (22050, 44100, 48000, 96000, 192000)
+  --sample-rate <Hz>      Output sample rate (0=auto, 22050, 44100, 48000, 96000, 192000)
   --buffer-ms <ms>        Speaker buffer in milliseconds (50–500)
   --resample-quality <n>  Resample quality factor (1–4)
   --bit-depth <n>         PCM bit depth: 16 (default) or 32 (lossless)
