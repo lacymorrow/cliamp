@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	librespot "github.com/devgianlu/go-librespot"
@@ -25,13 +26,25 @@ const maxResponseBody = 10 << 20
 
 // SpotifyProvider implements playlist.Provider using the Spotify Web API
 // for playlist/track metadata and go-librespot for audio streaming.
+// playlistCache holds a snapshot_id and the fetched tracks for a playlist,
+// allowing us to skip re-fetching playlists that haven't changed.
+type playlistCache struct {
+	snapshotID string
+	tracks     []playlist.Track
+}
+
 type SpotifyProvider struct {
-	session *Session
+	session    *Session
+	mu         sync.Mutex
+	trackCache map[string]*playlistCache // playlist ID → cache entry
 }
 
 // New creates a SpotifyProvider from an authenticated Session.
 func New(session *Session) *SpotifyProvider {
-	return &SpotifyProvider{session: session}
+	return &SpotifyProvider{
+		session:    session,
+		trackCache: make(map[string]*playlistCache),
+	}
 }
 
 func (p *SpotifyProvider) Name() string { return "Spotify" }
@@ -49,6 +62,9 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		query := url.Values{
 			"limit":  {fmt.Sprintf("%d", limit)},
 			"offset": {fmt.Sprintf("%d", offset)},
+			// Request only the fields we need to reduce payload size and API cost.
+			// Include snapshot_id for cache invalidation.
+			"fields": {"items(id,name,snapshot_id,items.total,tracks.total),total"},
 		}
 
 		resp, err := p.webAPI(ctx, "GET", "/v1/me/playlists", query)
@@ -58,8 +74,9 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 		var result struct {
 			Items []struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				SnapshotID string `json:"snapshot_id"`
 				// Feb 2026 API: "tracks" renamed to "items" in playlist objects.
 				// Parse both for backwards compatibility.
 				Items *struct {
@@ -75,6 +92,7 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 			return nil, fmt.Errorf("spotify: parse playlists: %w", err)
 		}
 
+		p.mu.Lock()
 		for _, item := range result.Items {
 			count := 0
 			if item.Items != nil {
@@ -87,7 +105,18 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 				Name:       item.Name,
 				TrackCount: count,
 			})
+			// Update snapshot_id in cache; if it changed, invalidate cached tracks.
+			if cached, ok := p.trackCache[item.ID]; ok {
+				if cached.snapshotID != item.SnapshotID {
+					delete(p.trackCache, item.ID)
+				}
+			}
+			// Store snapshot_id for later cache checks in Tracks().
+			if _, ok := p.trackCache[item.ID]; !ok && item.SnapshotID != "" {
+				p.trackCache[item.ID] = &playlistCache{snapshotID: item.SnapshotID}
+			}
 		}
+		p.mu.Unlock()
 
 		if offset+limit >= result.Total {
 			break
@@ -100,7 +129,17 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 // Tracks returns all tracks for the given Spotify playlist ID.
 // Track.Path is set to a spotify:track:<id> URI for the player to resolve.
+// Results are cached by snapshot_id; unchanged playlists skip the API call.
 func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
+	// Check cache — if we have tracks and the snapshot_id hasn't changed, return cached.
+	p.mu.Lock()
+	if cached, ok := p.trackCache[playlistID]; ok && cached.tracks != nil {
+		tracks := cached.tracks
+		p.mu.Unlock()
+		return tracks, nil
+	}
+	p.mu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -112,6 +151,9 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		query := url.Values{
 			"limit":  {fmt.Sprintf("%d", limit)},
 			"offset": {fmt.Sprintf("%d", offset)},
+			// Request only the fields we need to reduce payload size and API cost.
+			// Both "item" (new) and "track" (legacy) field names for compat.
+			"fields": {"items(item(id,name,artists(name),album(name,release_date),duration_ms,track_number),track(id,name,artists(name),album(name,release_date),duration_ms,track_number)),total"},
 		}
 
 		// Feb 2026 API: /tracks renamed to /items
@@ -185,6 +227,15 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		}
 		offset += limit
 	}
+
+	// Cache the fetched tracks.
+	p.mu.Lock()
+	if cached, ok := p.trackCache[playlistID]; ok {
+		cached.tracks = all
+	} else {
+		p.trackCache[playlistID] = &playlistCache{tracks: all}
+	}
+	p.mu.Unlock()
 
 	return all, nil
 }
