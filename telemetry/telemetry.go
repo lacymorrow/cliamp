@@ -4,6 +4,7 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -94,10 +95,20 @@ func Ping(version string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?id="+s.ID+"&v="+version, nil)
+		body, err := json.Marshal(map[string]string{
+			"uuid":    s.ID,
+			"version": version,
+		})
 		if err != nil {
 			return
 		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return
