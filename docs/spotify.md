@@ -37,9 +37,14 @@ When focused on the provider panel:
 
 After loading a playlist you return to the standard playlist view with all the usual controls (seek, volume, EQ, shuffle, repeat, queue, search, lyrics).
 
+## Playlists
+
+Only playlists in your Spotify library are shown — this includes playlists you've created and playlists you've saved (followed). If a public playlist doesn't appear, open Spotify and click **Save** on it first. There's no need to copy tracks to a new playlist.
+
 ## Troubleshooting
 
 - **"OAuth failed"** — Make sure your redirect URI is exactly `http://127.0.0.1:19872/login` in the Spotify dashboard (no trailing slash).
+- **Playlist not showing** — You must save/follow the playlist in Spotify for it to appear. Only your library playlists are listed.
 - **Playback issues** — Spotify integration requires a Premium account. Free accounts cannot stream.
 - **Re-authenticate** — Delete `~/.config/cliamp/spotify_credentials.json` and restart cliamp to trigger a fresh login.
 
