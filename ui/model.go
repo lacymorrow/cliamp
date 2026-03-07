@@ -665,8 +665,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plVisible = max(3, m.height-fixedLines)
 
 	case seekTickMsg:
-		// Async yt-dlp seek completed — stop holding the target position.
-		m.seekInFlight = false
+		// Async yt-dlp seek completed.
+		// Only clear in-flight if no new seek is pending (prevents position bounce).
+		if m.pendingSeek == 0 {
+			m.seekInFlight = false
+		}
 		// Grace period: suppress reconnect for a few ticks after seek completes,
 		// because the old pipeline's error may still be in the decoder.
 		m.seekGrace = 10 // ~1 second at 100ms tick
