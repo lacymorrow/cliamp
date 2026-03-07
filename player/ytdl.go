@@ -178,9 +178,12 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipe
 	}
 
 	// Start yt-dlp: download best audio to stdout.
+	// Prefer direct HTTPS/HTTP streams over HLS (m3u8). HLS requires segment
+	// downloading and muxing which doesn't pipe cleanly to stdout.
 	ytdlCmd := exec.Command("yt-dlp",
-		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio",
+		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio",
 		"--no-playlist",
+		"--no-warnings",
 		"-o", "-",
 		pageURL,
 	)
