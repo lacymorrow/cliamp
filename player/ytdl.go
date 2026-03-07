@@ -192,7 +192,6 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipe
 	// Start yt-dlp: download best audio to stdout.
 	// Prefer direct HTTPS/HTTP streams over HLS (m3u8). HLS requires segment
 	// downloading and muxing which doesn't pipe cleanly to stdout.
-	fmt.Fprintf(os.Stderr, "ytdl: starting playback for: %s\n", pageURL)
 	ytdlArgs := []string{
 		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio",
 		"--no-playlist",
@@ -222,7 +221,7 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipe
 		"-acodec", codec,
 		"-ar", strconv.Itoa(int(sr)),
 		"-ac", "2",
-		"-loglevel", "warning",
+		"-loglevel", "error",
 		"pipe:1",
 	)
 	ffmpegCmd.Stdin = pr
@@ -254,13 +253,6 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipe
 	ytdlErrCh := make(chan error, 1)
 	go func() {
 		err := ytdlCmd.Wait()
-		// Log stderr from both processes for debugging.
-		if ytStderr := bytes.TrimSpace(ytdlStderr.Bytes()); len(ytStderr) > 0 {
-			fmt.Fprintf(os.Stderr, "ytdl stderr: %s\n", ytStderr)
-		}
-		if ffStderr := bytes.TrimSpace(ffmpegStderr.Bytes()); len(ffStderr) > 0 {
-			fmt.Fprintf(os.Stderr, "ffmpeg stderr: %s\n", ffStderr)
-		}
 		if err != nil {
 			stderr := bytes.TrimSpace(ytdlStderr.Bytes())
 			if len(stderr) > 0 {
