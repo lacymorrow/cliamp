@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -335,9 +336,23 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 // decoded AudioSources — audio output is routed through cliamp's Beep pipeline,
 // not go-librespot's output backend.
 func (s *Session) initPlayer() error {
-	// go-librespot uses this for media restriction checks but Premium
-	// accounts can play all tracks regardless.
-	countryCode := "US"
+	// Fetch user's country for media restriction checks.
+	countryCode := "US" // fallback
+	if resp, err := s.WebApi(context.Background(), "GET", "/v1/me", nil); err != nil {
+		fmt.Fprintf(os.Stderr, "spotify: failed to get user profile for country: %v\n", err)
+	} else {
+		defer resp.Body.Close()
+		var me struct {
+			Country string `json:"country"`
+		}
+		if data, err := io.ReadAll(resp.Body); err != nil {
+			fmt.Fprintf(os.Stderr, "spotify: failed to read user profile: %v\n", err)
+		} else if err := json.Unmarshal(data, &me); err != nil {
+			fmt.Fprintf(os.Stderr, "spotify: failed to parse user profile: %v\n", err)
+		} else if me.Country != "" {
+			countryCode = me.Country
+		}
+	}
 	p, err := librespotPlayer.NewPlayer(&librespotPlayer.Options{
 		Spclient:             s.sess.Spclient(),
 		AudioKey:             s.sess.AudioKey(),
