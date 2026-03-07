@@ -19,22 +19,16 @@ jobs:
           - goos: linux
             goarch: arm64
             runner: ubuntu-latest
-            cc: aarch64-linux-gnu-gcc
-            pkg_config_path: /usr/lib/aarch64-linux-gnu/pkgconfig
           - goos: darwin
             goarch: amd64
-            runner: macos-13
+            runner: macos-latest
           - goos: darwin
             goarch: arm64
             runner: macos-latest
-
     runs-on: ${{ matrix.runner }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -51,10 +45,13 @@ jobs:
         if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
         run: |
           sudo dpkg --add-architecture arm64
+          # Pin existing DEB822 sources to amd64 only (noble+ uses this format)
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
             sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
           fi
+          # Pin traditional sources.list entries to amd64 (if any)
           sudo sed -i 's/^deb \(http\)/deb [arch=amd64] \1/' /etc/apt/sources.list || true
+          # Add arm64 sources via ports.ubuntu.com
           CODENAME=$(lsb_release -cs)
           sudo tee /etc/apt/sources.list.d/arm64-ports.list > /dev/null <<EOF
           deb [arch=arm64] http://ports.ubuntu.com/ ${CODENAME} main restricted universe multiverse
@@ -64,57 +61,202 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libflac-dev:arm64 libvorbis-dev:arm64 libogg-dev:arm64
 
-      - name: Install deps (macOS)
-        if: matrix.goos == 'darwin'
+      - name: Install deps (macOS arm64)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
         run: brew install flac libvorbis libogg pkg-config
 
-      - name: Build with GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: build --single-target --clean
+      - name: Install deps (macOS amd64 cross)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
+        run: |
+          # Install x86_64 Homebrew under /usr/local via Rosetta 2
+          NONINTERACTIVE=1 arch -x86_64 /bin/bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 /usr/local/bin/brew install flac libvorbis libogg pkg-config
+
+      - name: Build (Linux)
+        if: matrix.goos == 'linux'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
-          CC: ${{ matrix.cc || '' }}
-          PKG_CONFIG_PATH: ${{ matrix.pkg_config_path || '' }}
+        run: |
+          if [ "$GOARCH" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+          fi
+          BINARY="cliamp-${GOOS}-${GOARCH}"
+          VERSION="${GITHUB_REF#refs/tags/}"
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
 
-      - name: Upload dist artifacts
+      - name: Build (macOS)
+        if: matrix.goos == 'darwin'
+        env:
+          CGO_ENABLED: "1"
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          if [ "$GOARCH" = "amd64" ]; then
+            # Cross-compile for x86_64 using Rosetta 2 installed libs
+            export CC="clang -arch x86_64"
+            export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+            export CGO_CFLAGS="-I/usr/local/include"
+            export CGO_LDFLAGS="-L/usr/local/lib"
+          fi
+          BINARY="cliamp-darwin-${GOARCH}"
+          VERSION="${GITHUB_REF#refs/tags/}"
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/
-          if-no-files-found: error
+          name: cliamp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: cliamp-*
 
   release:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Download all dist artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: dist-*
-          path: dist
+          path: artifacts
           merge-multiple: true
 
-      - name: Release with GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --skip=build
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum cliamp-* > checksums.txt
+          cat checksums.txt
+
+      - name: Generate changelog
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          AUR_KEY: ${{ secrets.AUR_KEY }}
+          REPO: ${{ github.repository }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)" "$TAG")
+          else
+            COMMITS=$(git log --pretty=format:"- %s (%h)" "${PREV_TAG}..${TAG}")
+          fi
+
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$COMMITS"
+            echo ""
+            echo "## Checksums (SHA256)"
+            echo ""
+            echo '```'
+            cat artifacts/checksums.txt
+            echo '```'
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full Changelog**: https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
+            fi
+          } > release_notes.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: |
+            artifacts/cliamp-*
+            artifacts/checksums.txt
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download checksums
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          curl -sL "https://github.com/bjarneo/cliamp/releases/download/${TAG}/checksums.txt" -o checksums.txt
+          cat checksums.txt
+
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "SHA_DARWIN_ARM64=$(grep 'darwin-arm64' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_DARWIN_AMD64=$(grep 'darwin-amd64' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_LINUX_ARM64=$(grep 'linux-arm64' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SHA_LINUX_AMD64=$(grep 'linux-amd64' checksums.txt | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Generate and push formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/bjarneo/homebrew-cliamp.git"
+          cd homebrew-cliamp
+          mkdir -p Formula
+
+          cat > Formula/cliamp.rb << 'FORMULA'
+          class Cliamp < Formula
+            desc "A retro terminal music player inspired by Winamp 2.x"
+            homepage "https://github.com/bjarneo/cliamp"
+
+            head "https://github.com/bjarneo/cliamp.git", branch: "main"
+
+            depends_on "flac"
+            depends_on "libvorbis"
+            depends_on "libogg"
+            depends_on "ffmpeg" => :recommended
+            depends_on "yt-dlp" => :recommended
+            depends_on "go" => :build
+          FORMULA
+
+          cat >> Formula/cliamp.rb << EOF
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-darwin-amd64"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-linux-arm64"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/bjarneo/cliamp/releases/download/${TAG}/cliamp-linux-amd64"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              if build.head?
+                # Build from source for HEAD
+                system "go", "build", "-ldflags", "-s -w", "-o", bin/"cliamp", "."
+              else
+                # Use pre-built binary for stable releases
+                binary = Dir["cliamp-*"].first
+                bin.install binary => "cliamp"
+              end
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/cliamp --version")
+            end
+          end
+          EOF
+
+          sed -i 's/^          //' Formula/cliamp.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/cliamp.rb
+          git commit -m "Update cliamp to ${VERSION}"
+          git push
