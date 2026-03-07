@@ -400,6 +400,15 @@ func (p *Player) buildYTDLPipeline(pageURL string) (*trackPipeline, error) {
 		return nil, err
 	}
 
+	// Pre-fill: block until yt-dlp + ffmpeg produce initial audio data.
+	// This runs in a tea.Cmd goroutine (not the UI thread), ensuring the
+	// speaker goroutine won't block on an empty pipe and hold its lock
+	// (which would freeze the UI).
+	if _, err := decoder.reader.Peek(1); err != nil {
+		decoder.Close()
+		return nil, fmt.Errorf("waiting for audio data: %w", err)
+	}
+
 	return &trackPipeline{
 		decoder:  decoder,
 		stream:   decoder,
@@ -417,6 +426,12 @@ func (p *Player) buildYTDLPipelineAt(pageURL string, startSec int) (*trackPipeli
 	decoder, format, err := decodeYTDLPipeAt(pageURL, startSec, p.sr, p.bitDepth)
 	if err != nil {
 		return nil, err
+	}
+
+	// Pre-fill: block until audio data arrives (see buildYTDLPipeline).
+	if _, err := decoder.reader.Peek(1); err != nil {
+		decoder.Close()
+		return nil, fmt.Errorf("waiting for audio data: %w", err)
 	}
 
 	return &trackPipeline{

@@ -425,9 +425,13 @@ func (p *Player) SeekYTDL(d time.Duration) error {
 		return nil
 	}
 
-	// Read position with speaker lock (briefly).
+	// Read position, then mute the current stream so the speaker outputs
+	// silence while the new pipeline is being built (which blocks on Peek
+	// waiting for yt-dlp data). Without this, the old audio keeps playing
+	// at the pre-seek position during the rebuild.
 	speaker.Lock()
 	curPos := cur.format.SampleRate.D(cur.decoder.Position()) + cur.streamOffset
+	p.gapless.Replace(nil)
 	speaker.Unlock()
 
 	newPos := curPos + d
