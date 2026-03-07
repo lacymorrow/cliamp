@@ -64,7 +64,7 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 			"offset": {fmt.Sprintf("%d", offset)},
 			// Request only the fields we need to reduce payload size and API cost.
 			// Include snapshot_id for cache invalidation.
-			"fields": {"items(id,name,snapshot_id,items.total,tracks.total),total"},
+			"fields": {"items(id,name,snapshot_id,items.total),total"},
 		}
 
 		resp, err := p.webAPI(ctx, "GET", "/v1/me/playlists", query)
@@ -77,14 +77,9 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 				ID         string `json:"id"`
 				Name       string `json:"name"`
 				SnapshotID string `json:"snapshot_id"`
-				// Feb 2026 API: "tracks" renamed to "items" in playlist objects.
-				// Parse both for backwards compatibility.
-				Items *struct {
+				Items      struct {
 					Total int `json:"total"`
 				} `json:"items"`
-				Tracks *struct {
-					Total int `json:"total"`
-				} `json:"item"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
@@ -94,16 +89,10 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 		p.mu.Lock()
 		for _, item := range result.Items {
-			count := 0
-			if item.Items != nil {
-				count = item.Items.Total
-			} else if item.Tracks != nil {
-				count = item.Tracks.Total
-			}
 			all = append(all, playlist.PlaylistInfo{
 				ID:         item.ID,
 				Name:       item.Name,
-				TrackCount: count,
+				TrackCount: item.Items.Total,
 			})
 			// Update snapshot_id in cache; if it changed, invalidate cached tracks.
 			if cached, ok := p.trackCache[item.ID]; ok {
@@ -152,8 +141,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 			"limit":  {fmt.Sprintf("%d", limit)},
 			"offset": {fmt.Sprintf("%d", offset)},
 			// Request only the fields we need to reduce payload size and API cost.
-			// Both "item" (new) and "track" (legacy) field names for compat.
-			"fields": {"items(item(id,name,artists(name),album(name,release_date),duration_ms,track_number),track(id,name,artists(name),album(name,release_date),duration_ms,track_number)),total"},
+			"fields": {"items(item(id,name,artists(name),album(name,release_date),duration_ms,track_number)),total"},
 		}
 
 		// Feb 2026 API: /tracks renamed to /items
@@ -163,8 +151,6 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 			return nil, fmt.Errorf("spotify: list tracks: %w", err)
 		}
 
-		// Feb 2026 API: "track" renamed to "item" in response.
-		// Parse both for backwards compatibility.
 		type trackObj struct {
 			ID      string `json:"id"`
 			Name    string `json:"name"`
@@ -180,8 +166,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		}
 		var result struct {
 			Items []struct {
-				Item  *trackObj `json:"item"`
-				Track *trackObj `json:"track"`
+				Item *trackObj `json:"item"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
@@ -191,9 +176,6 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 
 		for _, item := range result.Items {
 			t := item.Item
-			if t == nil {
-				t = item.Track // fallback for old API
-			}
 			if t == nil || t.ID == "" {
 				continue // skip local/unavailable tracks
 			}
