@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"cliamp/config"
+	"cliamp/external/applemusic"
 	"cliamp/external/local"
 	"cliamp/external/navidrome"
 	"cliamp/external/radio"
@@ -101,6 +102,18 @@ func run(overrides config.Overrides, positional []string) error {
 		}
 	}
 
+	// Build Apple Music provider if enabled in config (macOS only).
+	var appleMusicProv *applemusic.AppleMusicProvider
+	if cfg.AppleMusic.IsSet() {
+		appleMusicProv = applemusic.New()
+	}
+
+	if appleMusicProv != nil {
+		providers = append(providers,
+			ui.ProviderEntry{Key: "applemusic", Name: "Apple Music", Provider: appleMusicProv},
+		)
+	}
+
 	localProv := local.New()
 
 	defer resolve.CleanupYTDL()
@@ -109,6 +122,9 @@ func run(overrides config.Overrides, positional []string) error {
 	}
 	if ytProviders.Music != nil {
 		defer ytProviders.Music.Close()
+	}
+	if appleMusicProv != nil {
+		defer appleMusicProv.Close()
 	}
 
 	if len(positional) > 0 && (positional[0] == "search" || positional[0] == "search-sc") {
