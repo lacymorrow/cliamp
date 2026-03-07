@@ -83,10 +83,10 @@ func (m *Model) tickSeek() tea.Cmd {
 	m.seekInFlight = true
 	m.pendingSeek = 0
 
-	// Run seek in background to avoid blocking the UI.
-	// Use SeekYTDL directly — it doesn't hold the speaker lock during spawn.
+	// Capture player pointer before returning the Cmd — don't close over m.
+	p := m.player
 	return func() tea.Msg {
-		m.player.SeekYTDL(d)
+		p.SeekYTDL(d)
 		return seekTickMsg{}
 	}
 }

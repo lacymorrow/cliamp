@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gopxl/beep/v2"
@@ -130,6 +131,7 @@ type ytdlPipeStreamer struct {
 	buf       [pcmFrameSize32]byte
 	f32       bool // true = f32le, false = s16le
 	pos       int  // samples consumed so far
+	closeOnce sync.Once
 	err       error
 }
 
@@ -155,22 +157,25 @@ func (y *ytdlPipeStreamer) Position() int  { return y.pos }
 func (y *ytdlPipeStreamer) Seek(int) error { return nil }
 
 func (y *ytdlPipeStreamer) Close() error {
-	// Kill both processes to stop downloading/decoding.
-	if y.ffmpegCmd.Process != nil {
-		y.ffmpegCmd.Process.Kill()
-	}
-	if y.ytdlCmd.Process != nil {
-		y.ytdlCmd.Process.Kill()
-	}
-	y.pipe.Close()
-	// Wait for both to prevent zombie processes.
-	y.ffmpegCmd.Wait()
-	y.ytdlCmd.Wait()
-	// Drain the error channel so the monitor goroutine can exit.
-	select {
-	case <-y.ytdlErr:
-	default:
-	}
+	y.closeOnce.Do(func() {
+		// Kill both processes to stop downloading/decoding.
+		if y.ytdlCmd.Process != nil {
+			y.ytdlCmd.Process.Kill()
+		}
+		if y.ffmpegCmd.Process != nil {
+			y.ffmpegCmd.Process.Kill()
+		}
+		y.pipe.Close()
+		// Wait in background to prevent blocking quit/seek.
+		go func() {
+			y.ffmpegCmd.Wait()
+			// Drain error channel so monitor goroutine can exit.
+			select {
+			case <-y.ytdlErr:
+			default:
+			}
+		}()
+	})
 	return nil
 }
 
@@ -348,11 +353,6 @@ func decodeYTDLPipeAt(pageURL string, startSec int, sr beep.SampleRate, bitDepth
 		return nil, beep.Format{}, fmt.Errorf("ffmpeg start: %w", err)
 	}
 
-	go func() {
-		ytdlCmd.Wait()
-		pw.Close()
-	}()
-
 	format := beep.Format{
 		SampleRate:  sr,
 		NumChannels: 2,
@@ -362,6 +362,7 @@ func decodeYTDLPipeAt(pageURL string, startSec int, sr beep.SampleRate, bitDepth
 	ytdlErrCh := make(chan error, 1)
 	go func() {
 		err := ytdlCmd.Wait()
+		pw.Close() // signal EOF to ffmpeg
 		if err != nil {
 			stderr := bytes.TrimSpace(ytdlStderr.Bytes())
 			if len(stderr) > 0 {
