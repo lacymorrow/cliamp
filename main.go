@@ -57,7 +57,7 @@ func run(overrides config.Overrides, positional []string) error {
 
 	var ytmusicProv *ytmusic.YouTubeMusicProvider
 	if cfg.YouTubeMusic.IsSet() {
-		ytmusicProv = ytmusic.New(nil, cfg.YouTubeMusic.ClientID)
+		ytmusicProv = ytmusic.New(nil, cfg.YouTubeMusic.ClientID, cfg.YouTubeMusic.ClientSecret)
 		providers = append(providers, ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytmusicProv})
 	}
 

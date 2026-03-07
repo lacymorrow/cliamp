@@ -30,10 +30,11 @@ const CallbackPort = 19873
 
 // Session manages a YouTube Data API v3 service for YouTube Music integration.
 type Session struct {
-	mu          sync.Mutex
-	clientID    string
-	service     *youtube.Service
-	tokenSource oauth2.TokenSource
+	mu           sync.Mutex
+	clientID     string
+	clientSecret string
+	service      *youtube.Service
+	tokenSource  oauth2.TokenSource
 }
 
 // oauthScopes are the YouTube API scopes needed for cliamp.
@@ -41,48 +42,51 @@ var oauthScopes = []string{
 	"https://www.googleapis.com/auth/youtube.readonly",
 }
 
-// googleOAuthConfig returns the OAuth2 config for the given client ID.
-func googleOAuthConfig(clientID string) *oauth2.Config {
+// googleOAuthConfig returns the OAuth2 config for the given client ID and secret.
+// Google Desktop OAuth requires both a client_id and client_secret (unlike Spotify
+// which supports PKCE-only public clients).
+func googleOAuthConfig(clientID, clientSecret string) *oauth2.Config {
 	return &oauth2.Config{
-		ClientID:    clientID,
-		RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/callback", CallbackPort),
-		Scopes:      oauthScopes,
-		Endpoint:    google.Endpoint,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  fmt.Sprintf("http://127.0.0.1:%d/callback", CallbackPort),
+		Scopes:       oauthScopes,
+		Endpoint:     google.Endpoint,
 	}
 }
 
 // NewSession creates a YouTube API session, using stored credentials if
 // available, otherwise starting an interactive OAuth2 flow.
-func NewSession(ctx context.Context, clientID string) (*Session, error) {
+func NewSession(ctx context.Context, clientID, clientSecret string) (*Session, error) {
 	creds, err := loadCreds()
 	if err == nil && creds.RefreshToken != "" {
-		s, err := newSessionFromStored(ctx, clientID, creds)
+		s, err := newSessionFromStored(ctx, clientID, clientSecret, creds)
 		if err == nil {
 			return s, nil
 		}
 		// Stored credentials failed, fall through to interactive.
 	}
-	return newInteractiveSession(ctx, clientID)
+	return newInteractiveSession(ctx, clientID, clientSecret)
 }
 
 // NewSessionSilent is like NewSession but only uses stored credentials.
 // Returns an error if interactive auth is required.
-func NewSessionSilent(ctx context.Context, clientID string) (*Session, error) {
+func NewSessionSilent(ctx context.Context, clientID, clientSecret string) (*Session, error) {
 	creds, err := loadCreds()
 	if err != nil || creds.RefreshToken == "" {
 		return nil, fmt.Errorf("no stored credentials")
 	}
-	return newSessionFromStored(ctx, clientID, creds)
+	return newSessionFromStored(ctx, clientID, clientSecret, creds)
 }
 
 // newSessionFromStored creates a session from stored credentials via silent refresh.
-func newSessionFromStored(ctx context.Context, clientID string, creds *storedCreds) (*Session, error) {
-	token, err := silentTokenRefresh(clientID, creds.RefreshToken)
+func newSessionFromStored(ctx context.Context, clientID, clientSecret string, creds *storedCreds) (*Session, error) {
+	token, err := silentTokenRefresh(clientID, clientSecret, creds.RefreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("ytmusic: silent refresh: %w", err)
 	}
 
-	conf := googleOAuthConfig(clientID)
+	conf := googleOAuthConfig(clientID, clientSecret)
 	ts := conf.TokenSource(ctx, token)
 
 	svc, err := youtube.NewService(ctx, option.WithTokenSource(ts))
@@ -98,28 +102,29 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 	}
 
 	return &Session{
-		clientID:    clientID,
-		service:     svc,
-		tokenSource: ts,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		service:      svc,
+		tokenSource:  ts,
 	}, nil
 }
 
 // silentTokenRefresh uses a stored refresh token to get a new access token
 // without opening a browser.
-func silentTokenRefresh(clientID, refreshToken string) (*oauth2.Token, error) {
-	conf := googleOAuthConfig(clientID)
+func silentTokenRefresh(clientID, clientSecret, refreshToken string) (*oauth2.Token, error) {
+	conf := googleOAuthConfig(clientID, clientSecret)
 	src := conf.TokenSource(context.Background(), &oauth2.Token{RefreshToken: refreshToken})
 	return src.Token()
 }
 
-// newInteractiveSession performs an OAuth2 PKCE flow to authenticate.
-func newInteractiveSession(ctx context.Context, clientID string) (*Session, error) {
-	token, err := doOAuth(clientID)
+// newInteractiveSession performs an OAuth2 flow to authenticate.
+func newInteractiveSession(ctx context.Context, clientID, clientSecret string) (*Session, error) {
+	token, err := doOAuth(clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
 
-	conf := googleOAuthConfig(clientID)
+	conf := googleOAuthConfig(clientID, clientSecret)
 	ts := conf.TokenSource(ctx, token)
 
 	svc, err := youtube.NewService(ctx, option.WithTokenSource(ts))
@@ -133,21 +138,22 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 	}
 
 	return &Session{
-		clientID:    clientID,
-		service:     svc,
-		tokenSource: ts,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		service:      svc,
+		tokenSource:  ts,
 	}, nil
 }
 
-// doOAuth performs an OAuth2 PKCE flow: starts localhost server, opens browser,
+// doOAuth performs an OAuth2 flow: starts localhost server, opens browser,
 // exchanges code for token.
-func doOAuth(clientID string) (*oauth2.Token, error) {
+func doOAuth(clientID, clientSecret string) (*oauth2.Token, error) {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", CallbackPort))
 	if err != nil {
 		return nil, fmt.Errorf("ytmusic: listen on port %d (is another instance running?): %w", CallbackPort, err)
 	}
 
-	oauthConf := googleOAuthConfig(clientID)
+	oauthConf := googleOAuthConfig(clientID, clientSecret)
 
 	verifier := oauth2.GenerateVerifier()
 	authURL := oauthConf.AuthCodeURL("", oauth2.S256ChallengeOption(verifier), oauth2.AccessTypeOffline)
@@ -192,13 +198,14 @@ func doOAuth(clientID string) (*oauth2.Token, error) {
 func (s *Session) Reconnect(ctx context.Context) error {
 	s.mu.Lock()
 	clientID := s.clientID
+	clientSecret := s.clientSecret
 	s.mu.Unlock()
 
 	if err := deleteCreds(); err != nil {
 		fmt.Fprintf(os.Stderr, "ytmusic: failed to clear stored credentials: %v\n", err)
 	}
 
-	newSess, err := NewSession(ctx, clientID)
+	newSess, err := NewSession(ctx, clientID, clientSecret)
 	if err != nil {
 		return fmt.Errorf("ytmusic: reconnect: %w", err)
 	}

@@ -63,14 +63,15 @@ func (s SpotifyConfig) IsSet() bool {
 // Requires a Google Cloud project with YouTube Data API v3 enabled
 // and an OAuth 2.0 Client ID (Desktop application type).
 type YouTubeMusicConfig struct {
-	Disabled bool   // true only when user explicitly sets enabled = false
-	ClientID string // Google Cloud OAuth2 client ID (required)
+	Disabled     bool   // true only when user explicitly sets enabled = false
+	ClientID     string // Google Cloud OAuth2 client ID (required)
+	ClientSecret string // Google Cloud OAuth2 client secret (required for Desktop apps)
 }
 
 // IsSet reports whether the YouTube Music provider should be shown.
 // Requires a client_id and must not be explicitly disabled.
 func (y YouTubeMusicConfig) IsSet() bool {
-	return !y.Disabled && y.ClientID != ""
+	return !y.Disabled && y.ClientID != "" && y.ClientSecret != ""
 }
 
 // Config holds user preferences loaded from the config file.
@@ -177,6 +178,8 @@ func Load() (Config, error) {
 				cfg.YouTubeMusic.Disabled = strings.ToLower(val) == "false"
 			case "client_id":
 				cfg.YouTubeMusic.ClientID = strings.Trim(val, `"'`)
+			case "client_secret":
+				cfg.YouTubeMusic.ClientSecret = strings.Trim(val, `"'`)
 			}
 		default:
 			switch key {
