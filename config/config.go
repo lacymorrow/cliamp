@@ -44,32 +44,19 @@ func (n NavidromeConfig) ScrobbleEnabled() bool {
 }
 
 // SpotifyConfig holds settings for the Spotify provider.
-// Requires a Spotify Premium account.
-// If no client_id is set, a random built-in fallback is used automatically.
+// Requires a Spotify Premium account and a client_id from
+// developer.spotify.com/dashboard.
 type SpotifyConfig struct {
-	Enabled  bool
-	ClientID string // Spotify Developer app client ID (overrides built-in fallback)
+	Disabled bool   // true only when user explicitly sets enabled = false
+	ClientID string // Spotify Developer app client ID (required)
 }
 
-// IsSet reports whether the Spotify provider is enabled.
-// Note: callers should also verify that a client ID is available
-// (via ResolveClientID) before starting a session.
+// IsSet reports whether the Spotify provider should be shown.
+// Requires a client_id and must not be explicitly disabled.
 func (s SpotifyConfig) IsSet() bool {
-	return s.Enabled
+	return !s.Disabled && s.ClientID != ""
 }
 
-// ResolveClientID returns the user's configured client ID, or a random
-// fallback from the built-in pool if none is set.  Returns "" only when
-// the pool is also empty.
-func (s SpotifyConfig) ResolveClientID(fallbackFn func() string) string {
-	if s.ClientID != "" {
-		return s.ClientID
-	}
-	if fallbackFn != nil {
-		return fallbackFn()
-	}
-	return ""
-}
 // Config holds user preferences loaded from the config file.
 type Config struct {
 	Volume          float64     // dB, range [-30, +6]
@@ -163,7 +150,7 @@ func Load() (Config, error) {
 		case "spotify":
 			switch key {
 			case "enabled":
-				cfg.Spotify.Enabled = val == "true"
+				cfg.Spotify.Disabled = strings.ToLower(val) == "false"
 			case "client_id":
 				cfg.Spotify.ClientID = strings.Trim(val, `"'`)
 			}

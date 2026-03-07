@@ -52,17 +52,29 @@ type Session struct {
 func NewSession(ctx context.Context, clientID string) (*Session, error) {
 	creds, err := loadCreds()
 	if err == nil && creds.Username != "" && len(creds.Data) > 0 {
-		s, err := newSessionFromStored(ctx, clientID, creds)
+		s, err := newSessionFromStored(ctx, clientID, creds, false)
 		if err == nil {
 			return s, nil
 		}
 		// Stored credentials failed (expired/revoked), fall through to interactive.
-		fmt.Fprintf(os.Stderr, "spotify: stored credentials failed, re-authenticating: %v\n", err)
 	}
 	return newInteractiveSession(ctx, clientID)
 }
 
-func newSessionFromStored(ctx context.Context, clientID string, creds *storedCreds) (*Session, error) {
+// NewSessionSilent is like NewSession but only uses stored credentials.
+// Returns an error if interactive auth is required.
+func NewSessionSilent(ctx context.Context, clientID string) (*Session, error) {
+	creds, err := loadCreds()
+	if err != nil || creds.Username == "" || len(creds.Data) == 0 {
+		return nil, fmt.Errorf("no stored credentials")
+	}
+	return newSessionFromStored(ctx, clientID, creds, true)
+}
+
+// newSessionFromStored creates a session from stored credentials.
+// When silentOnly is true, it will not fall back to browser-based auth
+// if the silent token refresh fails.
+func newSessionFromStored(ctx context.Context, clientID string, creds *storedCreds, silentOnly bool) (*Session, error) {
 	devID := creds.DeviceID
 	if devID == "" {
 		devID = generateDeviceID()
@@ -89,12 +101,13 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 		token, err := silentTokenRefresh(clientID, creds.RefreshToken)
 		if err == nil {
 			oauthToken = token
-			fmt.Fprintf(os.Stderr, "spotify: Web API token refreshed silently\n")
-		} else {
-			fmt.Fprintf(os.Stderr, "spotify: silent refresh failed, launching browser: %v\n", err)
 		}
 	}
 	if oauthToken == nil {
+		if silentOnly {
+			sess.Close()
+			return nil, fmt.Errorf("silent token refresh failed, interactive auth required")
+		}
 		token, err := doWebAPIAuth(clientID)
 		if err != nil {
 			sess.Close()
@@ -129,15 +142,6 @@ func newSessionFromStored(ctx context.Context, clientID string, creds *storedCre
 // oauthScopes are the Spotify Web API scopes needed for cliamp.
 // See: https://developer.spotify.com/documentation/web-api/concepts/scopes
 //
-// NOTE: The following internal Spotify scopes are NOT available to third-party
-// apps and cause "Illegal scope" errors:
-//   app-remote-control, playlist-modify, playlist-read, user-modify,
-//   user-modify-private, user-personalized, user-read-birthdate
-//
-// Feb 2026 API changes:
-//   - user-read-email removed (email no longer returned by GET /me)
-//   - country, followers, product removed from GET /me
-//   - popularity, available_markets removed from track/album/artist responses
 var oauthScopes = []string{
 	// Playlist browsing
 	"playlist-read-collaborative",
@@ -216,10 +220,7 @@ func doWebAPIAuth(clientID string) (*oauth2.Token, error) {
 		}
 	}()
 
-	fmt.Println("\nSpotify: Refreshing Web API token...")
-	fmt.Printf("  %s\n", authURL)
 	_ = openBrowser(authURL)
-	fmt.Println("  Waiting for authentication callback...")
 
 	code := <-codeCh
 	_ = lis.Close()
@@ -235,8 +236,6 @@ func doWebAPIAuth(clientID string) (*oauth2.Token, error) {
 
 func newInteractiveSession(ctx context.Context, clientID string) (*Session, error) {
 	devID := generateDeviceID()
-
-	fmt.Println("Spotify: Starting OAuth2 authentication...")
 
 	// We do our own OAuth2 flow so we can:
 	// 1. Capture the access token for Web API calls
@@ -281,52 +280,10 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 		}
 	}()
 
-	// Show URL and open browser.
-	fmt.Println()
-	fmt.Printf("  Open this URL to authenticate with Spotify:\n\n")
-	fmt.Printf("  %s\n\n", authURL)
-
-	if err := openBrowser(authURL); err == nil {
-		fmt.Println("  (Attempting to open in your browser...)")
-	} else {
-		fmt.Println("  (Could not open browser automatically.)")
-	}
-	fmt.Println("  Press Enter to retry opening the browser.")
-	fmt.Println("  Waiting for authentication callback...")
-
-	// Handle Enter for retry. We read in a goroutine but DON'T use
-	// bufio.Scanner — it holds an internal buffer that steals bytes from
-	// stdin after auth completes, breaking Bubbletea's raw terminal input.
-	// The goroutine will block on Read after auth, but that's fine — it
-	// will exit when the process exits or stdin is closed.
-	authDone := make(chan struct{})
-	go func() {
-		buf := make([]byte, 1)
-		for {
-			select {
-			case <-authDone:
-				return
-			default:
-			}
-			n, err := os.Stdin.Read(buf)
-			if err != nil {
-				return
-			}
-			if n > 0 && buf[0] == '\n' {
-				select {
-				case <-authDone:
-					return
-				default:
-					_ = openBrowser(authURL)
-					fmt.Println("  (Retrying browser open...)")
-				}
-			}
-		}
-	}()
+	_ = openBrowser(authURL)
 
 	// Wait for the auth code.
 	code := <-codeCh
-	close(authDone) // stop the retry goroutine
 	_ = lis.Close()
 
 	// Exchange code for token.
@@ -337,8 +294,6 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 
 	username, _ := token.Extra("username").(string)
 	accessToken := token.AccessToken
-
-	fmt.Printf("\nSpotify: Got OAuth2 token, connecting session...\n")
 
 	// Create go-librespot session using the OAuth2 token.
 	sess, err := session.NewSessionFromOptions(ctx, &session.Options{
@@ -353,8 +308,6 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 	if err != nil {
 		return nil, fmt.Errorf("spotify: session from token: %w", err)
 	}
-
-	fmt.Printf("Spotify: Authenticated as %s\n", sess.Username())
 
 	// Persist stored credentials + refresh token for future sessions.
 	if err := saveCreds(&storedCreds{
@@ -382,9 +335,8 @@ func newInteractiveSession(ctx context.Context, clientID string) (*Session, erro
 // decoded AudioSources — audio output is routed through cliamp's Beep pipeline,
 // not go-librespot's output backend.
 func (s *Session) initPlayer() error {
-	// Feb 2026 API: country field removed from GET /v1/me.
-	// Default to "US" — go-librespot uses this for media restriction checks
-	// but Premium accounts can play all tracks regardless.
+	// go-librespot uses this for media restriction checks but Premium
+	// accounts can play all tracks regardless.
 	countryCode := "US"
 	p, err := librespotPlayer.NewPlayer(&librespotPlayer.Options{
 		Spclient:             s.sess.Spclient(),
@@ -484,8 +436,6 @@ func (s *Session) Reconnect(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "spotify: failed to clear stored credentials: %v\n", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "spotify: session expired, re-authenticating...\n")
-
 	// Create the new session outside the lock — this may open a browser and
 	// block for user interaction.
 	newSess, err := NewSession(ctx, clientID)
@@ -531,20 +481,6 @@ func deleteCreds() error {
 		return err
 	}
 	return nil
-}
-
-// openBrowser tries to open a URL in the user's default browser.
-func openBrowser(u string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return exec.Command("open", u).Start()
-	case "linux":
-		return exec.Command("xdg-open", u).Start()
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
 }
 
 func configDir() (string, error) {
@@ -598,4 +534,18 @@ func saveCreds(creds *storedCreds) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o600)
+}
+
+// openBrowser tries to open a URL in the user's default browser.
+func openBrowser(u string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", u).Start()
+	case "linux":
+		return exec.Command("xdg-open", u).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
 }

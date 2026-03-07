@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -108,6 +109,7 @@ type Model struct {
 	providerLists     []playlist.PlaylistInfo
 	provCursor        int
 	provLoading       bool
+	provSignIn        bool // true when provider needs interactive sign-in
 	provSearching     bool
 	provSearchQuery   string
 	provSearchResults []int // indices into providerLists
@@ -452,6 +454,7 @@ func (m *Model) switchProvider(idx int) tea.Cmd {
 	m.providerLists = nil
 	m.provCursor = 0
 	m.provLoading = true
+	m.provSignIn = false
 	m.provSearching = false
 	m.focus = focusProvider
 	return fetchPlaylistsCmd(m.provider)
@@ -971,11 +974,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case error:
+		if errors.Is(msg, playlist.ErrNeedsAuth) {
+			m.provLoading = false
+			m.provSignIn = true
+			m.err = nil
+			return m, nil
+		}
 		m.err = msg
 		m.provLoading = false
 		m.feedLoading = false
 		m.buffering = false
 		return m, nil
+
+	case provAuthDoneMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.provLoading = false
+			m.provSignIn = false
+			return m, nil
+		}
+		m.provSignIn = false
+		m.provLoading = true
+		return m, fetchPlaylistsCmd(m.provider)
 
 	case mpris.InitMsg:
 		m.mpris = msg.Svc

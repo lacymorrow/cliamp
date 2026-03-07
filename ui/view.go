@@ -373,6 +373,9 @@ func (m Model) renderPlaylistHeader() string {
 
 
 func (m Model) renderProviderList() string {
+	if m.provSignIn {
+		return dimStyle.Render(fmt.Sprintf("  Sign in to %s. Press Enter to continue.", m.provider.Name()))
+	}
 	if m.provLoading {
 		return dimStyle.Render(fmt.Sprintf("  Loading %s...", m.provider.Name()))
 	}

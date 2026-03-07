@@ -4,19 +4,26 @@ Cliamp can stream your [Spotify](https://www.spotify.com/) library directly thro
 
 ## Setup
 
-1. Create a Spotify app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
-2. Add redirect URI: `http://127.0.0.1:19872/login`
-3. Add to your config:
+### Creating your client ID
+
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in
+2. Click **Create app**
+3. Fill in a name (e.g. "cliamp") and description (anything works)
+4. Add `http://127.0.0.1:19872/login` as a **Redirect URI**
+5. Check **Web API** under "Which API/SDKs are you planning to use?"
+6. Click **Save**
+7. Open your app's **Settings** and copy the **Client ID**
+
+### Configuring cliamp
+
+Add your client ID to `~/.config/cliamp/config.toml`:
 
 ```toml
-# ~/.config/cliamp/config.toml
 [spotify]
-enabled = true
 client_id = "your_client_id_here"
 ```
 
-4. Run `cliamp` — the first launch opens OAuth2 in your browser
-5. Credentials are cached at `~/.config/cliamp/spotify_credentials.json` — subsequent launches refresh silently (no browser popup)
+Run `cliamp`, select Spotify as a provider, and press Enter to sign in. Credentials are cached at `~/.config/cliamp/spotify_credentials.json` — subsequent launches refresh silently.
 
 ## Usage
 

@@ -132,6 +132,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				m.provCursor++
 			}
 		case "enter":
+			if m.provSignIn {
+				if auth, ok := m.provider.(playlist.Authenticator); ok {
+					m.provSignIn = false
+					m.provLoading = true
+					return authenticateProviderCmd(auth)
+				}
+			}
 			if len(m.providerLists) > 0 && !m.provLoading {
 				m.provLoading = true
 				return fetchTracksCmd(m.provider, m.providerLists[m.provCursor].ID)

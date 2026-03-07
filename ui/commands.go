@@ -62,7 +62,17 @@ type navAlbumsLoadedMsg struct {
 // navTracksLoadedMsg carries the track list for the selected album/artist.
 type navTracksLoadedMsg []playlist.Track
 
+// provAuthDoneMsg signals that interactive provider authentication completed.
+type provAuthDoneMsg struct{ err error }
+
 // — Command constructors —
+
+// authenticateProviderCmd runs the interactive auth flow for a provider.
+func authenticateProviderCmd(auth playlist.Authenticator) tea.Cmd {
+	return func() tea.Msg {
+		return provAuthDoneMsg{err: auth.Authenticate()}
+	}
+}
 
 func fetchPlaylistsCmd(prov playlist.Provider) tea.Cmd {
 	return func() tea.Msg {

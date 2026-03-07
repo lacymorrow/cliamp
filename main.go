@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -50,24 +49,16 @@ func run(overrides config.Overrides, positional []string) error {
 	}
 
 	var spotifyProv *spotify.SpotifyProvider
-	var spotifySession *spotify.Session
-	spotifyClientID := cfg.Spotify.ResolveClientID(spotify.FallbackClientID)
-	if cfg.Spotify.IsSet() && spotifyClientID != "" {
-		sess, err := spotify.NewSession(context.Background(), spotifyClientID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "spotify: %v\n", err)
-		} else {
-			spotifySession = sess
-			spotifyProv = spotify.New(sess)
-			providers = append(providers, ui.ProviderEntry{Key: "spotify", Name: "Spotify", Provider: spotifyProv})
-		}
+	if cfg.Spotify.IsSet() {
+		spotifyProv = spotify.New(nil, cfg.Spotify.ClientID)
+		providers = append(providers, ui.ProviderEntry{Key: "spotify", Name: "Spotify", Provider: spotifyProv})
 	}
 
 	localProv := local.New()
 
 	defer resolve.CleanupYTDL()
-	if spotifySession != nil {
-		defer spotifySession.Close()
+	if spotifyProv != nil {
+		defer spotifyProv.Close()
 	}
 
 	if len(positional) > 0 && (positional[0] == "search" || positional[0] == "search-sc") {

@@ -35,15 +35,75 @@ type playlistCache struct {
 
 type SpotifyProvider struct {
 	session    *Session
+	clientID   string
 	mu         sync.Mutex
 	trackCache map[string]*playlistCache // playlist ID → cache entry
 }
 
-// New creates a SpotifyProvider from an authenticated Session.
-func New(session *Session) *SpotifyProvider {
+// New creates a SpotifyProvider. If session is nil, authentication is
+// deferred until the user first selects the Spotify provider.
+func New(session *Session, clientID string) *SpotifyProvider {
 	return &SpotifyProvider{
 		session:    session,
+		clientID:   clientID,
 		trackCache: make(map[string]*playlistCache),
+	}
+}
+
+// ensureSession tries to create a session using stored credentials only
+// (no browser). Returns playlist.ErrNeedsAuth if interactive sign-in is needed.
+func (p *SpotifyProvider) ensureSession() error {
+	p.mu.Lock()
+	if p.session != nil {
+		p.mu.Unlock()
+		return nil
+	}
+	clientID := p.clientID
+	p.mu.Unlock()
+
+	if clientID == "" {
+		return fmt.Errorf("spotify: no client ID available")
+	}
+	sess, err := NewSessionSilent(context.Background(), clientID)
+	if err != nil {
+		return playlist.ErrNeedsAuth
+	}
+	p.mu.Lock()
+	p.session = sess
+	p.mu.Unlock()
+	return nil
+}
+
+// Authenticate runs the interactive sign-in flow (opens browser, waits for callback).
+func (p *SpotifyProvider) Authenticate() error {
+	p.mu.Lock()
+	if p.session != nil {
+		p.mu.Unlock()
+		return nil
+	}
+	clientID := p.clientID
+	p.mu.Unlock()
+
+	if clientID == "" {
+		return fmt.Errorf("spotify: no client ID available")
+	}
+	sess, err := NewSession(context.Background(), clientID)
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	p.session = sess
+	p.mu.Unlock()
+	return nil
+}
+
+// Close releases the session if one was created.
+func (p *SpotifyProvider) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.session != nil {
+		p.session.Close()
+		p.session = nil
 	}
 }
 
@@ -51,6 +111,9 @@ func (p *SpotifyProvider) Name() string { return "Spotify" }
 
 // Playlists returns the authenticated user's Spotify playlists.
 func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
+	if err := p.ensureSession(); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -77,14 +140,9 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 				ID         string `json:"id"`
 				Name       string `json:"name"`
 				SnapshotID string `json:"snapshot_id"`
-				// Feb 2026 API: "tracks" renamed to "items" in playlist objects.
-				// Parse both for backwards compatibility.
-				Items *struct {
+				Items      *struct {
 					Total int `json:"total"`
 				} `json:"items"`
-				Tracks *struct {
-					Total int `json:"total"`
-				} `json:"item"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
@@ -97,8 +155,6 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 			count := 0
 			if item.Items != nil {
 				count = item.Items.Total
-			} else if item.Tracks != nil {
-				count = item.Tracks.Total
 			}
 			all = append(all, playlist.PlaylistInfo{
 				ID:         item.ID,
@@ -131,6 +187,9 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 // Track.Path is set to a spotify:track:<id> URI for the player to resolve.
 // Results are cached by snapshot_id; unchanged playlists skip the API call.
 func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
+	if err := p.ensureSession(); err != nil {
+		return nil, err
+	}
 	// Check cache — if we have tracks and the snapshot_id hasn't changed, return cached.
 	p.mu.Lock()
 	if cached, ok := p.trackCache[playlistID]; ok && cached.tracks != nil {
@@ -151,20 +210,15 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		query := url.Values{
 			"limit":  {fmt.Sprintf("%d", limit)},
 			"offset": {fmt.Sprintf("%d", offset)},
-			// Request only the fields we need to reduce payload size and API cost.
-			// Both "item" (new) and "track" (legacy) field names for compat.
-			"fields": {"items(item(id,name,artists(name),album(name,release_date),duration_ms,track_number),track(id,name,artists(name),album(name,release_date),duration_ms,track_number)),total"},
+			"fields": {"items(item(id,name,artists(name),album(name,release_date),duration_ms,track_number)),total"},
 		}
 
-		// Feb 2026 API: /tracks renamed to /items
 		path := fmt.Sprintf("/v1/playlists/%s/items", playlistID)
 		resp, err := p.webAPI(ctx, "GET", path, query)
 		if err != nil {
 			return nil, fmt.Errorf("spotify: list tracks: %w", err)
 		}
 
-		// Feb 2026 API: "track" renamed to "item" in response.
-		// Parse both for backwards compatibility.
 		type trackObj struct {
 			ID      string `json:"id"`
 			Name    string `json:"name"`
@@ -180,8 +234,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		}
 		var result struct {
 			Items []struct {
-				Item  *trackObj `json:"item"`
-				Track *trackObj `json:"track"`
+				Item *trackObj `json:"item"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
@@ -191,9 +244,6 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 
 		for _, item := range result.Items {
 			t := item.Item
-			if t == nil {
-				t = item.Track // fallback for old API
-			}
 			if t == nil || t.ID == "" {
 				continue // skip local/unavailable tracks
 			}
@@ -262,6 +312,9 @@ func isAuthError(err error) bool {
 // interactive OAuth2 flow is triggered automatically. The stream is then
 // retried once with the new session.
 func (p *SpotifyProvider) NewStreamer(uri string) (beep.StreamSeekCloser, beep.Format, time.Duration, error) {
+	if err := p.ensureSession(); err != nil {
+		return nil, beep.Format{}, 0, err
+	}
 	spotID, err := librespot.SpotifyIdFromUri(uri)
 	if err != nil {
 		return nil, beep.Format{}, 0, fmt.Errorf("spotify: invalid URI %q: %w", uri, err)
