@@ -252,11 +252,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "enter":
 		if m.focus == focusPlaylist {
-			// No-op if this track is already loading/playing.
+			// No-op only if this exact track is still buffering.
 			if m.buffering && m.plCursor == m.playlist.Index() {
-				break
-			}
-			if m.plCursor == m.playlist.Index() && m.player.IsPlaying() && !m.player.IsPaused() {
 				break
 			}
 			m.scrobbleCurrent()
