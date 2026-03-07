@@ -685,7 +685,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Surface stream errors (e.g., connection drops) and auto-reconnect streams.
-		if err := m.player.StreamErr(); err != nil {
+		// Suppress during yt-dlp seek — killing the old pipeline triggers a transient error.
+		if err := m.player.StreamErr(); err != nil && !m.seekInFlight && m.pendingSeek == 0 {
 			track, idx := m.playlist.Current()
 			isStream := idx >= 0 && (track.Stream || playlist.IsYouTubeURL(track.Path) || playlist.IsYTDL(track.Path))
 			if isStream && m.reconnectAttempts < 5 {
