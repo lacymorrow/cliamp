@@ -187,6 +187,10 @@ type Model struct {
 	// Track info overlay (metadata details)
 	showInfo bool
 
+	// yt-dlp seek debounce: accumulate rapid seek presses and fire once.
+	pendingSeek time.Duration // accumulated seek delta (0 = no pending seek)
+	seekTimer   int           // tick countdown for debounce (0 = idle)
+
 	// Full-screen visualizer mode (Shift+V)
 	fullVis bool
 
@@ -658,7 +662,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fixedLines := lipgloss.Height(probeFrame) - 1 // subtract the 1-line placeholder
 		m.plVisible = max(3, m.height-fixedLines)
 
+	case seekTickMsg:
+		// Async yt-dlp seek completed.
+		if m.mpris != nil {
+			m.mpris.EmitSeeked(m.player.Position().Microseconds())
+		}
+		return m, nil
+
 	case tickMsg:
+		// Process debounced yt-dlp seek.
+		var seekCmd tea.Cmd
+		if cmd := m.tickSeek(); cmd != nil {
+			seekCmd = cmd
+		}
 		// Expire temporary status messages.
 		if m.saveMsgTTL > 0 {
 			m.saveMsgTTL--
@@ -730,6 +746,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		var cmds []tea.Cmd
+		if seekCmd != nil {
+			cmds = append(cmds, seekCmd)
+		}
 		if lyricCmd != nil {
 			cmds = append(cmds, lyricCmd)
 		}

@@ -425,6 +425,14 @@ func (p *Player) Seek(d time.Duration) error {
 // For ranged HTTP streams (seek-by-reconnect), streamOffset is added to the
 // decoder's sample-based position so the reported time is absolute within
 // the track, not relative to the reconnect point.
+// IsYTDLSeek reports whether the current track uses yt-dlp seek-by-restart.
+func (p *Player) IsYTDLSeek() bool {
+	p.mu.Lock()
+	cur := p.current
+	p.mu.Unlock()
+	return cur != nil && cur.ytdlSeek
+}
+
 func (p *Player) Position() time.Duration {
 	speaker.Lock()
 	defer speaker.Unlock()

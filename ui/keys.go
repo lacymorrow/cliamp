@@ -231,17 +231,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				m.eqCursor--
 			}
 		} else {
-			m.player.Seek(-5 * time.Second)
-			if m.mpris != nil {
-				m.mpris.EmitSeeked(m.player.Position().Microseconds())
-			}
+			m.doSeek(-5 * time.Second)
 		}
 
 	case "shift+left":
-		m.player.Seek(-m.seekStepLarge)
-		if m.mpris != nil {
-			m.mpris.EmitSeeked(m.player.Position().Microseconds())
-		}
+		m.doSeek(-m.seekStepLarge)
 
 	case "right":
 		if m.focus == focusEQ {
@@ -249,17 +243,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				m.eqCursor++
 			}
 		} else {
-			m.player.Seek(5 * time.Second)
-			if m.mpris != nil {
-				m.mpris.EmitSeeked(m.player.Position().Microseconds())
-			}
+			m.doSeek(5 * time.Second)
 		}
 
 	case "shift+right":
-		m.player.Seek(m.seekStepLarge)
-		if m.mpris != nil {
-			m.mpris.EmitSeeked(m.player.Position().Microseconds())
-		}
+		m.doSeek(m.seekStepLarge)
 
 	case "up", "k":
 		if m.focus == focusEQ {
