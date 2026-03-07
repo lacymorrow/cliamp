@@ -128,11 +128,13 @@ type ytdlPipeStreamer struct {
 	ytdlErr   chan error    // yt-dlp exit error from monitoring goroutine
 	buf       [pcmFrameSize32]byte
 	f32       bool // true = f32le, false = s16le
+	pos       int  // samples consumed so far
 	err       error
 }
 
 func (y *ytdlPipeStreamer) Stream(samples [][2]float64) (int, bool) {
 	n, ok := streamFromReader(y.reader, samples, y.buf[:], y.f32, &y.err)
+	y.pos += n
 	// On EOF with no frames read, check if yt-dlp failed (e.g. invalid URL).
 	if n == 0 {
 		select {
@@ -148,7 +150,7 @@ func (y *ytdlPipeStreamer) Stream(samples [][2]float64) (int, bool) {
 
 func (y *ytdlPipeStreamer) Err() error     { return y.err }
 func (y *ytdlPipeStreamer) Len() int       { return 0 }
-func (y *ytdlPipeStreamer) Position() int  { return 0 }
+func (y *ytdlPipeStreamer) Position() int  { return y.pos }
 func (y *ytdlPipeStreamer) Seek(int) error { return nil }
 
 func (y *ytdlPipeStreamer) Close() error {
