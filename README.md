@@ -2,7 +2,7 @@
 
 A retro terminal music player inspired by Winamp. Play local files, streams, podcasts, YouTube, SoundCloud, Spotify, and Navidrome with a spectrum visualizer, parametric EQ, and playlist management.
 
-Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), and [Beep](https://github.com/gopxl/beep).
+Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), [Beep](https://github.com/gopxl/beep), and [go-librespot](https://github.com/devgianlu/go-librespot).
 
 
 https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
