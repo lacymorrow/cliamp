@@ -27,10 +27,6 @@ func (m Model) View() string {
 		return m.renderKeymapOverlay()
 	}
 
-	if m.showProvPicker {
-		return m.renderProvPicker()
-	}
-
 	if m.showThemes {
 		return m.renderThemePicker()
 	}
@@ -91,6 +87,7 @@ func (m Model) View() string {
 		"",
 		// Controls
 		m.renderControls(),
+		m.renderProviderPill(),
 		"",
 		// Playlist
 		m.renderPlaylistHeader(),
@@ -319,14 +316,29 @@ func (m Model) renderControls() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+func (m Model) renderProviderPill() string {
+	if len(m.providers) <= 1 {
+		return ""
+	}
+
+	var pills []string
+	for i, pe := range m.providers {
+		name := pe.Name
+		if m.focus == focusProvPill && i == m.provPillIdx {
+			pills = append(pills, activeToggle.Render("["+name+"]"))
+		} else if i == m.provPillIdx {
+			pills = append(pills, dimStyle.Render("[") + trackStyle.Render(name) + dimStyle.Render("]"))
+		} else {
+			pills = append(pills, dimStyle.Render("["+name+"]"))
+		}
+	}
+
+	return labelStyle.Render("SRC ") + strings.Join(pills, " ")
+}
+
 func (m Model) renderPlaylistHeader() string {
 	if m.focus == focusProvider {
-		left := dimStyle.Render(fmt.Sprintf("── %s Playlists ──", m.provider.Name()))
-		if len(m.providers) > 1 {
-			right := " " + helpKey("P", "Provider")
-			return left + right
-		}
-		return left
+		return dimStyle.Render(fmt.Sprintf("── %s Playlists ──", m.provider.Name()))
 	}
 
 	var shuffle string
@@ -508,11 +520,10 @@ func (m Model) renderJumpOverlay() string {
 
 func (m Model) renderHelp() string {
 	if m.focus == focusProvider {
-		help := helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ")
-		if len(m.providers) > 1 {
-			help += helpKey("P", "Provider ")
-		}
-		return help + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
+		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
+	}
+	if m.focus == focusProvPill {
+		return helpKey("←→", "Select ") + helpKey("Enter", "Open ") + helpKey("Tab", "Focus ") + helpKey("Esc", "Back ") + helpKey("Q", "Quit")
 	}
 
 	// Build help hints with priority (lower = dropped first when too wide).

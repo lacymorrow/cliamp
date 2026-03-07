@@ -53,17 +53,6 @@ func (m Model) renderKeymapOverlay() string {
 	return m.centerOverlay(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderProvPicker() string {
-	lines := []string{
-		titleStyle.Render("P R O V I D E R"),
-		"",
-	}
-	for i, pe := range m.providers {
-		lines = append(lines, cursorLine(pe.Name, i == m.provPickCursor))
-	}
-	lines = append(lines, "", helpKey("↑↓", "Navigate ")+helpKey("Enter", "Select ")+helpKey("Esc", "Cancel"))
-	return m.centerOverlay(strings.Join(lines, "\n"))
-}
 
 func (m Model) renderThemePicker() string {
 	lines := []string{

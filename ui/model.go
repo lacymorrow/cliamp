@@ -25,6 +25,7 @@ type focusArea int
 const (
 	focusPlaylist      focusArea = iota
 	focusEQ
+	focusProvPill
 	focusSearch
 	focusProvider
 	focusNetSearch
@@ -182,8 +183,6 @@ type Model struct {
 	themeCursor   int  // cursor in theme picker (0 = Default, 1+ = themes[i-1])
 	themeSavedIdx int  // themeIdx before opening picker, for cancel/restore
 
-	showProvPicker bool // provider picker overlay visible
-	provPickCursor int  // cursor in provider picker
 
 	// Track info overlay (metadata details)
 	showInfo bool
@@ -349,7 +348,7 @@ func (m Model) ThemeName() string {
 // the main player view. When true, the visualizer is not visible and we can
 // use the slower tick rate.
 func (m *Model) isOverlayActive() bool {
-	return m.showKeymap || m.showThemes || m.showProvPicker ||
+	return m.showKeymap || m.showThemes ||
 		m.showFileBrowser || m.showNavBrowser || m.showPlManager ||
 		m.showQueue || m.showInfo || m.searching || m.netSearching ||
 		m.jumping || m.urlInputting
