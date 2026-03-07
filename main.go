@@ -82,6 +82,7 @@ func run(overrides config.Overrides, positional []string) error {
 			if player.YTDLPAvailable() {
 				ytProviders = ytmusic.New(nil, ytClientID, ytClientSecret, cfg.YouTubeMusic.CookiesFrom != "")
 				providers = append(providers,
+					ui.ProviderEntry{Key: "yt", Name: "YouTube (All)", Provider: ytProviders.All},
 					ui.ProviderEntry{Key: "youtube", Name: "YouTube", Provider: ytProviders.Video},
 					ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytProviders.Music},
 				)
@@ -225,7 +226,7 @@ Audio engine:
   --bit-depth <n>         PCM bit depth: 16 (default) or 32 (lossless)
 
 Provider:
-  --provider <name>       Default provider: radio, navidrome, spotify, youtube, ytmusic (default: radio)
+  --provider <name>       Default provider: radio, navidrome, spotify, yt, youtube, ytmusic (default: radio)
 
 Appearance:
   --theme <name>          UI theme name
