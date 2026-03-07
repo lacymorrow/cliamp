@@ -38,7 +38,7 @@ Run `cliamp`, select YouTube Music as a provider, and press Enter to sign in. Cr
 
 Once authenticated, YouTube Music appears as a provider alongside Spotify, Navidrome, and Radio. Press `Esc`/`b` to open the provider browser and select YouTube Music.
 
-Your playlists are listed in the provider panel, with "Liked Music" at the top. Navigate with the arrow keys and press `Enter` to load one. Tracks are played through cliamp's yt-dlp pipeline, so EQ, visualizer, mono, and all other effects work exactly as with local files.
+Your playlists are listed in the provider panel, with "Liked Videos" at the top. Navigate with the arrow keys and press `Enter` to load one. Tracks are played through cliamp's yt-dlp pipeline, so EQ, visualizer, mono, and all other effects work exactly as with local files.
 
 ## Controls
 
@@ -56,7 +56,7 @@ After loading a playlist you return to the standard playlist view with all the u
 ## Playlists
 
 All playlists in your YouTube Music library are shown, including:
-- **Liked Music** — your liked videos (YouTube's special `LL` playlist)
+- **Liked Videos** — your liked videos (YouTube's special `LL` playlist)
 - Playlists you've created
 - Playlists you've saved
 

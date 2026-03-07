@@ -13,6 +13,16 @@ import (
 	"github.com/gopxl/beep/v2"
 )
 
+// ytdlCookiesFrom is the browser name for --cookies-from-browser (e.g. "chrome").
+// Set via SetYTDLCookiesFrom at startup.
+var ytdlCookiesFrom string
+
+// SetYTDLCookiesFrom configures yt-dlp to use cookies from the given browser
+// for YouTube Music playback (e.g. "chrome", "firefox", "brave").
+func SetYTDLCookiesFrom(browser string) {
+	ytdlCookiesFrom = browser
+}
+
 // YTDLPAvailable reports whether yt-dlp is installed and on PATH.
 func YTDLPAvailable() bool {
 	_, err := exec.LookPath("yt-dlp")
@@ -181,14 +191,17 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipe
 	// Prefer direct HTTPS/HTTP streams over HLS (m3u8). HLS requires segment
 	// downloading and muxing which doesn't pipe cleanly to stdout.
 	fmt.Fprintf(os.Stderr, "ytdl: starting playback for: %s\n", pageURL)
-	ytdlCmd := exec.Command("yt-dlp",
+	ytdlArgs := []string{
 		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio",
 		"--no-playlist",
 		"--no-warnings",
-		"-v",
 		"-o", "-",
-		pageURL,
-	)
+	}
+	if ytdlCookiesFrom != "" {
+		ytdlArgs = append(ytdlArgs, "--cookies-from-browser", ytdlCookiesFrom)
+	}
+	ytdlArgs = append(ytdlArgs, pageURL)
+	ytdlCmd := exec.Command("yt-dlp", ytdlArgs...)
 	ytdlCmd.Stdout = pw
 	// Capture stderr for error messages.
 	var ytdlStderr bytes.Buffer

@@ -145,7 +145,7 @@ Also include a synthetic "Liked Music" entry:
 ```go
 PlaylistInfo{
     ID:         "LL",   // YouTube's special "Liked Videos" playlist ID
-    Name:       "Liked Music",
+    Name:       "Liked",
     TrackCount: -1,     // unknown until fetched
 }
 ```
@@ -289,7 +289,7 @@ which spawns the `yt-dlp | ffmpeg` pipe chain. **Zero audio pipeline changes.**
 
 ## Edge Cases
 
-1. **"Liked Music" playlist** — YouTube's special `LL` playlist ID contains
+1. **"Liked Videos" playlist** — YouTube's special `LL` playlist ID contains
    liked videos. Filter to music-only by checking `snippet.categoryId == "10"`
    (Music category) on the video details, or accept all liked videos.
 

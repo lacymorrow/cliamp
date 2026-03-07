@@ -19,17 +19,20 @@ type YouTubeMusicProvider struct {
 	session      *Session
 	clientID     string
 	clientSecret string
+	hasCookies   bool // true when cookies_from is configured (can play private/uploaded tracks)
 	mu           sync.Mutex
 	trackCache   map[string][]playlist.Track // playlist ID -> cached tracks
 }
 
 // New creates a YouTubeMusicProvider. If session is nil, authentication is
 // deferred until the user first selects the YouTube Music provider.
-func New(session *Session, clientID, clientSecret string) *YouTubeMusicProvider {
+// Set hasCookies to true when cookies_from is configured (enables uploaded/private tracks).
+func New(session *Session, clientID, clientSecret string, hasCookies bool) *YouTubeMusicProvider {
 	return &YouTubeMusicProvider{
 		session:      session,
 		clientID:     clientID,
 		clientSecret: clientSecret,
+		hasCookies:   hasCookies,
 		trackCache:   make(map[string][]playlist.Track),
 	}
 }
@@ -121,7 +124,7 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 	}
 	all = append(all, playlist.PlaylistInfo{
 		ID:         "LL",
-		Name:       "Liked Music",
+		Name:       "Liked Videos",
 		TrackCount: likedCount,
 	})
 
@@ -213,10 +216,15 @@ func (p *YouTubeMusicProvider) Tracks(playlistID string) ([]playlist.Track, erro
 			if title == "Private video" || title == "Deleted video" {
 				continue
 			}
+			channel := item.Snippet.VideoOwnerChannelTitle
+			// Skip uploaded/private tracks when cookies aren't configured (they can't be played).
+			if !p.hasCookies && (channel == "Music Library Uploads" || channel == "") {
+				continue
+			}
 			items = append(items, itemInfo{
 				videoID: vid,
 				title:   title,
-				channel: item.Snippet.VideoOwnerChannelTitle,
+				channel: channel,
 			})
 		}
 
