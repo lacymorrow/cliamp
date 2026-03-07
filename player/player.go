@@ -360,35 +360,13 @@ func (p *Player) Seek(d time.Duration) error {
 		return nil
 	}
 
-	// yt-dlp seek-by-restart: re-spawn the yt-dlp pipeline at the target time.
+	// yt-dlp seek-by-restart: handled outside the speaker lock via SeekYTDL.
 	if cur.ytdlSeek && cur.knownDuration > 0 {
-		curPos := cur.format.SampleRate.D(cur.decoder.Position()) + cur.streamOffset
-		newPos := curPos + d
-		if newPos < 0 {
-			newPos = 0
-		}
-		if newPos >= cur.knownDuration {
-			newPos = cur.knownDuration - time.Second
-		}
-		startSec := int(newPos.Seconds())
-
-		tp, err := p.buildYTDLPipelineAt(cur.path, startSec)
-		if err != nil {
-			return fmt.Errorf("yt-dlp seek: %w", err)
-		}
-		tp.knownDuration = cur.knownDuration
-		tp.ytdlSeek = true
-
-		p.gapless.Replace(tp.stream)
-		p.gapless.SetNext(nil)
-		p.mu.Lock()
-		old := p.current
-		oldNext := p.nextPipeline
-		p.current = tp
-		p.nextPipeline = nil
-		p.mu.Unlock()
-		closePipelines(old, oldNext)
-		return nil
+		// Release speaker lock, then do the slow seek.
+		speaker.Unlock()
+		err := p.SeekYTDL(d)
+		speaker.Lock() // re-acquire so defer Unlock works
+		return err
 	}
 
 	// Local file (or ffmpeg-buffered PCM): use the decoder's native Seek.
@@ -425,6 +403,55 @@ func (p *Player) Seek(d time.Duration) error {
 // For ranged HTTP streams (seek-by-reconnect), streamOffset is added to the
 // decoder's sample-based position so the reported time is absolute within
 // the track, not relative to the reconnect point.
+// SeekYTDL seeks a yt-dlp stream by restarting the pipeline at the target
+// position. Must NOT be called with the speaker lock held.
+func (p *Player) SeekYTDL(d time.Duration) error {
+	// Snapshot current state without speaker lock.
+	p.mu.Lock()
+	cur := p.current
+	p.mu.Unlock()
+	if cur == nil || !cur.ytdlSeek || cur.knownDuration <= 0 {
+		return nil
+	}
+
+	// Read position with speaker lock (briefly).
+	speaker.Lock()
+	curPos := cur.format.SampleRate.D(cur.decoder.Position()) + cur.streamOffset
+	speaker.Unlock()
+
+	newPos := curPos + d
+	if newPos < 0 {
+		newPos = 0
+	}
+	if newPos >= cur.knownDuration {
+		newPos = cur.knownDuration - time.Second
+	}
+	startSec := int(newPos.Seconds())
+
+	// Build pipeline WITHOUT speaker lock (this is the slow part — spawns yt-dlp).
+	tp, err := p.buildYTDLPipelineAt(cur.path, startSec)
+	if err != nil {
+		return fmt.Errorf("yt-dlp seek: %w", err)
+	}
+	tp.knownDuration = cur.knownDuration
+	tp.ytdlSeek = true
+
+	// Now acquire speaker lock to swap streams.
+	speaker.Lock()
+	p.gapless.Replace(tp.stream)
+	p.gapless.SetNext(nil)
+	speaker.Unlock()
+
+	p.mu.Lock()
+	old := p.current
+	oldNext := p.nextPipeline
+	p.current = tp
+	p.nextPipeline = nil
+	p.mu.Unlock()
+	closePipelines(old, oldNext)
+	return nil
+}
+
 // IsYTDLSeek reports whether the current track uses yt-dlp seek-by-restart.
 func (p *Player) IsYTDLSeek() bool {
 	p.mu.Lock()

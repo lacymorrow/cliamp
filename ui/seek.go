@@ -46,8 +46,9 @@ func (m *Model) tickSeek() tea.Cmd {
 	m.pendingSeek = 0
 
 	// Run seek in background to avoid blocking the UI.
+	// Use SeekYTDL directly — it doesn't hold the speaker lock during spawn.
 	return func() tea.Msg {
-		m.player.Seek(d)
+		m.player.SeekYTDL(d)
 		return seekTickMsg{}
 	}
 }
