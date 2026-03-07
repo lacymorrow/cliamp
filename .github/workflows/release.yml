@@ -97,6 +97,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
+          CGO_LDFLAGS: "-lm"
         run: |
           if [ "$GOARCH" = "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
