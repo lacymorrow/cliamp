@@ -565,7 +565,7 @@ func (m Model) renderHelp() string {
 		helpHint{helpKey("Q", "Quit"), 95},
 	)
 
-	return fitHints(hints, panelWidth) + fmt.Sprintf(" [pw=%d w=%d]", panelWidth, m.width)
+	return fitHints(hints, panelWidth)
 }
 
 // helpHint is a rendered help key with an associated display priority.

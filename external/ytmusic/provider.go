@@ -32,6 +32,7 @@ type baseProvider struct {
 	trackCache   map[string][]playlist.Track // playlist ID -> cached tracks
 	allPlaylists []playlistEntry             // cached raw playlist list
 	classified   map[string]bool             // playlist ID -> is music (from classify.go)
+	disk         *ytCache                    // lazy-loaded disk cache
 }
 
 func newBase(session *Session, clientID, clientSecret string, hasCookies bool) *baseProvider {
@@ -42,6 +43,14 @@ func newBase(session *Session, clientID, clientSecret string, hasCookies bool) *
 		hasCookies:   hasCookies,
 		trackCache:   make(map[string][]playlist.Track),
 	}
+}
+
+// ensureDiskCache lazily loads the disk cache. Must be called under mu.
+func (b *baseProvider) ensureDiskCache() *ytCache {
+	if b.disk == nil {
+		b.disk = loadYTCache()
+	}
+	return b.disk
 }
 
 func (b *baseProvider) ensureSession() error {
@@ -100,15 +109,38 @@ func (b *baseProvider) close() {
 }
 
 // fetchAndClassify loads all playlists and classifies them as music vs non-music.
-// Results are cached for the session lifetime.
+// Results are cached in-memory for the session and on disk for fast startup.
+// If fresh disk cache exists with full classification, no API calls or auth are needed.
 func (b *baseProvider) fetchAndClassify() error {
 	b.mu.Lock()
 	if b.allPlaylists != nil {
 		b.mu.Unlock()
 		return nil
 	}
+
+	// Try disk cache first — no session/auth needed if data is fresh.
+	dc := b.ensureDiskCache()
+	if dc.playlistsFresh() {
+		classified := loadClassification()
+		if classified != nil {
+			allClassified := true
+			for _, pl := range dc.Playlists {
+				if _, ok := classified[pl.ID]; !ok {
+					allClassified = false
+					break
+				}
+			}
+			if allClassified {
+				b.allPlaylists = dc.Playlists
+				b.classified = classified
+				b.mu.Unlock()
+				return nil
+			}
+		}
+	}
 	b.mu.Unlock()
 
+	// Disk cache stale or incomplete — fetch from API.
 	if err := b.ensureSession(); err != nil {
 		return err
 	}
@@ -135,7 +167,6 @@ func (b *baseProvider) fetchAndClassify() error {
 			return fmt.Errorf("ytmusic: list playlists: %w", err)
 		}
 
-
 		for _, item := range resp.Items {
 			count := int(item.ContentDetails.ItemCount)
 			if count <= 0 || seen[item.Id] {
@@ -155,14 +186,19 @@ func (b *baseProvider) fetchAndClassify() error {
 		pageToken = resp.NextPageToken
 	}
 
-
 	// Classify playlists (parallel, with disk cache).
 	classified := classifyWithTimeout(svc, all, 60*time.Second)
 
 	b.mu.Lock()
 	b.allPlaylists = all
 	b.classified = classified
+	// Persist playlists to disk cache.
+	dc = b.ensureDiskCache()
+	dc.setPlaylists(all)
 	b.mu.Unlock()
+
+	// Save outside the lock — disk I/O shouldn't block other goroutines.
+	dc.save()
 
 	return nil
 }
@@ -190,17 +226,27 @@ func (b *baseProvider) filteredPlaylists(wantMusic bool) []playlist.PlaylistInfo
 }
 
 // tracks fetches tracks for a playlist (shared between both providers).
+// Checks in-memory cache, then disk cache, then fetches from API.
 func (b *baseProvider) tracks(playlistID string) ([]playlist.Track, error) {
-	if err := b.ensureSession(); err != nil {
-		return nil, err
-	}
-
 	b.mu.Lock()
 	if cached, ok := b.trackCache[playlistID]; ok {
 		b.mu.Unlock()
 		return cached, nil
 	}
+
+	// Check disk cache — avoids API call and auth if fresh.
+	dc := b.ensureDiskCache()
+	if tracks, ok := dc.tracksFresh(playlistID); ok {
+		b.trackCache[playlistID] = tracks
+		b.mu.Unlock()
+		return tracks, nil
+	}
 	b.mu.Unlock()
+
+	// Disk cache miss — fetch from API.
+	if err := b.ensureSession(); err != nil {
+		return nil, err
+	}
 
 	svc := b.session.Service()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -262,35 +308,58 @@ func (b *baseProvider) tracks(playlistID string) ([]playlist.Track, error) {
 		})
 	}
 
+	// Persist to in-memory and disk cache.
 	b.mu.Lock()
 	b.trackCache[playlistID] = tracks
+	dc = b.ensureDiskCache()
+	dc.setTracks(playlistID, tracks)
 	b.mu.Unlock()
+
+	// Save outside the lock — disk I/O shouldn't block other goroutines.
+	dc.save()
 
 	return tracks, nil
 }
 
 func (b *baseProvider) fetchDurations(svc *youtube.Service, items []itemInfo, ctx context.Context) map[string]int {
+	var mu sync.Mutex
 	durations := make(map[string]int)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 5) // limit concurrent API calls
+
 	for i := 0; i < len(items); i += 50 {
 		end := i + 50
 		if end > len(items) {
 			end = len(items)
 		}
-		var ids []string
-		for _, it := range items[i:end] {
-			ids = append(ids, it.videoID)
-		}
-		vResp, err := svc.Videos.List([]string{"contentDetails"}).
-			Id(ids...).
-			Context(ctx).
-			Do()
-		if err != nil {
-			continue
-		}
-		for _, v := range vResp.Items {
-			durations[v.Id] = parseISO8601Duration(v.ContentDetails.Duration)
-		}
+		batch := items[i:end]
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			var ids []string
+			for _, it := range batch {
+				ids = append(ids, it.videoID)
+			}
+			vResp, err := svc.Videos.List([]string{"contentDetails"}).
+				Id(ids...).
+				Context(ctx).
+				Do()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			for _, v := range vResp.Items {
+				durations[v.Id] = parseISO8601Duration(v.ContentDetails.Duration)
+			}
+			mu.Unlock()
+		}()
 	}
+
+	wg.Wait()
 	return durations
 }
 

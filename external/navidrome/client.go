@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"cliamp/config"
@@ -93,6 +94,9 @@ type NavidromeClient struct {
 	url      string
 	user     string
 	password string
+	mu            sync.Mutex
+	playlistCache []playlist.PlaylistInfo
+	trackCache    map[string][]playlist.Track
 }
 
 // New creates a NavidromeClient with the given server credentials.
@@ -201,6 +205,14 @@ func (c *NavidromeClient) subsonicGet(endpoint string, params url.Values, result
 }
 
 func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
+	c.mu.Lock()
+	if c.playlistCache != nil {
+		cached := c.playlistCache
+		c.mu.Unlock()
+		return cached, nil
+	}
+	c.mu.Unlock()
+
 	var result struct {
 		SubsonicResponse struct {
 			Playlists struct {
@@ -224,10 +236,24 @@ func (c *NavidromeClient) Playlists() ([]playlist.PlaylistInfo, error) {
 			TrackCount: p.Count,
 		})
 	}
+
+	c.mu.Lock()
+	c.playlistCache = lists
+	c.mu.Unlock()
+
 	return lists, nil
 }
 
 func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
+	c.mu.Lock()
+	if c.trackCache != nil {
+		if cached, ok := c.trackCache[id]; ok {
+			c.mu.Unlock()
+			return cached, nil
+		}
+	}
+	c.mu.Unlock()
+
 	var result struct {
 		SubsonicResponse struct {
 			Playlist struct {
@@ -243,6 +269,14 @@ func (c *NavidromeClient) Tracks(id string) ([]playlist.Track, error) {
 	for _, t := range result.SubsonicResponse.Playlist.Entry {
 		tracks = append(tracks, c.songToTrack(t))
 	}
+
+	c.mu.Lock()
+	if c.trackCache == nil {
+		c.trackCache = make(map[string][]playlist.Track)
+	}
+	c.trackCache[id] = tracks
+	c.mu.Unlock()
+
 	return tracks, nil
 }
 
