@@ -184,7 +184,7 @@ func (m Model) renderTrackInfo() string {
 }
 
 func (m Model) renderTimeStatus() string {
-	pos := m.player.Position()
+	pos := m.displayPosition()
 	dur := m.player.Duration()
 
 	posMin := int(pos.Minutes())
@@ -253,7 +253,7 @@ func (m Model) renderSeekBar() string {
 		return seekFillStyle.Render(strings.Repeat("━", left) + label + strings.Repeat("━", right))
 	}
 
-	pos := m.player.Position()
+	pos := m.displayPosition()
 	dur := m.player.Duration()
 
 	var progress float64
