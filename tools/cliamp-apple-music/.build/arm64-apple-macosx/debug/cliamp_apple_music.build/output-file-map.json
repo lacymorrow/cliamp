@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/.build/arm64-apple-macosx/debug/cliamp_apple_music.build/master.swiftdeps"
+  },
+  "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/Sources/main.swift": {
+    "dependencies": "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/.build/arm64-apple-macosx/debug/cliamp_apple_music.build/main.d",
+    "object": "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/.build/arm64-apple-macosx/debug/cliamp_apple_music.build/main.swift.o",
+    "swiftmodule": "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/.build/arm64-apple-macosx/debug/cliamp_apple_music.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/.build/arm64-apple-macosx/debug/cliamp_apple_music.build/main.swiftdeps",
+    "diagnostics": "/Users/lacy/repo/cliamp/tools/cliamp-apple-music/.build/arm64-apple-macosx/debug/cliamp_apple_music.build/main.dia"
+  }
+}
