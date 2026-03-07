@@ -111,15 +111,14 @@ func IsYouTubeURL(path string) bool {
 }
 
 // IsYTDL reports whether the URL points to a site supported by yt-dlp
-// (SoundCloud, Bandcamp, ytsearch: protocol, etc.).
-// YouTube URLs are excluded — they are handled natively via IsYouTubeURL.
+// (YouTube, SoundCloud, Bandcamp, ytsearch: protocol, etc.).
 func IsYTDL(path string) bool {
 	if !IsURL(path) {
 		return false
 	}
-	// YouTube URLs are handled natively, not via yt-dlp.
+	// YouTube URLs are also handled by yt-dlp for playback.
 	if IsYouTubeURL(path) {
-		return false
+		return true
 	}
 	if strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") ||
 		strings.HasPrefix(path, "scsearch:") || strings.HasPrefix(path, "scsearch1:") {
