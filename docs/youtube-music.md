@@ -20,15 +20,16 @@ Cliamp can browse your [YouTube Music](https://music.youtube.com/) playlists and
 8. For the OAuth client ID:
    - Application type: **Desktop app**
    - Name: anything (e.g. "cliamp")
-9. Copy the **Client ID**
+9. Copy the **Client ID** and **Client Secret**
 
 ### Configuring cliamp
 
-Add your client ID to `~/.config/cliamp/config.toml`:
+Add your client ID and client secret to `~/.config/cliamp/config.toml`:
 
 ```toml
 [ytmusic]
 client_id = "your_client_id_here"
+client_secret = "your_client_secret_here"
 ```
 
 Run `cliamp`, select YouTube Music as a provider, and press Enter to sign in. Credentials are cached at `~/.config/cliamp/ytmusic_credentials.json` — subsequent launches refresh silently.

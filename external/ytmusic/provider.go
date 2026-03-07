@@ -15,19 +15,21 @@ import (
 // YouTubeMusicProvider implements playlist.Provider using the YouTube Data API v3
 // for playlist/track metadata. Audio playback is handled by the existing yt-dlp pipeline.
 type YouTubeMusicProvider struct {
-	session    *Session
-	clientID   string
-	mu         sync.Mutex
-	trackCache map[string][]playlist.Track // playlist ID -> cached tracks
+	session      *Session
+	clientID     string
+	clientSecret string
+	mu           sync.Mutex
+	trackCache   map[string][]playlist.Track // playlist ID -> cached tracks
 }
 
 // New creates a YouTubeMusicProvider. If session is nil, authentication is
 // deferred until the user first selects the YouTube Music provider.
-func New(session *Session, clientID string) *YouTubeMusicProvider {
+func New(session *Session, clientID, clientSecret string) *YouTubeMusicProvider {
 	return &YouTubeMusicProvider{
-		session:    session,
-		clientID:   clientID,
-		trackCache: make(map[string][]playlist.Track),
+		session:      session,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		trackCache:   make(map[string][]playlist.Track),
 	}
 }
 
@@ -42,10 +44,11 @@ func (p *YouTubeMusicProvider) ensureSession() error {
 	clientID := p.clientID
 	p.mu.Unlock()
 
+	clientSecret := p.clientSecret
 	if clientID == "" {
 		return fmt.Errorf("ytmusic: no client ID available")
 	}
-	sess, err := NewSessionSilent(context.Background(), clientID)
+	sess, err := NewSessionSilent(context.Background(), clientID, clientSecret)
 	if err != nil {
 		return playlist.ErrNeedsAuth
 	}
@@ -63,12 +66,13 @@ func (p *YouTubeMusicProvider) Authenticate() error {
 		return nil
 	}
 	clientID := p.clientID
+	clientSecret := p.clientSecret
 	p.mu.Unlock()
 
 	if clientID == "" {
 		return fmt.Errorf("ytmusic: no client ID available")
 	}
-	sess, err := NewSession(context.Background(), clientID)
+	sess, err := NewSession(context.Background(), clientID, clientSecret)
 	if err != nil {
 		return err
 	}
