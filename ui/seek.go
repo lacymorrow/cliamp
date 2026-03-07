@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// seekDebounceMs is how long to wait after the last seek keypress before
-// actually executing the yt-dlp seek (restart). During this window,
+// seekDebounceTicks is how many ticks to wait after the last seek keypress
+// before actually executing the yt-dlp seek (restart). During this window,
 // additional seek presses accumulate.
 const seekDebounceTicks = 3 // ~300ms at 100ms tick interval
 
@@ -18,6 +18,10 @@ type seekTickMsg struct{}
 // for local files it seeks immediately.
 func (m *Model) doSeek(d time.Duration) tea.Cmd {
 	if m.player.IsYTDLSeek() {
+		if m.pendingSeek == 0 {
+			// First press: snapshot the current position as the base.
+			m.seekBasePos = m.player.Position()
+		}
 		m.pendingSeek += d
 		m.seekTimer = seekDebounceTicks
 		return nil // tick loop will fire the actual seek
@@ -28,6 +32,24 @@ func (m *Model) doSeek(d time.Duration) tea.Cmd {
 		m.mpris.EmitSeeked(m.player.Position().Microseconds())
 	}
 	return nil
+}
+
+// displayPosition returns the position to show in the UI.
+// When a yt-dlp seek is pending, shows the target position immediately
+// so the user can see where they're seeking to.
+func (m *Model) displayPosition() time.Duration {
+	if m.pendingSeek != 0 {
+		target := m.seekBasePos + m.pendingSeek
+		if target < 0 {
+			return 0
+		}
+		dur := m.player.Duration()
+		if dur > 0 && target >= dur {
+			return dur - time.Second
+		}
+		return target
+	}
+	return m.player.Position()
 }
 
 // tickSeek is called from the main tick loop. Decrements the debounce timer

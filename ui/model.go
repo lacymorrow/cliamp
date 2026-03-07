@@ -187,6 +187,7 @@ type Model struct {
 
 	// yt-dlp seek debounce: accumulate rapid seek presses and fire once.
 	pendingSeek time.Duration // accumulated seek delta (0 = no pending seek)
+	seekBasePos time.Duration // position when first seek press happened
 	seekTimer   int           // tick countdown for debounce (0 = idle)
 
 	// Full-screen visualizer mode (Shift+V)
