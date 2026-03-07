@@ -73,6 +73,24 @@ jobs:
             "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           arch -x86_64 /usr/local/bin/brew install flac libvorbis libogg pkg-config
 
+      - name: Force static linking of codec libs (Linux)
+        if: matrix.goos == 'linux'
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          # Remove .so symlinks so the linker falls back to static .a archives.
+          # This avoids soname mismatches (e.g. libFLAC.so.12 vs .so.14) when
+          # the pre-built binary runs on distros with newer codec libraries.
+          if [ "$GOARCH" = "arm64" ]; then
+            LIB_DIR=/usr/lib/aarch64-linux-gnu
+          else
+            LIB_DIR=/usr/lib/x86_64-linux-gnu
+          fi
+          sudo rm -f ${LIB_DIR}/libFLAC.so
+          sudo rm -f ${LIB_DIR}/libvorbis.so
+          sudo rm -f ${LIB_DIR}/libvorbisenc.so
+          sudo rm -f ${LIB_DIR}/libogg.so
+
       - name: Build (Linux)
         if: matrix.goos == 'linux'
         env:
