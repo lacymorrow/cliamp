@@ -57,8 +57,22 @@ func run(overrides config.Overrides, positional []string) error {
 
 	var ytmusicProv *ytmusic.YouTubeMusicProvider
 	if cfg.YouTubeMusic.IsSet() {
-		ytmusicProv = ytmusic.New(nil, cfg.YouTubeMusic.ClientID, cfg.YouTubeMusic.ClientSecret)
-		providers = append(providers, ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytmusicProv})
+		// YouTube Music playback requires yt-dlp. Check early and offer to install.
+		if !player.YTDLPAvailable() {
+			fmt.Fprintf(os.Stderr, "YouTube Music requires yt-dlp for audio playback.\n")
+			fmt.Fprintf(os.Stderr, "Install: %s\n", player.YtdlpInstallHint())
+			fmt.Fprintf(os.Stderr, "Attempting automatic install...\n")
+			if err := player.InstallYTDLP(); err != nil {
+				fmt.Fprintf(os.Stderr, "Auto-install failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "YouTube Music provider disabled until yt-dlp is installed.\n")
+			} else {
+				fmt.Fprintf(os.Stderr, "yt-dlp installed successfully.\n")
+			}
+		}
+		if player.YTDLPAvailable() {
+			ytmusicProv = ytmusic.New(nil, cfg.YouTubeMusic.ClientID, cfg.YouTubeMusic.ClientSecret)
+			providers = append(providers, ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytmusicProv})
+		}
 	}
 
 	localProv := local.New()
