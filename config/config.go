@@ -70,10 +70,28 @@ type YouTubeMusicConfig struct {
 	CookiesFrom  string // browser name for yt-dlp --cookies-from-browser (e.g. "chrome", "firefox")
 }
 
-// IsSet reports whether the YouTube Music provider should be shown.
-// Returns true when enabled, even without explicit credentials (fallback pool is used).
+// IsSet reports whether the YouTube providers should be shown.
+// Returns true when any of [yt], [youtube], or [ytmusic] config sections exist,
+// or when the --provider flag selects a YouTube provider (even without config).
 func (y YouTubeMusicConfig) IsSet() bool {
 	return !y.Disabled && y.Enabled
+}
+
+// IsSetOrFallback returns true when YouTube providers should be enabled,
+// either via config or because fallback credentials are available.
+func (y YouTubeMusicConfig) IsSetOrFallback(fallbackFn func() (string, string)) bool {
+	if y.Disabled {
+		return false
+	}
+	if y.Enabled {
+		return true
+	}
+	// Even without a config section, enable if fallback credentials exist.
+	if fallbackFn != nil {
+		id, secret := fallbackFn()
+		return id != "" && secret != ""
+	}
+	return false
 }
 
 // ResolveCredentials returns the user's configured credentials, or falls back
@@ -155,9 +173,11 @@ func Load() (Config, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.ToLower(line[1 : len(line)-1])
 			// Mark providers as enabled when their section exists.
+			// [yt], [youtube], and [ytmusic] all configure the same YouTube providers.
 			switch section {
-			case "ytmusic":
+			case "yt", "youtube", "ytmusic":
 				cfg.YouTubeMusic.Enabled = true
+				section = "ytmusic" // normalize for key parsing below
 			}
 			continue
 		}
