@@ -110,11 +110,19 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 	var all []playlist.PlaylistInfo
 
-	// Add synthetic "Liked Music" entry (YouTube's special LL playlist).
+	// Add "Liked Music" entry (YouTube's special LL playlist).
+	// Fetch its actual item count via a direct playlist lookup.
+	likedCount := 0
+	if llResp, err := svc.Playlists.List([]string{"contentDetails"}).
+		Id("LL").
+		Context(ctx).
+		Do(); err == nil && len(llResp.Items) > 0 {
+		likedCount = int(llResp.Items[0].ContentDetails.ItemCount)
+	}
 	all = append(all, playlist.PlaylistInfo{
 		ID:         "LL",
 		Name:       "Liked Music",
-		TrackCount: -1, // unknown until fetched
+		TrackCount: likedCount,
 	})
 
 	fmt.Fprintf(os.Stderr, "ytmusic: fetching playlists...\n")
