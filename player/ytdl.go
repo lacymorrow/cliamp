@@ -7,10 +7,105 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 
 	"github.com/gopxl/beep/v2"
 )
+
+// YTDLPAvailable reports whether yt-dlp is installed and on PATH.
+func YTDLPAvailable() bool {
+	_, err := exec.LookPath("yt-dlp")
+	return err == nil
+}
+
+// FFmpegAvailable reports whether ffmpeg is installed and on PATH.
+func FFmpegAvailable() bool {
+	_, err := exec.LookPath("ffmpeg")
+	return err == nil
+}
+
+// InstallYTDLP attempts to install yt-dlp using the system package manager.
+// Returns nil on success. The caller should re-check YTDLPAvailable() after.
+func InstallYTDLP() error {
+	switch runtime.GOOS {
+	case "darwin":
+		if _, err := exec.LookPath("brew"); err == nil {
+			cmd := exec.Command("brew", "install", "yt-dlp")
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+		// Fall through to pip
+	case "linux":
+		if _, err := exec.LookPath("apt-get"); err == nil {
+			cmd := exec.Command("sudo", "apt-get", "install", "-y", "yt-dlp")
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+		if _, err := exec.LookPath("pacman"); err == nil {
+			cmd := exec.Command("sudo", "pacman", "-S", "--noconfirm", "yt-dlp")
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+	}
+	// Fallback: pip/pipx
+	if path, err := exec.LookPath("pipx"); err == nil {
+		cmd := exec.Command(path, "install", "yt-dlp")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	if path, err := exec.LookPath("pip3"); err == nil {
+		cmd := exec.Command(path, "install", "yt-dlp")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	return fmt.Errorf("no supported package manager found — install manually: https://github.com/yt-dlp/yt-dlp#installation")
+}
+
+// YtdlpInstallHint returns a platform-specific install command suggestion.
+func YtdlpInstallHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "brew install yt-dlp"
+	case "linux":
+		if _, err := exec.LookPath("apt-get"); err == nil {
+			return "sudo apt install yt-dlp"
+		}
+		if _, err := exec.LookPath("pacman"); err == nil {
+			return "sudo pacman -S yt-dlp"
+		}
+		return "pip install yt-dlp"
+	case "windows":
+		return "winget install yt-dlp"
+	default:
+		return "pip install yt-dlp"
+	}
+}
+
+// ffmpegInstallHint returns a platform-specific install command suggestion.
+func ffmpegInstallHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "brew install ffmpeg"
+	case "linux":
+		if _, err := exec.LookPath("apt-get"); err == nil {
+			return "sudo apt install ffmpeg"
+		}
+		if _, err := exec.LookPath("pacman"); err == nil {
+			return "sudo pacman -S ffmpeg"
+		}
+		return "see https://ffmpeg.org/download.html"
+	case "windows":
+		return "winget install ffmpeg"
+	default:
+		return "see https://ffmpeg.org/download.html"
+	}
+}
 
 // ytdlPipeStreamer streams PCM audio from a yt-dlp | ffmpeg pipe chain.
 // yt-dlp downloads the best audio and writes raw data to stdout; ffmpeg reads
@@ -70,10 +165,10 @@ func (y *ytdlPipeStreamer) Close() error {
 // and returns a streaming PCM decoder.
 func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipeStreamer, beep.Format, error) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
-		return nil, beep.Format{}, fmt.Errorf("yt-dlp is required to play this URL — install it with your package manager")
+		return nil, beep.Format{}, fmt.Errorf("yt-dlp is required — install: %s", YtdlpInstallHint())
 	}
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, beep.Format{}, fmt.Errorf("ffmpeg is required to play this URL — install it with your package manager")
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg is required — install: %s", ffmpegInstallHint())
 	}
 
 	// os.Pipe connects yt-dlp stdout → ffmpeg stdin.
