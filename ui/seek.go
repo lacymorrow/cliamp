@@ -9,7 +9,7 @@ import (
 // seekDebounceTicks is how many ticks to wait after the last seek keypress
 // before actually executing the yt-dlp seek (restart). During this window,
 // additional seek presses accumulate.
-const seekDebounceTicks = 3 // ~300ms at 100ms tick interval
+const seekDebounceTicks = 8 // ~800ms at 100ms tick interval
 
 // seekTickMsg fires when the debounce timer expires.
 type seekTickMsg struct{}
@@ -18,9 +18,12 @@ type seekTickMsg struct{}
 // for local files it seeks immediately.
 func (m *Model) doSeek(d time.Duration) tea.Cmd {
 	if m.player.IsYTDLSeek() {
-		if m.pendingSeek == 0 {
-			// First press: snapshot the current position as the base.
+		if m.pendingSeek == 0 && !m.seekInFlight {
+			// First press (no pending, no in-flight): snapshot current position.
 			m.seekBasePos = m.player.Position()
+		} else if m.pendingSeek == 0 && m.seekInFlight {
+			// Pressing during an in-flight seek: start from the in-flight target.
+			m.seekBasePos = m.seekTargetPos
 		}
 		m.pendingSeek += d
 		m.seekTimer = seekDebounceTicks
