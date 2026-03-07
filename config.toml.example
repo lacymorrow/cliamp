@@ -54,6 +54,16 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # visualizer = "Bars"
 
 # ---
+# Spotify (optional)
+# A Spotify Premium account is required for playback.
+# If you don't set a client_id, cliamp uses a built-in fallback token
+# so you can skip registering a Spotify Developer app entirely.
+# Set your own client_id only if you prefer to use your own app.
+# [spotify]
+# enabled   = true
+# client_id = "your-spotify-app-client-id"
+
+# ---
 # Navidrome / Subsonic server (optional)
 # When configured, cliamp opens the playlist browser on startup and streams
 # tracks directly from your server.
