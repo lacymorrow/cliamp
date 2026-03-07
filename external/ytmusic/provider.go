@@ -382,21 +382,67 @@ func (p *YouTubeProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 	return all, nil
 }
 
+// ─── YouTube All Provider ──────────────────────────────────────────────────
+
+// YouTubeAllProvider shows all playlists regardless of classification.
+type YouTubeAllProvider struct {
+	base *baseProvider
+}
+
+func (p *YouTubeAllProvider) Name() string       { return "YouTube (All)" }
+func (p *YouTubeAllProvider) Authenticate() error { return p.base.authenticate() }
+func (p *YouTubeAllProvider) Close()              { /* shared base; closed via music provider */ }
+func (p *YouTubeAllProvider) Tracks(id string) ([]playlist.Track, error) {
+	return p.base.tracks(id)
+}
+
+func (p *YouTubeAllProvider) Playlists() ([]playlist.PlaylistInfo, error) {
+	if err := p.base.fetchAndClassify(); err != nil {
+		return nil, err
+	}
+
+	var all []playlist.PlaylistInfo
+
+	// Add Liked Videos as first entry.
+	count := p.base.likedCount()
+	all = append(all, playlist.PlaylistInfo{
+		ID:         "LL",
+		Name:       "Liked Videos",
+		TrackCount: count,
+	})
+
+	// Add all playlists, unfiltered.
+	b := p.base
+	b.mu.Lock()
+	for _, pl := range b.allPlaylists {
+		all = append(all, playlist.PlaylistInfo{
+			ID:         pl.ID,
+			Name:       pl.Name,
+			TrackCount: pl.TrackCount,
+		})
+	}
+	b.mu.Unlock()
+
+	return all, nil
+}
+
 // ─── Constructor ───────────────────────────────────────────────────────────
 
-// Providers holds both the YouTube Music and YouTube providers,
+// Providers holds the YouTube Music, YouTube, and YouTube All providers,
 // sharing a single OAuth session.
 type Providers struct {
 	Music *YouTubeMusicProvider
 	Video *YouTubeProvider
+	All   *YouTubeAllProvider
 }
 
-// New creates both YouTube Music and YouTube providers with a shared session.
+// New creates all three YouTube providers with a shared session.
 func New(session *Session, clientID, clientSecret string, hasCookies bool) Providers {
 	base := newBase(session, clientID, clientSecret, hasCookies)
 	return Providers{
 		Music: &YouTubeMusicProvider{base: base},
 		Video: &YouTubeProvider{base: base},
+		All:   &YouTubeAllProvider{base: base},
 	}
 }
 
