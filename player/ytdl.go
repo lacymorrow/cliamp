@@ -302,14 +302,13 @@ func decodeYTDLPipeAt(pageURL string, startSec int, sr beep.SampleRate, bitDepth
 		return nil, beep.Format{}, fmt.Errorf("os.Pipe: %w", err)
 	}
 
+	// Use regular yt-dlp (no --download-sections, which re-muxes and breaks piping).
+	// Instead, seek via ffmpeg -ss on the decode side.
 	ytdlArgs := []string{
 		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio",
 		"--no-playlist",
 		"--no-warnings",
 		"-o", "-",
-	}
-	if startSec > 0 {
-		ytdlArgs = append(ytdlArgs, "--download-sections", fmt.Sprintf("*%d-", startSec))
 	}
 	if ytdlCookiesFrom != "" {
 		ytdlArgs = append(ytdlArgs, "--cookies-from-browser", ytdlCookiesFrom)
@@ -325,8 +324,13 @@ func decodeYTDLPipeAt(pageURL string, startSec int, sr beep.SampleRate, bitDepth
 		return nil, beep.Format{}, fmt.Errorf("yt-dlp start: %w", err)
 	}
 
+	// Use ffmpeg -ss for seeking: skip to startSec in the input stream.
 	pcmFmt, codec, precision := ffmpegPCMArgs(bitDepth)
-	ffmpegCmd := exec.Command("ffmpeg",
+	ffmpegArgs := []string{}
+	if startSec > 0 {
+		ffmpegArgs = append(ffmpegArgs, "-ss", strconv.Itoa(startSec))
+	}
+	ffmpegArgs = append(ffmpegArgs,
 		"-i", "pipe:0",
 		"-f", pcmFmt,
 		"-acodec", codec,
@@ -335,6 +339,7 @@ func decodeYTDLPipeAt(pageURL string, startSec int, sr beep.SampleRate, bitDepth
 		"-loglevel", "error",
 		"pipe:1",
 	)
+	ffmpegCmd := exec.Command("ffmpeg", ffmpegArgs...)
 	ffmpegCmd.Stdin = pr
 	var ffmpegStderr bytes.Buffer
 	ffmpegCmd.Stderr = &ffmpegStderr
