@@ -187,13 +187,11 @@ type Model struct {
 	// Track info overlay (metadata details)
 	showInfo bool
 
-	// yt-dlp seek debounce: accumulate rapid seek presses and fire once.
-	pendingSeek  time.Duration // accumulated seek delta (0 = no pending seek)
-	seekBasePos  time.Duration // position when first seek press happened
-	seekTimer    int           // tick countdown for debounce (0 = idle)
-	seekTargetPos time.Duration // target position to display until seek completes
-	seekInFlight bool          // true while async seek is running
-	seekGrace    int           // ticks to suppress reconnect after seek completes
+	// yt-dlp seek debounce: accumulate into a target position and fire once.
+	seekActive    bool          // true from first keypress until seek completes
+	seekTargetPos time.Duration // absolute target position
+	seekTimer     int           // tick countdown for debounce (0 = idle)
+	seekGrace     int           // ticks to suppress reconnect after seek completes
 
 	// Full-screen visualizer mode (Shift+V)
 	fullVis bool
@@ -668,13 +666,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case seekTickMsg:
 		// Async yt-dlp seek completed.
-		// Only clear in-flight if no new seek is pending (prevents position bounce).
-		if m.pendingSeek == 0 {
-			m.seekInFlight = false
+		// Only clear seekActive if no new seek keypresses arrived during loading.
+		if m.seekTimer <= 0 {
+			m.seekActive = false
 		}
-		// Grace period: suppress reconnect for a few ticks after seek completes,
-		// because the old pipeline's error may still be in the decoder.
-		m.seekGrace = 10 // ~1 second at 100ms tick
+		// Grace period: suppress reconnect for a few ticks after seek completes.
+		m.seekGrace = 10
 		if m.mpris != nil {
 			m.mpris.EmitSeeked(m.player.Position().Microseconds())
 		}
@@ -700,7 +697,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Surface stream errors (e.g., connection drops) and auto-reconnect streams.
 		// Suppress during yt-dlp seek and grace period — killing the old pipeline
 		// triggers a transient error that can persist for a few ticks.
-		if err := m.player.StreamErr(); err != nil && !m.seekInFlight && m.pendingSeek == 0 && m.seekGrace == 0 {
+		if err := m.player.StreamErr(); err != nil && !m.seekActive && m.seekGrace == 0 {
 			track, idx := m.playlist.Current()
 			isStream := idx >= 0 && (track.Stream || playlist.IsYouTubeURL(track.Path) || playlist.IsYTDL(track.Path))
 			if isStream && m.reconnectAttempts < 5 {
