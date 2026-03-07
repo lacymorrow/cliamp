@@ -364,8 +364,15 @@ func (b *baseProvider) fetchDurations(svc *youtube.Service, items []itemInfo, ct
 }
 
 // likedCount fetches the item count for the special LL playlist.
+// Returns 0 if no session is available (e.g., serving from disk cache).
 func (b *baseProvider) likedCount() int {
-	svc := b.session.Service()
+	b.mu.Lock()
+	sess := b.session
+	b.mu.Unlock()
+	if sess == nil {
+		return 0
+	}
+	svc := sess.Service()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	resp, err := svc.Playlists.List([]string{"contentDetails"}).

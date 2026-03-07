@@ -841,8 +841,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tracksLoadedMsg:
-		wasPlaying := m.player.IsPlaying()
-		if !wasPlaying {
+		if !m.player.IsPlaying() {
 			m.player.Stop()
 			m.player.ClearPreload()
 		}
@@ -851,7 +850,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plScroll = 0
 		m.focus = focusPlaylist
 		m.provLoading = false
-		if m.playlist.Len() > 0 && !wasPlaying {
+		if m.playlist.Len() > 0 && !m.player.IsPlaying() {
 			cmd := m.playCurrentTrack()
 			m.notifyMPRIS()
 			return m, cmd
