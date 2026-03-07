@@ -21,10 +21,10 @@ Four parallel jobs compile the binary natively — one per target:
 |--------|--------|
 | linux/amd64 | ubuntu-latest (native) |
 | linux/arm64 | ubuntu-latest (cross-compile via `aarch64-linux-gnu-gcc`) |
-| darwin/amd64 | macos-13 (Intel runner, native) |
+| darwin/amd64 | macos-latest (Rosetta 2 cross-compile) |
 | darwin/arm64 | macos-latest (Apple Silicon, native) |
 
-CGO is required for audio output (ALSA on Linux, CoreAudio on macOS), so each platform compiles on its own runner rather than cross-compiling through a single host. The macOS amd64 target uses the `macos-13` runner (a real Intel machine) instead of Rosetta 2.
+CGO is required for audio output (ALSA/libvorbis/libFLAC on Linux, CoreAudio/libvorbis/libFLAC on macOS). GitHub retired the last Intel macOS runner (`macos-13`), so darwin/amd64 cross-compiles on Apple Silicon using Rosetta 2: an x86_64 Homebrew is installed under `/usr/local`, then the build runs with `CGO_CFLAGS="-arch x86_64"` and `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` pointing at the x86_64 bottles.
 
 Each job uploads its `dist/` output as a GitHub Actions artifact.
 
