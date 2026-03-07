@@ -191,6 +191,7 @@ type Model struct {
 	seekTimer    int           // tick countdown for debounce (0 = idle)
 	seekTargetPos time.Duration // target position to display until seek completes
 	seekInFlight bool          // true while async seek is running
+	seekGrace    int           // ticks to suppress reconnect after seek completes
 
 	// Full-screen visualizer mode (Shift+V)
 	fullVis bool
@@ -666,6 +667,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case seekTickMsg:
 		// Async yt-dlp seek completed — stop holding the target position.
 		m.seekInFlight = false
+		// Grace period: suppress reconnect for a few ticks after seek completes,
+		// because the old pipeline's error may still be in the decoder.
+		m.seekGrace = 10 // ~1 second at 100ms tick
 		if m.mpris != nil {
 			m.mpris.EmitSeeked(m.player.Position().Microseconds())
 		}
@@ -684,9 +688,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.saveMsg = ""
 			}
 		}
+		// Decrement seek grace period.
+		if m.seekGrace > 0 {
+			m.seekGrace--
+		}
 		// Surface stream errors (e.g., connection drops) and auto-reconnect streams.
-		// Suppress during yt-dlp seek — killing the old pipeline triggers a transient error.
-		if err := m.player.StreamErr(); err != nil && !m.seekInFlight && m.pendingSeek == 0 {
+		// Suppress during yt-dlp seek and grace period — killing the old pipeline
+		// triggers a transient error that can persist for a few ticks.
+		if err := m.player.StreamErr(); err != nil && !m.seekInFlight && m.pendingSeek == 0 && m.seekGrace == 0 {
 			track, idx := m.playlist.Current()
 			isStream := idx >= 0 && (track.Stream || playlist.IsYouTubeURL(track.Path) || playlist.IsYTDL(track.Path))
 			if isStream && m.reconnectAttempts < 5 {
