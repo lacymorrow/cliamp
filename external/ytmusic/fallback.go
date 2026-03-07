@@ -18,8 +18,8 @@ type oauthCreds struct {
 
 var fallbackCredentials = []oauthCreds{
 	{
-		ClientID:     "REMOVED_CLIENT_ID",
-		ClientSecret: "REMOVED_CLIENT_SECRET",
+		// ClientID:     "REMOVED_CLIENT_ID",
+		// ClientSecret: "REMOVED_CLIENT_SECRET",
 	},
 }
 
