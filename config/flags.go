@@ -108,9 +108,9 @@ func ParseFlags(args []string) (action string, ov Overrides, positional []string
 			}
 			v = strings.ToLower(v)
 			switch v {
-			case "radio", "navidrome", "spotify":
+			case "radio", "navidrome", "spotify", "ytmusic":
 			default:
-				return "", ov, nil, fmt.Errorf("flag --provider value must be radio, navidrome, or spotify (got %q)", v)
+				return "", ov, nil, fmt.Errorf("flag --provider value must be radio, navidrome, spotify, or ytmusic (got %q)", v)
 			}
 			ov.Provider = &v
 		case "--volume":
