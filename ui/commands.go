@@ -131,6 +131,19 @@ func preloadStreamCmd(p *player.Player, path string, knownDuration time.Duration
 	}
 }
 
+func playYouTubeStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		return streamPlayedMsg{err: p.PlayYouTube(pageURL, knownDuration)}
+	}
+}
+
+func preloadYouTubeStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		p.PreloadYouTube(pageURL, knownDuration) // errors silently ignored
+		return streamPreloadedMsg{}
+	}
+}
+
 func playYTDLStreamCmd(p *player.Player, pageURL string, knownDuration time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		return streamPlayedMsg{err: p.PlayYTDL(pageURL, knownDuration)}

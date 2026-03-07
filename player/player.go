@@ -110,6 +110,31 @@ func (p *Player) PlayYTDL(pageURL string, knownDuration time.Duration) error {
 	return p.playPipeline(tp)
 }
 
+// PlayYouTube starts playing a YouTube URL via native streaming (kkdai/youtube + ffmpeg).
+// Playback starts as soon as the first PCM samples arrive. Not seekable.
+func (p *Player) PlayYouTube(pageURL string, knownDuration time.Duration) error {
+	tp, err := p.buildYouTubePipeline(pageURL)
+	if err != nil {
+		return err
+	}
+	if knownDuration > 0 {
+		tp.knownDuration = knownDuration
+	}
+	return p.playPipeline(tp)
+}
+
+// PreloadYouTube builds a native YouTube pipeline and queues it for gapless transition.
+func (p *Player) PreloadYouTube(pageURL string, knownDuration time.Duration) error {
+	tp, err := p.buildYouTubePipeline(pageURL)
+	if err != nil {
+		return err
+	}
+	if knownDuration > 0 {
+		tp.knownDuration = knownDuration
+	}
+	return p.preloadPipeline(tp)
+}
+
 // playPipeline wires a ready-to-play trackPipeline into the speaker chain.
 // On the first call it builds the long-lived EQ → volume → tap → ctrl chain.
 // Subsequent calls swap only the track source via the gapless streamer.

@@ -86,10 +86,39 @@ func IsLocalPLS(path string) bool {
 	return !IsURL(path) && IsPLS(path)
 }
 
+// IsYouTubeURL reports whether the URL points to YouTube or YouTube Music.
+// These URLs are handled natively via the kkdai/youtube library, not yt-dlp.
+func IsYouTubeURL(path string) bool {
+	if !IsURL(path) {
+		return false
+	}
+	// ytsearch: protocols are handled by yt-dlp, not the native YouTube client.
+	if strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") {
+		return false
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	host = strings.TrimPrefix(host, "www.")
+	host = strings.TrimPrefix(host, "m.")
+	switch host {
+	case "youtube.com", "youtu.be", "music.youtube.com":
+		return true
+	}
+	return false
+}
+
 // IsYTDL reports whether the URL points to a site supported by yt-dlp
-// (SoundCloud, YouTube, Bandcamp, ytsearch: protocol, etc.).
+// (SoundCloud, Bandcamp, ytsearch: protocol, etc.).
+// YouTube URLs are excluded — they are handled natively via IsYouTubeURL.
 func IsYTDL(path string) bool {
 	if !IsURL(path) {
+		return false
+	}
+	// YouTube URLs are handled natively, not via yt-dlp.
+	if IsYouTubeURL(path) {
 		return false
 	}
 	if strings.HasPrefix(path, "ytsearch:") || strings.HasPrefix(path, "ytsearch1:") ||
@@ -105,7 +134,6 @@ func IsYTDL(path string) bool {
 	host = strings.TrimPrefix(host, "m.")
 	switch host {
 	case "soundcloud.com",
-		"youtube.com", "youtu.be", "music.youtube.com",
 		"bandcamp.com":
 		return true
 	}

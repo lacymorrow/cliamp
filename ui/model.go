@@ -669,7 +669,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Surface stream errors (e.g., connection drops) and auto-reconnect streams.
 		if err := m.player.StreamErr(); err != nil {
 			track, idx := m.playlist.Current()
-			isStream := idx >= 0 && (track.Stream || playlist.IsYTDL(track.Path))
+			isStream := idx >= 0 && (track.Stream || playlist.IsYouTubeURL(track.Path) || playlist.IsYTDL(track.Path))
 			if isStream && m.reconnectAttempts < 5 {
 				// Schedule reconnect with exponential backoff: 1s, 2s, 4s, 8s, 16s
 				if m.reconnectAt.IsZero() {
@@ -1121,7 +1121,17 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		fetchCmd = fetchLyricsCmd(track.Artist, track.Title)
 	}
 
-	// Stream yt-dlp URLs (SoundCloud, YouTube, etc.) via pipe chain.
+	// YouTube URLs: native streaming via kkdai/youtube (no yt-dlp needed).
+	if playlist.IsYouTubeURL(track.Path) {
+		m.buffering = true
+		m.err = nil
+		dur := time.Duration(track.DurationSecs) * time.Second
+		if fetchCmd != nil {
+			return tea.Batch(playYouTubeStreamCmd(m.player, track.Path, dur), fetchCmd)
+		}
+		return playYouTubeStreamCmd(m.player, track.Path, dur)
+	}
+	// Stream yt-dlp URLs (SoundCloud, Bandcamp, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
 		m.buffering = true
 		m.err = nil
@@ -1166,6 +1176,19 @@ func (m *Model) preloadNext() tea.Cmd {
 	next, ok := m.playlist.PeekNext()
 	if !ok {
 		return nil
+	}
+	// Preload YouTube tracks with the same lead-time deferral as HTTP streams.
+	if playlist.IsYouTubeURL(next.Path) {
+		dur := m.player.Duration()
+		if dur > 0 {
+			remaining := dur - m.player.Position()
+			if remaining > ytdlPreloadLeadTime {
+				return nil
+			}
+		}
+		nextDur := time.Duration(next.DurationSecs) * time.Second
+		m.preloading = true
+		return preloadYouTubeStreamCmd(m.player, next.Path, nextDur)
 	}
 	// Preload yt-dlp tracks with the same lead-time deferral as HTTP streams.
 	if playlist.IsYTDL(next.Path) {
@@ -1349,8 +1372,8 @@ func (m *Model) lyricsSyncable() bool {
 	if idx < 0 {
 		return false
 	}
-	// yt-dlp pipe streams report position 0.
-	if playlist.IsYTDL(track.Path) {
+	// YouTube/yt-dlp pipe streams report position 0.
+	if playlist.IsYouTubeURL(track.Path) || playlist.IsYTDL(track.Path) {
 		return false
 	}
 	// ICY radio streams: position counts from stream connect, not song start.
