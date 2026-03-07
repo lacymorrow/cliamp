@@ -56,7 +56,18 @@ func run(overrides config.Overrides, positional []string) error {
 	}
 
 	var ytProviders ytmusic.Providers
-	if cfg.YouTubeMusic.IsSet() {
+	// Enable YouTube providers if any [yt]/[youtube]/[ytmusic] config exists,
+	// or if the --provider flag selects a YouTube provider,
+	// or if fallback credentials are available.
+	ytWanted := cfg.YouTubeMusic.IsSetOrFallback(ytmusic.FallbackCredentials)
+	if !ytWanted {
+		// Also enable if --provider flag selects a YouTube provider.
+		switch cfg.Provider {
+		case "yt", "youtube", "ytmusic":
+			ytWanted = true
+		}
+	}
+	if ytWanted {
 		ytClientID, ytClientSecret := cfg.YouTubeMusic.ResolveCredentials(ytmusic.FallbackCredentials)
 		// Configure yt-dlp cookie source for YouTube Music uploads/private tracks.
 		if cfg.YouTubeMusic.CookiesFrom != "" {
