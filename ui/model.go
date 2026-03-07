@@ -1121,17 +1121,7 @@ func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 		fetchCmd = fetchLyricsCmd(track.Artist, track.Title)
 	}
 
-	// YouTube URLs: native streaming via kkdai/youtube (no yt-dlp needed).
-	if playlist.IsYouTubeURL(track.Path) {
-		m.buffering = true
-		m.err = nil
-		dur := time.Duration(track.DurationSecs) * time.Second
-		if fetchCmd != nil {
-			return tea.Batch(playYouTubeStreamCmd(m.player, track.Path, dur), fetchCmd)
-		}
-		return playYouTubeStreamCmd(m.player, track.Path, dur)
-	}
-	// Stream yt-dlp URLs (SoundCloud, Bandcamp, etc.) via pipe chain.
+	// Stream yt-dlp URLs (YouTube, SoundCloud, Bandcamp, etc.) via pipe chain.
 	if playlist.IsYTDL(track.Path) {
 		m.buffering = true
 		m.err = nil
@@ -1176,19 +1166,6 @@ func (m *Model) preloadNext() tea.Cmd {
 	next, ok := m.playlist.PeekNext()
 	if !ok {
 		return nil
-	}
-	// Preload YouTube tracks with the same lead-time deferral as HTTP streams.
-	if playlist.IsYouTubeURL(next.Path) {
-		dur := m.player.Duration()
-		if dur > 0 {
-			remaining := dur - m.player.Position()
-			if remaining > ytdlPreloadLeadTime {
-				return nil
-			}
-		}
-		nextDur := time.Duration(next.DurationSecs) * time.Second
-		m.preloading = true
-		return preloadYouTubeStreamCmd(m.player, next.Path, nextDur)
 	}
 	// Preload yt-dlp tracks with the same lead-time deferral as HTTP streams.
 	if playlist.IsYTDL(next.Path) {
