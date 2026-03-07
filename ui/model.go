@@ -633,8 +633,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Dynamic frame width: use terminal width (capped at a reasonable max).
-		frameW := min(msg.Width, max(80, msg.Width-2))
+		// Dynamic frame width: use full terminal width.
+		frameW := msg.Width
 		frameStyle = frameStyle.Width(frameW)
 		panelWidth = frameW - 6 // subtract horizontal padding (3 left + 3 right)
 		if m.fullVis {
