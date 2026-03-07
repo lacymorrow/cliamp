@@ -448,7 +448,8 @@ func (p *Player) SeekYTDL(d time.Duration) error {
 	p.current = tp
 	p.nextPipeline = nil
 	p.mu.Unlock()
-	closePipelines(old, oldNext)
+	// Clean up old pipelines async to avoid blocking on process wait.
+	go closePipelines(old, oldNext)
 	return nil
 }
 
