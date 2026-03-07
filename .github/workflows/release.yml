@@ -97,7 +97,6 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
-          CGO_LDFLAGS: "-lm"
         run: |
           if [ "$GOARCH" = "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
@@ -105,7 +104,9 @@ jobs:
           fi
           BINARY="cliamp-${GOOS}-${GOARCH}"
           VERSION="${GITHUB_REF#refs/tags/}"
-          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "$BINARY" .
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION} -extldflags '-lvorbisenc -lvorbis -lFLAC -logg -lm'" \
+            -o "$BINARY" .
 
       - name: Build (macOS)
         if: matrix.goos == 'darwin'
