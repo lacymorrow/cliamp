@@ -362,7 +362,7 @@ func (p *Player) Seek(d time.Duration) error {
 	}
 
 	// yt-dlp seek-by-restart: handled outside the speaker lock via SeekYTDL.
-	if cur.ytdlSeek && cur.knownDuration > 0 {
+	if cur.ytdlSeek {
 		// Release speaker lock, then do the slow seek.
 		speaker.Unlock()
 		err := p.SeekYTDL(d)
@@ -421,7 +421,7 @@ func (p *Player) SeekYTDL(d time.Duration) error {
 	p.mu.Lock()
 	cur := p.current
 	p.mu.Unlock()
-	if cur == nil || !cur.ytdlSeek || cur.knownDuration <= 0 {
+	if cur == nil || !cur.ytdlSeek {
 		return nil
 	}
 
@@ -434,7 +434,7 @@ func (p *Player) SeekYTDL(d time.Duration) error {
 	if newPos < 0 {
 		newPos = 0
 	}
-	if newPos >= cur.knownDuration {
+	if cur.knownDuration > 0 && newPos >= cur.knownDuration {
 		newPos = cur.knownDuration - time.Second
 	}
 	startSec := int(newPos.Seconds())
@@ -603,7 +603,7 @@ func (p *Player) Seekable() bool {
 	if cur == nil {
 		return false
 	}
-	return cur.seekable || (cur.seekableStream && cur.knownDuration > 0)
+	return cur.seekable || (cur.seekableStream && cur.knownDuration > 0) || (cur.ytdlSeek && cur.knownDuration > 0)
 }
 
 // StreamErr returns the current streamer error, if any (e.g., connection drops).
