@@ -2,8 +2,6 @@ package ytmusic
 
 import (
 	"math/rand/v2"
-	"os"
-	"strings"
 )
 
 // fallbackCredentials is a pool of Google Cloud OAuth2 Desktop app credentials
@@ -18,25 +16,19 @@ type oauthCreds struct {
 	ClientSecret string
 }
 
-// builtinCredentials is the compiled-in pool. Populate via -ldflags or add
-// entries directly for private builds. For public repos, use the
-// CLIAMP_YT_CREDENTIALS environment variable instead to avoid push-protection.
-var builtinCredentials []oauthCreds
+var fallbackCredentials = []oauthCreds{
+	{
+		ClientID:     "REMOVED_CLIENT_ID",
+		ClientSecret: "REMOVED_CLIENT_SECRET",
+	},
+}
 
-// FallbackCredentials returns a random credential pair from the built-in pool
-// or the CLIAMP_YT_CREDENTIALS environment variable (format: "clientID:clientSecret").
-// Returns empty strings if neither source has credentials.
+// FallbackCredentials returns a random credential pair from the built-in pool,
+// or empty strings if the pool is empty.
 func FallbackCredentials() (clientID, clientSecret string) {
-	// Check environment variable first.
-	if env := os.Getenv("CLIAMP_YT_CREDENTIALS"); env != "" {
-		if id, secret, ok := strings.Cut(env, ":"); ok && id != "" && secret != "" {
-			return id, secret
-		}
-	}
-
-	if len(builtinCredentials) == 0 {
+	if len(fallbackCredentials) == 0 {
 		return "", ""
 	}
-	c := builtinCredentials[rand.IntN(len(builtinCredentials))]
+	c := fallbackCredentials[rand.IntN(len(fallbackCredentials))]
 	return c.ClientID, c.ClientSecret
 }
