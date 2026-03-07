@@ -13,6 +13,7 @@ import (
 	"cliamp/external/navidrome"
 	"cliamp/external/radio"
 	"cliamp/external/spotify"
+	"cliamp/external/ytmusic"
 	"cliamp/mpris"
 	"cliamp/player"
 	"cliamp/playlist"
@@ -54,11 +55,20 @@ func run(overrides config.Overrides, positional []string) error {
 		providers = append(providers, ui.ProviderEntry{Key: "spotify", Name: "Spotify", Provider: spotifyProv})
 	}
 
+	var ytmusicProv *ytmusic.YouTubeMusicProvider
+	if cfg.YouTubeMusic.IsSet() {
+		ytmusicProv = ytmusic.New(nil, cfg.YouTubeMusic.ClientID)
+		providers = append(providers, ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytmusicProv})
+	}
+
 	localProv := local.New()
 
 	defer resolve.CleanupYTDL()
 	if spotifyProv != nil {
 		defer spotifyProv.Close()
+	}
+	if ytmusicProv != nil {
+		defer ytmusicProv.Close()
 	}
 
 	if len(positional) > 0 && (positional[0] == "search" || positional[0] == "search-sc") {
@@ -187,7 +197,7 @@ Audio engine:
   --bit-depth <n>         PCM bit depth: 16 (default) or 32 (lossless)
 
 Provider:
-  --provider <name>       Default provider: radio, navidrome, spotify (default: radio)
+  --provider <name>       Default provider: radio, navidrome, spotify, ytmusic (default: radio)
 
 Appearance:
   --theme <name>          UI theme name
