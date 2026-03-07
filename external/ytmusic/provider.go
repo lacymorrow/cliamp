@@ -112,6 +112,7 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 	defer cancel()
 
 	var all []playlist.PlaylistInfo
+	seen := make(map[string]bool) // playlist ID -> already added
 
 	// Add "Liked Music" entry (YouTube's special LL playlist).
 	// Fetch its actual item count via a direct playlist lookup.
@@ -147,10 +148,15 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		fmt.Fprintf(os.Stderr, "ytmusic: got %d playlists (page)\n", len(resp.Items))
 
 		for _, item := range resp.Items {
+			count := int(item.ContentDetails.ItemCount)
+			if count <= 0 || seen[item.Id] {
+				continue // hide empty or duplicate playlists
+			}
+			seen[item.Id] = true
 			all = append(all, playlist.PlaylistInfo{
 				ID:         item.Id,
 				Name:       item.Snippet.Title,
-				TrackCount: int(item.ContentDetails.ItemCount),
+				TrackCount: count,
 			})
 		}
 
