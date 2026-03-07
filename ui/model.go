@@ -188,9 +188,11 @@ type Model struct {
 	showInfo bool
 
 	// yt-dlp seek debounce: accumulate rapid seek presses and fire once.
-	pendingSeek time.Duration // accumulated seek delta (0 = no pending seek)
-	seekBasePos time.Duration // position when first seek press happened
-	seekTimer   int           // tick countdown for debounce (0 = idle)
+	pendingSeek  time.Duration // accumulated seek delta (0 = no pending seek)
+	seekBasePos  time.Duration // position when first seek press happened
+	seekTimer    int           // tick countdown for debounce (0 = idle)
+	seekTargetPos time.Duration // target position to display until seek completes
+	seekInFlight bool          // true while async seek is running
 
 	// Full-screen visualizer mode (Shift+V)
 	fullVis bool
@@ -664,7 +666,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plVisible = max(3, m.height-fixedLines)
 
 	case seekTickMsg:
-		// Async yt-dlp seek completed.
+		// Async yt-dlp seek completed — stop holding the target position.
+		m.seekInFlight = false
 		if m.mpris != nil {
 			m.mpris.EmitSeeked(m.player.Position().Microseconds())
 		}

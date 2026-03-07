@@ -35,9 +35,10 @@ func (m *Model) doSeek(d time.Duration) tea.Cmd {
 }
 
 // displayPosition returns the position to show in the UI.
-// When a yt-dlp seek is pending, shows the target position immediately
-// so the user can see where they're seeking to.
+// When a yt-dlp seek is pending or in-flight, shows the target position
+// so the user can see where they're seeking to without bouncing.
 func (m *Model) displayPosition() time.Duration {
+	// Accumulating keypresses: show projected target.
 	if m.pendingSeek != 0 {
 		target := m.seekBasePos + m.pendingSeek
 		if target < 0 {
@@ -48,6 +49,10 @@ func (m *Model) displayPosition() time.Duration {
 			return dur - time.Second
 		}
 		return target
+	}
+	// Seek fired but yt-dlp hasn't restarted yet: hold the target.
+	if m.seekInFlight {
+		return m.seekTargetPos
 	}
 	return m.player.Position()
 }
@@ -65,6 +70,17 @@ func (m *Model) tickSeek() tea.Cmd {
 
 	// Timer expired — fire the accumulated seek.
 	d := m.pendingSeek
+	// Compute and store the target position for display until seek completes.
+	target := m.seekBasePos + d
+	if target < 0 {
+		target = 0
+	}
+	dur := m.player.Duration()
+	if dur > 0 && target >= dur {
+		target = dur - time.Second
+	}
+	m.seekTargetPos = target
+	m.seekInFlight = true
 	m.pendingSeek = 0
 
 	// Run seek in background to avoid blocking the UI.
