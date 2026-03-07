@@ -11,24 +11,32 @@ import (
 	"time"
 
 	"cliamp/playlist"
+
+	"google.golang.org/api/youtube/v3"
 )
 
-// YouTubeMusicProvider implements playlist.Provider using the YouTube Data API v3
-// for playlist/track metadata. Audio playback is handled by the existing yt-dlp pipeline.
-type YouTubeMusicProvider struct {
+// itemInfo holds metadata for a single video in a playlist.
+type itemInfo struct {
+	videoID string
+	title   string
+	channel string
+}
+
+// baseProvider holds shared state for YouTube and YouTube Music providers.
+// Both providers share the same OAuth session and track cache.
+type baseProvider struct {
 	session      *Session
 	clientID     string
 	clientSecret string
-	hasCookies   bool // true when cookies_from is configured (can play private/uploaded tracks)
+	hasCookies   bool // true when cookies_from is configured
 	mu           sync.Mutex
 	trackCache   map[string][]playlist.Track // playlist ID -> cached tracks
+	allPlaylists []playlistEntry             // cached raw playlist list
+	classified   map[string]bool             // playlist ID -> is music (from classify.go)
 }
 
-// New creates a YouTubeMusicProvider. If session is nil, authentication is
-// deferred until the user first selects the YouTube Music provider.
-// Set hasCookies to true when cookies_from is configured (enables uploaded/private tracks).
-func New(session *Session, clientID, clientSecret string, hasCookies bool) *YouTubeMusicProvider {
-	return &YouTubeMusicProvider{
+func newBase(session *Session, clientID, clientSecret string, hasCookies bool) *baseProvider {
+	return &baseProvider{
 		session:      session,
 		clientID:     clientID,
 		clientSecret: clientSecret,
@@ -37,18 +45,16 @@ func New(session *Session, clientID, clientSecret string, hasCookies bool) *YouT
 	}
 }
 
-// ensureSession tries to create a session using stored credentials only
-// (no browser). Returns playlist.ErrNeedsAuth if interactive sign-in is needed.
-func (p *YouTubeMusicProvider) ensureSession() error {
-	p.mu.Lock()
-	if p.session != nil {
-		p.mu.Unlock()
+func (b *baseProvider) ensureSession() error {
+	b.mu.Lock()
+	if b.session != nil {
+		b.mu.Unlock()
 		return nil
 	}
-	clientID := p.clientID
-	p.mu.Unlock()
+	clientID := b.clientID
+	clientSecret := b.clientSecret
+	b.mu.Unlock()
 
-	clientSecret := p.clientSecret
 	if clientID == "" {
 		return fmt.Errorf("ytmusic: no client ID available")
 	}
@@ -59,22 +65,21 @@ func (p *YouTubeMusicProvider) ensureSession() error {
 		return playlist.ErrNeedsAuth
 	}
 	fmt.Fprintf(os.Stderr, "ytmusic: silent auth succeeded\n")
-	p.mu.Lock()
-	p.session = sess
-	p.mu.Unlock()
+	b.mu.Lock()
+	b.session = sess
+	b.mu.Unlock()
 	return nil
 }
 
-// Authenticate runs the interactive sign-in flow (opens browser, waits for callback).
-func (p *YouTubeMusicProvider) Authenticate() error {
-	p.mu.Lock()
-	if p.session != nil {
-		p.mu.Unlock()
+func (b *baseProvider) authenticate() error {
+	b.mu.Lock()
+	if b.session != nil {
+		b.mu.Unlock()
 		return nil
 	}
-	clientID := p.clientID
-	clientSecret := p.clientSecret
-	p.mu.Unlock()
+	clientID := b.clientID
+	clientSecret := b.clientSecret
+	b.mu.Unlock()
 
 	if clientID == "" {
 		return fmt.Errorf("ytmusic: no client ID available")
@@ -83,51 +88,41 @@ func (p *YouTubeMusicProvider) Authenticate() error {
 	if err != nil {
 		return err
 	}
-	p.mu.Lock()
-	p.session = sess
-	p.mu.Unlock()
+	b.mu.Lock()
+	b.session = sess
+	b.mu.Unlock()
 	return nil
 }
 
-// Close releases the session if one was created.
-func (p *YouTubeMusicProvider) Close() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.session != nil {
-		p.session.Close()
-		p.session = nil
+func (b *baseProvider) close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.session != nil {
+		b.session.Close()
+		b.session = nil
 	}
 }
 
-func (p *YouTubeMusicProvider) Name() string { return "YouTube Music" }
+// fetchAndClassify loads all playlists and classifies them as music vs non-music.
+// Results are cached for the session lifetime.
+func (b *baseProvider) fetchAndClassify() error {
+	b.mu.Lock()
+	if b.allPlaylists != nil {
+		b.mu.Unlock()
+		return nil
+	}
+	b.mu.Unlock()
 
-// Playlists returns the authenticated user's YouTube Music playlists.
-func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
-	if err := p.ensureSession(); err != nil {
-		return nil, err
+	if err := b.ensureSession(); err != nil {
+		return err
 	}
 
-	svc := p.session.Service()
+	svc := b.session.Service()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	var all []playlist.PlaylistInfo
-	seen := make(map[string]bool) // playlist ID -> already added
-
-	// Add "Liked Music" entry (YouTube's special LL playlist).
-	// Fetch its actual item count via a direct playlist lookup.
-	likedCount := 0
-	if llResp, err := svc.Playlists.List([]string{"contentDetails"}).
-		Id("LL").
-		Context(ctx).
-		Do(); err == nil && len(llResp.Items) > 0 {
-		likedCount = int(llResp.Items[0].ContentDetails.ItemCount)
-	}
-	all = append(all, playlist.PlaylistInfo{
-		ID:         "LL",
-		Name:       "Liked Videos",
-		TrackCount: likedCount,
-	})
+	var all []playlistEntry
+	seen := make(map[string]bool)
 
 	fmt.Fprintf(os.Stderr, "ytmusic: fetching playlists...\n")
 	pageToken := ""
@@ -142,7 +137,7 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 		resp, err := call.Do()
 		if err != nil {
-			return nil, fmt.Errorf("ytmusic: list playlists: %w", err)
+			return fmt.Errorf("ytmusic: list playlists: %w", err)
 		}
 
 		fmt.Fprintf(os.Stderr, "ytmusic: got %d playlists (page)\n", len(resp.Items))
@@ -150,10 +145,10 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		for _, item := range resp.Items {
 			count := int(item.ContentDetails.ItemCount)
 			if count <= 0 || seen[item.Id] {
-				continue // hide empty or duplicate playlists
+				continue
 			}
 			seen[item.Id] = true
-			all = append(all, playlist.PlaylistInfo{
+			all = append(all, playlistEntry{
 				ID:         item.Id,
 				Name:       item.Snippet.Title,
 				TrackCount: count,
@@ -167,35 +162,57 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 	}
 
 	fmt.Fprintf(os.Stderr, "ytmusic: total %d playlists\n", len(all))
-	return all, nil
+
+	// Classify playlists (parallel, with disk cache).
+	classified := classifyWithTimeout(svc, all, 60*time.Second)
+
+	b.mu.Lock()
+	b.allPlaylists = all
+	b.classified = classified
+	b.mu.Unlock()
+
+	return nil
 }
 
-// Tracks returns all tracks for the given YouTube playlist ID.
-// Track.Path is set to a YouTube Music URL for the player to resolve via yt-dlp.
-// Results are cached by playlist ID for the session lifetime.
-func (p *YouTubeMusicProvider) Tracks(playlistID string) ([]playlist.Track, error) {
-	if err := p.ensureSession(); err != nil {
+// filteredPlaylists returns playlists filtered by music classification.
+func (b *baseProvider) filteredPlaylists(wantMusic bool) []playlist.PlaylistInfo {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	var result []playlist.PlaylistInfo
+	for _, pl := range b.allPlaylists {
+		isMusic, ok := b.classified[pl.ID]
+		if !ok {
+			isMusic = false
+		}
+		if isMusic == wantMusic {
+			result = append(result, playlist.PlaylistInfo{
+				ID:         pl.ID,
+				Name:       pl.Name,
+				TrackCount: pl.TrackCount,
+			})
+		}
+	}
+	return result
+}
+
+// tracks fetches tracks for a playlist (shared between both providers).
+func (b *baseProvider) tracks(playlistID string) ([]playlist.Track, error) {
+	if err := b.ensureSession(); err != nil {
 		return nil, err
 	}
 
-	// Check cache.
-	p.mu.Lock()
-	if cached, ok := p.trackCache[playlistID]; ok {
-		p.mu.Unlock()
+	b.mu.Lock()
+	if cached, ok := b.trackCache[playlistID]; ok {
+		b.mu.Unlock()
 		return cached, nil
 	}
-	p.mu.Unlock()
+	b.mu.Unlock()
 
-	svc := p.session.Service()
+	svc := b.session.Service()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Collect all playlist items.
-	type itemInfo struct {
-		videoID string
-		title   string
-		channel string
-	}
 	var items []itemInfo
 
 	pageToken := ""
@@ -216,15 +233,14 @@ func (p *YouTubeMusicProvider) Tracks(playlistID string) ([]playlist.Track, erro
 		for _, item := range resp.Items {
 			vid := item.ContentDetails.VideoId
 			if vid == "" {
-				continue // skip deleted/private videos
+				continue
 			}
 			title := item.Snippet.Title
 			if title == "Private video" || title == "Deleted video" {
 				continue
 			}
 			channel := item.Snippet.VideoOwnerChannelTitle
-			// Skip uploaded/private tracks when cookies aren't configured (they can't be played).
-			if !p.hasCookies && (channel == "Music Library Uploads" || channel == "") {
+			if !b.hasCookies && (channel == "Music Library Uploads" || channel == "") {
 				continue
 			}
 			items = append(items, itemInfo{
@@ -240,31 +256,8 @@ func (p *YouTubeMusicProvider) Tracks(playlistID string) ([]playlist.Track, erro
 		pageToken = resp.NextPageToken
 	}
 
-	// Batch-fetch durations via videos.list (up to 50 per request).
-	durations := make(map[string]int) // videoID -> seconds
-	for i := 0; i < len(items); i += 50 {
-		end := i + 50
-		if end > len(items) {
-			end = len(items)
-		}
-		var ids []string
-		for _, it := range items[i:end] {
-			ids = append(ids, it.videoID)
-		}
+	durations := b.fetchDurations(svc, items, ctx)
 
-		vResp, err := svc.Videos.List([]string{"contentDetails"}).
-			Id(ids...).
-			Context(ctx).
-			Do()
-		if err != nil {
-			return nil, fmt.Errorf("ytmusic: fetch video details: %w", err)
-		}
-		for _, v := range vResp.Items {
-			durations[v.Id] = parseISO8601Duration(v.ContentDetails.Duration)
-		}
-	}
-
-	// Build track list.
 	var tracks []playlist.Track
 	for _, it := range items {
 		tracks = append(tracks, playlist.Track{
@@ -276,18 +269,141 @@ func (p *YouTubeMusicProvider) Tracks(playlistID string) ([]playlist.Track, erro
 		})
 	}
 
-	// Cache the fetched tracks.
-	p.mu.Lock()
-	p.trackCache[playlistID] = tracks
-	p.mu.Unlock()
+	b.mu.Lock()
+	b.trackCache[playlistID] = tracks
+	b.mu.Unlock()
 
 	return tracks, nil
 }
 
-// iso8601Re matches ISO 8601 duration components (e.g. PT4M13S, PT1H2M3S).
+func (b *baseProvider) fetchDurations(svc *youtube.Service, items []itemInfo, ctx context.Context) map[string]int {
+	durations := make(map[string]int)
+	for i := 0; i < len(items); i += 50 {
+		end := i + 50
+		if end > len(items) {
+			end = len(items)
+		}
+		var ids []string
+		for _, it := range items[i:end] {
+			ids = append(ids, it.videoID)
+		}
+		vResp, err := svc.Videos.List([]string{"contentDetails"}).
+			Id(ids...).
+			Context(ctx).
+			Do()
+		if err != nil {
+			continue
+		}
+		for _, v := range vResp.Items {
+			durations[v.Id] = parseISO8601Duration(v.ContentDetails.Duration)
+		}
+	}
+	return durations
+}
+
+// likedCount fetches the item count for the special LL playlist.
+func (b *baseProvider) likedCount() int {
+	svc := b.session.Service()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := svc.Playlists.List([]string{"contentDetails"}).
+		Id("LL").
+		Context(ctx).
+		Do()
+	if err == nil && len(resp.Items) > 0 {
+		return int(resp.Items[0].ContentDetails.ItemCount)
+	}
+	return 0
+}
+
+// ─── YouTube Music Provider ────────────────────────────────────────────────
+
+// YouTubeMusicProvider shows playlists classified as music content.
+type YouTubeMusicProvider struct {
+	base *baseProvider
+}
+
+func (p *YouTubeMusicProvider) Name() string         { return "YouTube Music" }
+func (p *YouTubeMusicProvider) Authenticate() error   { return p.base.authenticate() }
+func (p *YouTubeMusicProvider) Close()                { p.base.close() }
+func (p *YouTubeMusicProvider) Tracks(id string) ([]playlist.Track, error) {
+	return p.base.tracks(id)
+}
+
+func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
+	if err := p.base.fetchAndClassify(); err != nil {
+		return nil, err
+	}
+
+	var all []playlist.PlaylistInfo
+
+	// Add Liked Music as first entry.
+	count := p.base.likedCount()
+	all = append(all, playlist.PlaylistInfo{
+		ID:         "LL",
+		Name:       "Liked Music",
+		TrackCount: count,
+	})
+
+	all = append(all, p.base.filteredPlaylists(true)...)
+	return all, nil
+}
+
+// ─── YouTube Provider ──────────────────────────────────────────────────────
+
+// YouTubeProvider shows playlists classified as non-music (video) content.
+type YouTubeProvider struct {
+	base *baseProvider
+}
+
+func (p *YouTubeProvider) Name() string         { return "YouTube" }
+func (p *YouTubeProvider) Authenticate() error   { return p.base.authenticate() }
+func (p *YouTubeProvider) Close()                { /* shared base; closed via music provider */ }
+func (p *YouTubeProvider) Tracks(id string) ([]playlist.Track, error) {
+	return p.base.tracks(id)
+}
+
+func (p *YouTubeProvider) Playlists() ([]playlist.PlaylistInfo, error) {
+	if err := p.base.fetchAndClassify(); err != nil {
+		return nil, err
+	}
+
+	var all []playlist.PlaylistInfo
+
+	// Add Liked Videos as first entry.
+	count := p.base.likedCount()
+	all = append(all, playlist.PlaylistInfo{
+		ID:         "LL",
+		Name:       "Liked Videos",
+		TrackCount: count,
+	})
+
+	all = append(all, p.base.filteredPlaylists(false)...)
+	return all, nil
+}
+
+// ─── Constructor ───────────────────────────────────────────────────────────
+
+// Providers holds both the YouTube Music and YouTube providers,
+// sharing a single OAuth session.
+type Providers struct {
+	Music *YouTubeMusicProvider
+	Video *YouTubeProvider
+}
+
+// New creates both YouTube Music and YouTube providers with a shared session.
+func New(session *Session, clientID, clientSecret string, hasCookies bool) Providers {
+	base := newBase(session, clientID, clientSecret, hasCookies)
+	return Providers{
+		Music: &YouTubeMusicProvider{base: base},
+		Video: &YouTubeProvider{base: base},
+	}
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
 var iso8601Re = regexp.MustCompile(`P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?`)
 
-// parseISO8601Duration parses an ISO 8601 duration string (e.g. "PT4M13S") to seconds.
 func parseISO8601Duration(d string) int {
 	m := iso8601Re.FindStringSubmatch(d)
 	if m == nil {
@@ -313,8 +429,6 @@ func parseISO8601Duration(d string) int {
 	return total
 }
 
-// cleanChannelName strips common suffixes like " - Topic" from YouTube Music
-// auto-generated channel names to produce cleaner artist names.
 func cleanChannelName(name string) string {
 	name = strings.TrimSuffix(name, " - Topic")
 	return name
