@@ -59,14 +59,16 @@ func run(overrides config.Overrides, positional []string) error {
 	if cfg.YouTubeMusic.IsSet() {
 		// YouTube Music playback requires yt-dlp. Check early and offer to install.
 		if !player.YTDLPAvailable() {
-			fmt.Fprintf(os.Stderr, "YouTube Music requires yt-dlp for audio playback.\n")
-			fmt.Fprintf(os.Stderr, "Install: %s\n", player.YtdlpInstallHint())
-			fmt.Fprintf(os.Stderr, "Attempting automatic install...\n")
+			fmt.Fprintf(os.Stderr, "\nYouTube Music requires yt-dlp for audio playback.\n")
+			fmt.Fprintf(os.Stderr, "Install command: %s\n\n", player.YtdlpInstallHint())
+			fmt.Fprintf(os.Stderr, "Press Enter to install automatically, or Ctrl+C to skip... ")
+			fmt.Scanln()
+			fmt.Fprintf(os.Stderr, "Installing yt-dlp...\n")
 			if err := player.InstallYTDLP(); err != nil {
-				fmt.Fprintf(os.Stderr, "Auto-install failed: %v\n", err)
-				fmt.Fprintf(os.Stderr, "YouTube Music provider disabled until yt-dlp is installed.\n")
+				fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "YouTube Music provider disabled. Install manually and restart.\n\n")
 			} else {
-				fmt.Fprintf(os.Stderr, "yt-dlp installed successfully.\n")
+				fmt.Fprintf(os.Stderr, "yt-dlp installed successfully!\n\n")
 			}
 		}
 		if player.YTDLPAvailable() {
