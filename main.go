@@ -58,6 +58,10 @@ func run(overrides config.Overrides, positional []string) error {
 	var ytmusicProv *ytmusic.YouTubeMusicProvider
 	if cfg.YouTubeMusic.IsSet() {
 		ytClientID, ytClientSecret := cfg.YouTubeMusic.ResolveCredentials(ytmusic.FallbackCredentials)
+		// Configure yt-dlp cookie source for YouTube Music uploads/private tracks.
+		if cfg.YouTubeMusic.CookiesFrom != "" {
+			player.SetYTDLCookiesFrom(cfg.YouTubeMusic.CookiesFrom)
+		}
 		if ytClientID == "" || ytClientSecret == "" {
 			fmt.Fprintf(os.Stderr, "YouTube Music: no credentials available (configure client_id/client_secret in config.toml)\n")
 		} else {
@@ -76,7 +80,7 @@ func run(overrides config.Overrides, positional []string) error {
 				}
 			}
 			if player.YTDLPAvailable() {
-				ytmusicProv = ytmusic.New(nil, ytClientID, ytClientSecret)
+				ytmusicProv = ytmusic.New(nil, ytClientID, ytClientSecret, cfg.YouTubeMusic.CookiesFrom != "")
 				providers = append(providers, ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytmusicProv})
 			}
 		}

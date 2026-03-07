@@ -65,6 +65,7 @@ type YouTubeMusicConfig struct {
 	Enabled      bool   // true when [ytmusic] section exists (even without credentials)
 	ClientID     string // Google Cloud OAuth2 client ID (overrides built-in fallback)
 	ClientSecret string // Google Cloud OAuth2 client secret (overrides built-in fallback)
+	CookiesFrom  string // browser name for yt-dlp --cookies-from-browser (e.g. "chrome", "firefox")
 }
 
 // IsSet reports whether the YouTube Music provider should be shown.
@@ -196,6 +197,8 @@ func Load() (Config, error) {
 				cfg.YouTubeMusic.ClientID = strings.Trim(val, `"'`)
 			case "client_secret":
 				cfg.YouTubeMusic.ClientSecret = strings.Trim(val, `"'`)
+			case "cookies_from":
+				cfg.YouTubeMusic.CookiesFrom = strings.Trim(val, `"'`)
 			}
 		default:
 			switch key {
