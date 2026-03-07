@@ -462,8 +462,8 @@ func (m *Model) saveTrack() tea.Cmd {
 		return nil
 	}
 
-	// yt-dlp tracks: async download directly to ~/Music/cliamp/.
-	if playlist.IsYTDL(track.Path) {
+	// YouTube/yt-dlp tracks: async download directly to ~/Music/cliamp/.
+	if playlist.IsYouTubeURL(track.Path) || playlist.IsYTDL(track.Path) {
 		m.saveMsg = "Downloading..."
 		m.saveMsgTTL = 600 // cleared by ytdlSavedMsg
 		return saveYTDLCmd(track.Path, saveDir)

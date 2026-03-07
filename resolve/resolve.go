@@ -20,6 +20,8 @@ import (
 
 	"cliamp/player"
 	"cliamp/playlist"
+
+	"github.com/kkdai/youtube/v2"
 )
 
 // httpClient is used for feed and M3U resolution. It has a generous but
@@ -53,7 +55,7 @@ func Args(args []string) (Result, error) {
 
 	for _, arg := range args {
 		if playlist.IsURL(arg) {
-			if playlist.IsFeed(arg) || playlist.IsM3U(arg) || playlist.IsPLS(arg) || playlist.IsYTDL(arg) || sniffFeedURL(arg) {
+			if playlist.IsFeed(arg) || playlist.IsM3U(arg) || playlist.IsPLS(arg) || playlist.IsYouTubeURL(arg) || playlist.IsYTDL(arg) || sniffFeedURL(arg) {
 				r.Pending = append(r.Pending, arg)
 			} else {
 				files = append(files, arg)
@@ -98,6 +100,12 @@ func Remote(urls []string) ([]playlist.Track, error) {
 	var tracks []playlist.Track
 	for _, u := range urls {
 		switch {
+		case playlist.IsYouTubeURL(u):
+			t, err := resolveYouTube(u)
+			if err != nil {
+				return nil, fmt.Errorf("resolving youtube %s: %w", u, err)
+			}
+			tracks = append(tracks, t...)
 		case playlist.IsYTDL(u):
 			t, err := resolveYTDL(u)
 			if err != nil {
@@ -326,6 +334,43 @@ func CleanupYTDL() {
 		os.RemoveAll(d)
 	}
 	ytdlTempDirs = nil
+}
+
+// resolveYouTube uses the kkdai/youtube library to resolve YouTube URLs.
+// For playlist URLs it enumerates all entries natively; for single video URLs
+// it returns a single track with metadata from the YouTube API.
+func resolveYouTube(pageURL string) ([]playlist.Track, error) {
+	client := youtube.Client{}
+
+	// Try as a playlist first.
+	pl, err := client.GetPlaylist(pageURL)
+	if err == nil && len(pl.Videos) > 0 {
+		tracks := make([]playlist.Track, 0, len(pl.Videos))
+		for _, entry := range pl.Videos {
+			tracks = append(tracks, playlist.Track{
+				Path:         "https://www.youtube.com/watch?v=" + entry.ID,
+				Title:        entry.Title,
+				Artist:       entry.Author,
+				Stream:       true,
+				DurationSecs: int(entry.Duration.Seconds()),
+			})
+		}
+		return tracks, nil
+	}
+
+	// Fall back to single video.
+	video, err := client.GetVideo(pageURL)
+	if err != nil {
+		return nil, fmt.Errorf("youtube resolve: %w", err)
+	}
+
+	return []playlist.Track{{
+		Path:         "https://www.youtube.com/watch?v=" + video.ID,
+		Title:        video.Title,
+		Artist:       video.Author,
+		Stream:       true,
+		DurationSecs: int(video.Duration.Seconds()),
+	}}, nil
 }
 
 // resolveYTDL uses yt-dlp --flat-playlist to quickly enumerate tracks.
