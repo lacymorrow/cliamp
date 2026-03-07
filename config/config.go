@@ -57,6 +57,19 @@ func (s SpotifyConfig) IsSet() bool {
 	return !s.Disabled && s.ClientID != ""
 }
 
+// ResolveClientID returns the user's configured client ID, or calls
+// fallbackFn to get one from the built-in pool if none is set.
+// Returns "" only when the pool is also empty.
+func (s SpotifyConfig) ResolveClientID(fallbackFn func() string) string {
+	if s.ClientID != "" {
+		return s.ClientID
+	}
+	if fallbackFn != nil {
+		return fallbackFn()
+	}
+	return ""
+}
+
 // Config holds user preferences loaded from the config file.
 type Config struct {
 	Volume          float64     // dB, range [-30, +6]

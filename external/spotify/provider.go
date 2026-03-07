@@ -127,7 +127,8 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 			"offset": {fmt.Sprintf("%d", offset)},
 			// Request only the fields we need to reduce payload size and API cost.
 			// Include snapshot_id for cache invalidation.
-			"fields": {"items(id,name,snapshot_id,items.total,tracks.total),total"},
+			// Feb 2026 API: use "items.total" (was "tracks.total").
+			"fields": {"items(id,name,snapshot_id,items.total),total"},
 		}
 
 		resp, err := p.webAPI(ctx, "GET", "/v1/me/playlists", query)
@@ -140,7 +141,8 @@ func (p *SpotifyProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 				ID         string `json:"id"`
 				Name       string `json:"name"`
 				SnapshotID string `json:"snapshot_id"`
-				Items      *struct {
+				// Feb 2026 API: "tracks" renamed to "items" in playlist objects.
+				Items *struct {
 					Total int `json:"total"`
 				} `json:"items"`
 			} `json:"items"`
@@ -210,6 +212,7 @@ func (p *SpotifyProvider) Tracks(playlistID string) ([]playlist.Track, error) {
 		query := url.Values{
 			"limit":  {fmt.Sprintf("%d", limit)},
 			"offset": {fmt.Sprintf("%d", offset)},
+			// Feb 2026 API: nested object is "item" (was "track").
 			"fields": {"items(item(id,name,artists(name),album(name,release_date),duration_ms,track_number)),total"},
 		}
 

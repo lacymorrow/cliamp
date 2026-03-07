@@ -4,26 +4,18 @@ Cliamp can stream your [Spotify](https://www.spotify.com/) library directly thro
 
 ## Setup
 
-### Creating your client ID
+Cliamp ships with a built-in fallback client ID, so you can use Spotify without registering your own app. Just run `cliamp`, select Spotify, and sign in.
 
-1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in
-2. Click **Create app**
-3. Fill in a name (e.g. "cliamp") and description (anything works)
-4. Add `http://127.0.0.1:19872/login` as a **Redirect URI**
-5. Check **Web API** under "Which API/SDKs are you planning to use?"
-6. Click **Save**
-7. Open your app's **Settings** and copy the **Client ID**
-
-### Configuring cliamp
-
-Add your client ID to `~/.config/cliamp/config.toml`:
+To use your own Spotify Developer app instead, add your client ID to `~/.config/cliamp/config.toml`:
 
 ```toml
 [spotify]
 client_id = "your_client_id_here"
 ```
 
-Run `cliamp`, select Spotify as a provider, and press Enter to sign in. Credentials are cached at `~/.config/cliamp/spotify_credentials.json` — subsequent launches refresh silently.
+If using your own app, add `http://127.0.0.1:19872/login` as a **Redirect URI** in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+
+Credentials are cached at `~/.config/cliamp/spotify_credentials.json` — subsequent launches refresh silently.
 
 ## Usage
 
@@ -58,5 +50,5 @@ Only playlists in your Spotify library are shown — this includes playlists you
 ## Requirements
 
 - Spotify Premium account
-- A registered app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
 - No additional system dependencies beyond cliamp itself
+- Optionally, a registered app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) (not required — a built-in fallback is used by default)

@@ -49,8 +49,9 @@ func run(overrides config.Overrides, positional []string) error {
 	}
 
 	var spotifyProv *spotify.SpotifyProvider
-	if cfg.Spotify.IsSet() {
-		spotifyProv = spotify.New(nil, cfg.Spotify.ClientID)
+	spotifyClientID := cfg.Spotify.ResolveClientID(spotify.FallbackClientID)
+	if !cfg.Spotify.Disabled && spotifyClientID != "" {
+		spotifyProv = spotify.New(nil, spotifyClientID)
 		providers = append(providers, ui.ProviderEntry{Key: "spotify", Name: "Spotify", Provider: spotifyProv})
 	}
 

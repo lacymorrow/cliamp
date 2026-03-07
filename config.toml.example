@@ -55,8 +55,10 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 # ---
 # Spotify (optional)
-# A Spotify Premium account and a registered app at
-# developer.spotify.com/dashboard are required.
+# A Spotify Premium account is required for playback.
+# If you don't set a client_id, cliamp uses a built-in fallback token
+# so you can skip registering a Spotify Developer app entirely.
+# Set your own client_id only if you prefer to use your own app.
 # Add redirect URI: http://127.0.0.1:19872/login
 # [spotify]
 # client_id = "your-spotify-app-client-id"
