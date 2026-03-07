@@ -26,6 +26,9 @@ type trackPipeline struct {
 	path           string        // original URL (needed to reconnect for seek)
 	streamOffset   time.Duration // playback time offset of the current ranged connection
 
+	// yt-dlp seek-by-restart: when true, seeking restarts yt-dlp with --download-sections.
+	ytdlSeek bool
+
 	// Network byte counter — incremented by countingReader for HTTP streams.
 	// nil for local files.
 	bytesRead *atomic.Int64

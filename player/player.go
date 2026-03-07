@@ -360,6 +360,37 @@ func (p *Player) Seek(d time.Duration) error {
 		return nil
 	}
 
+	// yt-dlp seek-by-restart: re-spawn the yt-dlp pipeline at the target time.
+	if cur.ytdlSeek && cur.knownDuration > 0 {
+		curPos := cur.format.SampleRate.D(cur.decoder.Position()) + cur.streamOffset
+		newPos := curPos + d
+		if newPos < 0 {
+			newPos = 0
+		}
+		if newPos >= cur.knownDuration {
+			newPos = cur.knownDuration - time.Second
+		}
+		startSec := int(newPos.Seconds())
+
+		tp, err := p.buildYTDLPipelineAt(cur.path, startSec)
+		if err != nil {
+			return fmt.Errorf("yt-dlp seek: %w", err)
+		}
+		tp.knownDuration = cur.knownDuration
+		tp.ytdlSeek = true
+
+		p.gapless.Replace(tp.stream)
+		p.gapless.SetNext(nil)
+		p.mu.Lock()
+		old := p.current
+		oldNext := p.nextPipeline
+		p.current = tp
+		p.nextPipeline = nil
+		p.mu.Unlock()
+		closePipelines(old, oldNext)
+		return nil
+	}
+
 	// Local file (or ffmpeg-buffered PCM): use the decoder's native Seek.
 	if !cur.seekable {
 		return nil

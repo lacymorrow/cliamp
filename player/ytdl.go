@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"time"
 
 	"github.com/gopxl/beep/v2"
 )
@@ -281,7 +282,110 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth int) (*ytdlPipe
 	}, format, nil
 }
 
-// buildYTDLPipeline creates a non-seekable trackPipeline for a yt-dlp URL.
+// decodeYTDLPipeAt starts a yt-dlp | ffmpeg pipe chain seeking to a given offset.
+// Uses --download-sections to skip to the desired position.
+func decodeYTDLPipeAt(pageURL string, startSec int, sr beep.SampleRate, bitDepth int) (*ytdlPipeStreamer, beep.Format, error) {
+	if _, err := exec.LookPath("yt-dlp"); err != nil {
+		return nil, beep.Format{}, fmt.Errorf("yt-dlp is required — install: %s", YtdlpInstallHint())
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg is required — install: %s", ffmpegInstallHint())
+	}
+
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, beep.Format{}, fmt.Errorf("os.Pipe: %w", err)
+	}
+
+	ytdlArgs := []string{
+		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio",
+		"--no-playlist",
+		"--no-warnings",
+		"-o", "-",
+	}
+	if startSec > 0 {
+		ytdlArgs = append(ytdlArgs, "--download-sections", fmt.Sprintf("*%d-", startSec))
+	}
+	if ytdlCookiesFrom != "" {
+		ytdlArgs = append(ytdlArgs, "--cookies-from-browser", ytdlCookiesFrom)
+	}
+	ytdlArgs = append(ytdlArgs, pageURL)
+	ytdlCmd := exec.Command("yt-dlp", ytdlArgs...)
+	ytdlCmd.Stdout = pw
+	var ytdlStderr bytes.Buffer
+	ytdlCmd.Stderr = &ytdlStderr
+	if err := ytdlCmd.Start(); err != nil {
+		pr.Close()
+		pw.Close()
+		return nil, beep.Format{}, fmt.Errorf("yt-dlp start: %w", err)
+	}
+
+	pcmFmt, codec, precision := ffmpegPCMArgs(bitDepth)
+	ffmpegCmd := exec.Command("ffmpeg",
+		"-i", "pipe:0",
+		"-f", pcmFmt,
+		"-acodec", codec,
+		"-ar", strconv.Itoa(int(sr)),
+		"-ac", "2",
+		"-loglevel", "error",
+		"pipe:1",
+	)
+	ffmpegCmd.Stdin = pr
+	var ffmpegStderr bytes.Buffer
+	ffmpegCmd.Stderr = &ffmpegStderr
+
+	ffmpegPipe, err := ffmpegCmd.StdoutPipe()
+	if err != nil {
+		ytdlCmd.Process.Kill()
+		pr.Close()
+		pw.Close()
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg pipe: %w", err)
+	}
+	if err := ffmpegCmd.Start(); err != nil {
+		ytdlCmd.Process.Kill()
+		pr.Close()
+		pw.Close()
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg start: %w", err)
+	}
+
+	go func() {
+		ytdlCmd.Wait()
+		pw.Close()
+	}()
+
+	format := beep.Format{
+		SampleRate:  sr,
+		NumChannels: 2,
+		Precision:   precision,
+	}
+
+	ytdlErrCh := make(chan error, 1)
+	go func() {
+		err := ytdlCmd.Wait()
+		if err != nil {
+			stderr := bytes.TrimSpace(ytdlStderr.Bytes())
+			if len(stderr) > 0 {
+				ytdlErrCh <- fmt.Errorf("yt-dlp: %s", stderr)
+			} else {
+				ytdlErrCh <- fmt.Errorf("yt-dlp: %w", err)
+			}
+		} else {
+			ytdlErrCh <- nil
+		}
+	}()
+
+	return &ytdlPipeStreamer{
+		ytdlCmd:   ytdlCmd,
+		ffmpegCmd: ffmpegCmd,
+		pipe:      ffmpegPipe,
+		reader:    bufio.NewReaderSize(ffmpegPipe, 64*1024),
+		ytdlErr:   ytdlErrCh,
+		f32:       bitDepth == 32,
+	}, format, nil
+}
+
+// buildYTDLPipeline creates a trackPipeline for a yt-dlp URL.
+// Seeking is supported by restarting yt-dlp with --download-sections.
 func (p *Player) buildYTDLPipeline(pageURL string) (*trackPipeline, error) {
 	p.streamTitle.Store("")
 
@@ -296,5 +400,26 @@ func (p *Player) buildYTDLPipeline(pageURL string) (*trackPipeline, error) {
 		format:   format,
 		seekable: false,
 		path:     pageURL,
+		ytdlSeek: true, // marks this pipeline as seekable via yt-dlp restart
+	}, nil
+}
+
+// buildYTDLPipelineAt creates a yt-dlp pipeline starting at a specific time offset.
+func (p *Player) buildYTDLPipelineAt(pageURL string, startSec int) (*trackPipeline, error) {
+	p.streamTitle.Store("")
+
+	decoder, format, err := decodeYTDLPipeAt(pageURL, startSec, p.sr, p.bitDepth)
+	if err != nil {
+		return nil, err
+	}
+
+	return &trackPipeline{
+		decoder:      decoder,
+		stream:       decoder,
+		format:       format,
+		seekable:     false,
+		path:         pageURL,
+		ytdlSeek:     true,
+		streamOffset: time.Duration(startSec) * time.Second,
 	}, nil
 }
