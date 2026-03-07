@@ -3,6 +3,7 @@ package ytmusic
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -48,10 +49,13 @@ func (p *YouTubeMusicProvider) ensureSession() error {
 	if clientID == "" {
 		return fmt.Errorf("ytmusic: no client ID available")
 	}
+	fmt.Fprintf(os.Stderr, "ytmusic: attempting silent auth...\n")
 	sess, err := NewSessionSilent(context.Background(), clientID, clientSecret)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "ytmusic: silent auth failed: %v\n", err)
 		return playlist.ErrNeedsAuth
 	}
+	fmt.Fprintf(os.Stderr, "ytmusic: silent auth succeeded\n")
 	p.mu.Lock()
 	p.session = sess
 	p.mu.Unlock()
@@ -101,7 +105,7 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 	}
 
 	svc := p.session.Service()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var all []playlist.PlaylistInfo
@@ -113,6 +117,7 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		TrackCount: -1, // unknown until fetched
 	})
 
+	fmt.Fprintf(os.Stderr, "ytmusic: fetching playlists...\n")
 	pageToken := ""
 	for {
 		call := svc.Playlists.List([]string{"snippet", "contentDetails"}).
@@ -128,6 +133,8 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 			return nil, fmt.Errorf("ytmusic: list playlists: %w", err)
 		}
 
+		fmt.Fprintf(os.Stderr, "ytmusic: got %d playlists (page)\n", len(resp.Items))
+
 		for _, item := range resp.Items {
 			all = append(all, playlist.PlaylistInfo{
 				ID:         item.Id,
@@ -142,6 +149,7 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		pageToken = resp.NextPageToken
 	}
 
+	fmt.Fprintf(os.Stderr, "ytmusic: total %d playlists\n", len(all))
 	return all, nil
 }
 
