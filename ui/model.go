@@ -4,6 +4,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -635,6 +636,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		frameW := msg.Width
 		frameStyle = frameStyle.Width(frameW)
 		panelWidth = frameW - 6 // subtract horizontal padding (3 left + 3 right)
+		// DEBUG: log resize events
+		if f, err := os.OpenFile("/tmp/cliamp-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			fmt.Fprintf(f, "WindowSizeMsg: width=%d height=%d frameW=%d panelWidth=%d\n", msg.Width, msg.Height, frameW, panelWidth)
+			f.Close()
+		}
 		if m.fullVis {
 			m.vis.Rows = max(defaultVisRows, (m.height-10)*4/5)
 		}

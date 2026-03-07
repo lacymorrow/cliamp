@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -183,8 +184,16 @@ func (m Model) renderTrackInfo() string {
 }
 
 func (m Model) renderTimeStatus() string {
-	pos := m.displayPosition()
-	dur := m.player.Duration()
+	var pos, dur time.Duration
+	if m.buffering {
+		// Avoid speaker.Lock() during buffering — the speaker goroutine may
+		// be blocked waiting for yt-dlp pipe data, holding its lock.
+		track, _ := m.playlist.Current()
+		dur = time.Duration(track.DurationSecs) * time.Second
+	} else {
+		pos = m.displayPosition()
+		dur = m.player.Duration()
+	}
 
 	posMin := int(pos.Minutes())
 	posSec := int(pos.Seconds()) % 60
@@ -197,6 +206,8 @@ func (m Model) renderTimeStatus() string {
 
 	var status string
 	switch {
+	case m.seekActive:
+		status = statusStyle.Render("⟳ Seeking...")
 	case m.buffering:
 		status = statusStyle.Render("◌ Buffering...")
 	case m.player.IsPlaying() && m.player.IsPaused():
@@ -243,6 +254,10 @@ func (m Model) renderFullVisualizer() string {
 }
 
 func (m Model) renderSeekBar() string {
+	// During buffering, show a dim bar — avoids speaker.Lock() contention.
+	if m.buffering {
+		return seekDimStyle.Render(strings.Repeat("━", panelWidth))
+	}
 	// Show a static streaming bar for non-seekable streams with no known duration.
 	if !m.player.Seekable() && m.player.IsPlaying() && m.player.Duration() == 0 {
 		label := " STREAMING "
@@ -551,7 +566,7 @@ func (m Model) renderHelp() string {
 		helpHint{helpKey("Q", "Quit"), 95},
 	)
 
-	return fitHints(hints, panelWidth)
+	return fitHints(hints, panelWidth) + fmt.Sprintf(" [pw=%d w=%d]", panelWidth, m.width)
 }
 
 // helpHint is a rendered help key with an associated display priority.
