@@ -3,7 +3,6 @@ package ytmusic
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -70,7 +69,6 @@ func classifyPlaylists(svc *youtube.Service, playlists []playlistEntry, ctx cont
 		return cached
 	}
 
-	fmt.Fprintf(os.Stderr, "ytmusic: classifying %d playlists...\n", len(toClassify))
 
 	// Sample one video ID from each playlist (parallel, max 10 concurrent).
 	type sampleResult struct {
@@ -156,7 +154,6 @@ func classifyPlaylists(svc *youtube.Service, playlists []playlistEntry, ctx cont
 	}
 
 	saveClassification(cached)
-	fmt.Fprintf(os.Stderr, "ytmusic: classification complete\n")
 	return cached
 }
 

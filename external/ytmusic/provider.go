@@ -3,7 +3,6 @@ package ytmusic
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,13 +57,10 @@ func (b *baseProvider) ensureSession() error {
 	if clientID == "" {
 		return fmt.Errorf("ytmusic: no client ID available")
 	}
-	fmt.Fprintf(os.Stderr, "ytmusic: attempting silent auth...\n")
 	sess, err := NewSessionSilent(context.Background(), clientID, clientSecret)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ytmusic: silent auth failed: %v\n", err)
 		return playlist.ErrNeedsAuth
 	}
-	fmt.Fprintf(os.Stderr, "ytmusic: silent auth succeeded\n")
 	b.mu.Lock()
 	b.session = sess
 	b.mu.Unlock()
@@ -124,7 +120,6 @@ func (b *baseProvider) fetchAndClassify() error {
 	var all []playlistEntry
 	seen := make(map[string]bool)
 
-	fmt.Fprintf(os.Stderr, "ytmusic: fetching playlists...\n")
 	pageToken := ""
 	for {
 		call := svc.Playlists.List([]string{"snippet", "contentDetails"}).
@@ -140,7 +135,6 @@ func (b *baseProvider) fetchAndClassify() error {
 			return fmt.Errorf("ytmusic: list playlists: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "ytmusic: got %d playlists (page)\n", len(resp.Items))
 
 		for _, item := range resp.Items {
 			count := int(item.ContentDetails.ItemCount)
@@ -161,7 +155,6 @@ func (b *baseProvider) fetchAndClassify() error {
 		pageToken = resp.NextPageToken
 	}
 
-	fmt.Fprintf(os.Stderr, "ytmusic: total %d playlists\n", len(all))
 
 	// Classify playlists (parallel, with disk cache).
 	classified := classifyWithTimeout(svc, all, 60*time.Second)
