@@ -86,8 +86,10 @@ func (m *Model) tickSeek() tea.Cmd {
 	m.seekInFlight = true
 	m.pendingSeek = 0
 
-	// Capture player pointer before returning the Cmd — don't close over m.
+	// Cancel any in-flight seek so it won't swap stale audio.
 	p := m.player
+	p.CancelSeekYTDL()
+
 	return func() tea.Msg {
 		p.SeekYTDL(d)
 		return seekTickMsg{}

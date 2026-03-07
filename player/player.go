@@ -48,6 +48,7 @@ type Player struct {
 	bitDepth        int // 16 or 32
 
 	gaplessAdvance atomic.Bool // set when gapless transition fires
+	seekGen        atomic.Int64    // generation counter for yt-dlp seeks; incremented to cancel stale seeks
 
 	streamTitle    atomic.Value    // stores string, set by ICY reader callback
 	customFactory  StreamerFactory // optional factory for custom URI schemes (e.g., spotify:)
@@ -403,9 +404,19 @@ func (p *Player) Seek(d time.Duration) error {
 // For ranged HTTP streams (seek-by-reconnect), streamOffset is added to the
 // decoder's sample-based position so the reported time is absolute within
 // the track, not relative to the reconnect point.
+// CancelSeekYTDL increments the seek generation, causing any in-flight
+// SeekYTDL to discard its result instead of swapping streams.
+func (p *Player) CancelSeekYTDL() {
+	p.seekGen.Add(1)
+}
+
 // SeekYTDL seeks a yt-dlp stream by restarting the pipeline at the target
 // position. Must NOT be called with the speaker lock held.
+// If a newer seek is requested (via CancelSeekYTDL) while this one is
+// building, the result is discarded.
 func (p *Player) SeekYTDL(d time.Duration) error {
+	gen := p.seekGen.Load()
+
 	// Snapshot current state without speaker lock.
 	p.mu.Lock()
 	cur := p.current
@@ -435,6 +446,13 @@ func (p *Player) SeekYTDL(d time.Duration) error {
 	}
 	tp.knownDuration = cur.knownDuration
 	tp.ytdlSeek = true
+
+	// Check if this seek was cancelled while we were building.
+	if p.seekGen.Load() != gen {
+		// A newer seek was requested — discard this result.
+		go closePipelines(tp)
+		return nil
+	}
 
 	// Now acquire speaker lock to swap streams.
 	speaker.Lock()
