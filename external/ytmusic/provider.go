@@ -328,18 +328,8 @@ func (p *YouTubeMusicProvider) Playlists() ([]playlist.PlaylistInfo, error) {
 		return nil, err
 	}
 
-	var all []playlist.PlaylistInfo
-
-	// Add Liked Music as first entry.
-	count := p.base.likedCount()
-	all = append(all, playlist.PlaylistInfo{
-		ID:         "LL",
-		Name:       "Liked Music",
-		TrackCount: count,
-	})
-
-	all = append(all, p.base.filteredPlaylists(true)...)
-	return all, nil
+	// YouTube Music shows only music-classified playlists (no Liked Videos — that's YouTube's).
+	return p.base.filteredPlaylists(true), nil
 }
 
 // ─── YouTube Provider ──────────────────────────────────────────────────────
