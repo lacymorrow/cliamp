@@ -159,9 +159,9 @@ func classifyPlaylists(svc *youtube.Service, playlists []playlistEntry, ctx cont
 
 // playlistEntry is a minimal playlist descriptor for classification.
 type playlistEntry struct {
-	ID         string
-	Name       string
-	TrackCount int
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TrackCount int    `json:"track_count"`
 }
 
 // classifyWithTimeout runs classification with a timeout.
