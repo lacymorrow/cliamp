@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"cliamp/config"
+	"cliamp/external/applemusic"
 	"cliamp/external/local"
 	"cliamp/external/navidrome"
 	"cliamp/external/spotify"
@@ -57,6 +58,12 @@ func run(overrides config.Overrides, positional []string) error {
 		}
 	}
 
+	// Build Apple Music provider if enabled in config (macOS only).
+	var appleMusicProv *applemusic.AppleMusicProvider
+	if cfg.AppleMusic.IsSet() {
+		appleMusicProv = applemusic.New()
+	}
+
 	localProv := local.New()
 	var localAsProvider playlist.Provider
 	if localProv != nil {
@@ -68,14 +75,21 @@ func run(overrides config.Overrides, positional []string) error {
 	if spotifyProv != nil {
 		spotifyAsProvider = spotifyProv
 	}
+	var appleMusicAsProvider playlist.Provider
+	if appleMusicProv != nil {
+		appleMusicAsProvider = appleMusicProv
+	}
 	var provider playlist.Provider
-	if cp := playlist.NewComposite(navProv, spotifyAsProvider, localAsProvider); cp != nil {
+	if cp := playlist.NewComposite(navProv, spotifyAsProvider, appleMusicAsProvider, localAsProvider); cp != nil {
 		provider = cp
 	}
 
 	defer resolve.CleanupYTDL()
 	if spotifySession != nil {
 		defer spotifySession.Close()
+	}
+	if appleMusicProv != nil {
+		defer appleMusicProv.Close()
 	}
 
 	if len(positional) > 0 && (positional[0] == "search" || positional[0] == "search-sc") {
@@ -97,7 +111,7 @@ func run(overrides config.Overrides, positional []string) error {
 
 	// No args — stream the default radio (unless Navidrome is configured,
 	// in which case we open the provider browser instead).
-	defaultRadio := len(positional) == 0 && navProv == nil && spotifyProv == nil
+	defaultRadio := len(positional) == 0 && navProv == nil && spotifyProv == nil && appleMusicProv == nil
 	if defaultRadio {
 		resolved.Pending = append(resolved.Pending, "https://radio.cliamp.stream/lofi/stream.pls")
 	}

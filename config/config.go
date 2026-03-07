@@ -85,8 +85,21 @@ type Config struct {
 	BufferMs        int             // speaker buffer in milliseconds (50–500)
 	ResampleQuality int             // beep resample quality factor (1–4)
 	BitDepth        int             // PCM bit depth for FFmpeg output: 16 or 32
-	Navidrome       NavidromeConfig // optional Navidrome/Subsonic server credentials
-	Spotify         SpotifyConfig   // optional Spotify provider (requires Premium)
+	Navidrome       NavidromeConfig   // optional Navidrome/Subsonic server credentials
+	Spotify         SpotifyConfig     // optional Spotify provider (requires Premium)
+	AppleMusic      AppleMusicConfig  // optional Apple Music provider (macOS 14+ only)
+}
+
+// AppleMusicConfig holds settings for the Apple Music provider.
+// Requires macOS 14+ and an active Apple Music subscription.
+// No API keys needed — MusicKit handles auth via macOS system dialog.
+type AppleMusicConfig struct {
+	Enabled bool
+}
+
+// IsSet reports whether the Apple Music provider is enabled.
+func (a AppleMusicConfig) IsSet() bool {
+	return a.Enabled
 }
 
 // Default returns a Config with sensible defaults.
@@ -165,6 +178,11 @@ func Load() (Config, error) {
 				cfg.Spotify.Enabled = val == "true"
 			case "client_id":
 				cfg.Spotify.ClientID = strings.Trim(val, `"'`)
+			}
+		case "applemusic":
+			switch key {
+			case "enabled":
+				cfg.AppleMusic.Enabled = val == "true"
 			}
 		default:
 			switch key {
