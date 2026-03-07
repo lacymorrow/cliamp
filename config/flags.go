@@ -12,6 +12,7 @@ type Overrides struct {
 	Shuffle         *bool
 	Repeat          *string
 	Mono            *bool
+	Provider        *string
 	Theme           *string
 	Visualizer      *string
 	EQPreset        *string
@@ -35,6 +36,9 @@ func (o Overrides) Apply(cfg *Config) {
 	}
 	if o.Mono != nil {
 		cfg.Mono = *o.Mono
+	}
+	if o.Provider != nil {
+		cfg.Provider = *o.Provider
 	}
 	if o.Theme != nil {
 		cfg.Theme = *o.Theme
@@ -97,6 +101,18 @@ func ParseFlags(args []string) (action string, ov Overrides, positional []string
 			ov.Play = ptrBool(true)
 
 		// Key-value flags.
+		case "--provider":
+			v, e := requireNextString(args, &i, arg)
+			if e != nil {
+				return "", ov, nil, e
+			}
+			v = strings.ToLower(v)
+			switch v {
+			case "radio", "navidrome", "spotify":
+			default:
+				return "", ov, nil, fmt.Errorf("flag --provider value must be radio, navidrome, or spotify (got %q)", v)
+			}
+			ov.Provider = &v
 		case "--volume":
 			v, e := requireNextFloat64(args, &i, arg)
 			if e != nil {

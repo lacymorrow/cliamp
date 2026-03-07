@@ -12,6 +12,7 @@ import (
 	"cliamp/config"
 	"cliamp/external/local"
 	"cliamp/external/navidrome"
+	"cliamp/external/radio"
 	"cliamp/external/spotify"
 	"cliamp/mpris"
 	"cliamp/player"
@@ -33,17 +34,21 @@ func run(overrides config.Overrides, positional []string) error {
 	}
 	overrides.Apply(&cfg)
 
-	var navProv playlist.Provider
+	// Build provider list: Radio is always available, Navidrome and Spotify if configured.
+	radioProv := radio.New()
+	var providers []ui.ProviderEntry
+	providers = append(providers, ui.ProviderEntry{Key: "radio", Name: "Radio", Provider: radioProv})
+
 	var navClient *navidrome.NavidromeClient
-	// Config file takes precedence; fall back to environment variables.
 	if c := navidrome.NewFromConfig(cfg.Navidrome); c != nil {
 		navClient = c
-		navProv = c
 	} else if c := navidrome.NewFromEnv(); c != nil {
 		navClient = c
-		navProv = c
 	}
-	// Build Spotify provider if enabled in config.
+	if navClient != nil {
+		providers = append(providers, ui.ProviderEntry{Key: "navidrome", Name: "Navidrome", Provider: navClient})
+	}
+
 	var spotifyProv *spotify.SpotifyProvider
 	var spotifySession *spotify.Session
 	if cfg.Spotify.IsSet() {
@@ -53,24 +58,11 @@ func run(overrides config.Overrides, positional []string) error {
 		} else {
 			spotifySession = sess
 			spotifyProv = spotify.New(sess)
+			providers = append(providers, ui.ProviderEntry{Key: "spotify", Name: "Spotify", Provider: spotifyProv})
 		}
 	}
 
 	localProv := local.New()
-	var localAsProvider playlist.Provider
-	if localProv != nil {
-		if pls, _ := localProv.Playlists(); len(pls) > 0 {
-			localAsProvider = localProv
-		}
-	}
-	var spotifyAsProvider playlist.Provider
-	if spotifyProv != nil {
-		spotifyAsProvider = spotifyProv
-	}
-	var provider playlist.Provider
-	if cp := playlist.NewComposite(navProv, spotifyAsProvider, localAsProvider); cp != nil {
-		provider = cp
-	}
 
 	defer resolve.CleanupYTDL()
 	if spotifySession != nil {
@@ -94,10 +86,14 @@ func run(overrides config.Overrides, positional []string) error {
 		return err
 	}
 
-	// No args — stream the default radio (unless Navidrome is configured,
-	// in which case we open the provider browser instead).
-	defaultRadio := len(positional) == 0 && navProv == nil && spotifyProv == nil
-	if defaultRadio {
+	// Determine default provider key.
+	defaultProvider := cfg.Provider
+	if defaultProvider == "" {
+		defaultProvider = "radio"
+	}
+
+	// No args + radio provider: stream the built-in radio directly.
+	if len(positional) == 0 && defaultProvider == "radio" {
 		resolved.Pending = append(resolved.Pending, "https://radio.cliamp.stream/lofi/stream.pls")
 	}
 
@@ -138,7 +134,7 @@ func run(overrides config.Overrides, positional []string) error {
 
 	themes := theme.LoadAll()
 
-	m := ui.NewModel(p, pl, provider, localProv, themes, cfg.Navidrome, navClient)
+	m := ui.NewModel(p, pl, providers, defaultProvider, localProv, themes, cfg.Navidrome, navClient)
 	m.SetSeekStepLarge(cfg.SeekStepLargeDuration())
 	m.SetPendingURLs(resolved.Pending)
 	if len(resolved.Tracks) == 0 && len(resolved.Pending) == 0 {
@@ -198,6 +194,9 @@ Audio engine:
   --resample-quality <n>  Resample quality factor (1–4)
   --bit-depth <n>         PCM bit depth: 16 (default) or 32 (lossless)
 
+Provider:
+  --provider <name>       Default provider: radio, navidrome, spotify (default: radio)
+
 Appearance:
   --theme <name>          UI theme name
   --visualizer <mode>     Visualizer mode (Bars, Bricks, Columns, Wave, Scatter, Flame, Retro, None)
@@ -225,6 +224,7 @@ Environment:
   NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS   Navidrome server (env fallback)
 
 Config:    ~/.config/cliamp/config.toml  (see config.toml.example)
+Radios:    ~/.config/cliamp/radios.toml
 Playlists: ~/.config/cliamp/playlists/*.toml
 Formats:   mp3, wav, flac, ogg, m4a, aac, opus, wma (aac/opus/wma need ffmpeg)
 SoundCloud/YouTube/Bandcamp require yt-dlp`

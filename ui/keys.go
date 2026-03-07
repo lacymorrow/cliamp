@@ -137,6 +137,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 				return fetchTracksCmd(m.provider, m.providerLists[m.provCursor].ID)
 			}
 		case "tab":
+			m.focus = focusEQ
+		case "esc", "backspace", "b":
 			if m.playlist.Len() > 0 {
 				m.focus = focusPlaylist
 			}
@@ -151,6 +153,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			if m.navClient != nil {
 				m.openNavBrowser()
 			}
+		case "P":
+			if len(m.providers) > 1 {
+				return m.switchProvider((m.provPillIdx + 1) % len(m.providers))
+			}
 		case "J":
 			m.openJumpMode()
 		}
@@ -164,7 +170,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		if m.fullVis {
 			m.fullVis = false
 			m.vis.Rows = defaultVisRows
-		} else if m.focus == focusPlaylist && m.provider != nil {
+		} else if m.focus == focusPlaylist {
 			m.focus = focusProvider
 		}
 
@@ -377,6 +383,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "u":
 		m.urlInputting = true
 		m.urlInput = ""
+
+	case "P":
+		if len(m.providers) > 1 {
+			return m.switchProvider((m.provPillIdx + 1) % len(m.providers))
+		}
 
 	case "N":
 		if m.navClient != nil {

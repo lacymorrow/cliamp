@@ -16,6 +16,8 @@ Tune in to our radio channel:
 cliamp https://radio.cliamp.stream/lofi/stream.pls
 ```
 
+Add your own stations to `~/.config/cliamp/radios.toml`. See [docs/configuration.md](docs/configuration.md#custom-radio-stations).
+
 ## Install
 
 ```sh

@@ -63,6 +63,7 @@ type Config struct {
 	Shuffle         bool
 	Mono            bool
 	SeekStepLarge   int             // seconds for Shift+Left/Right seek jumps
+	Provider        string          // default provider: "radio", "navidrome", "spotify" (default "radio")
 	Theme           string          // theme name, or "" for ANSI default
 	Visualizer      string          // visualizer mode name, or "" for default (Bars)
 	SampleRate      int             // output sample rate: 22050, 44100, 48000, 96000, 192000
@@ -176,6 +177,8 @@ func Load() (Config, error) {
 				cfg.EQPreset = strings.Trim(val, `"'`)
 			case "theme":
 				cfg.Theme = strings.Trim(val, `"'`)
+			case "provider":
+				cfg.Provider = strings.ToLower(strings.Trim(val, `"'`))
 			case "visualizer":
 				cfg.Visualizer = strings.Trim(val, `"'`)
 			case "sample_rate":

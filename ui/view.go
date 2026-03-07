@@ -333,7 +333,12 @@ func (m Model) renderControls() string {
 
 func (m Model) renderPlaylistHeader() string {
 	if m.focus == focusProvider {
-		return dimStyle.Render(fmt.Sprintf("── %s Playlists ── ", m.provider.Name()))
+		left := dimStyle.Render(fmt.Sprintf("── %s Playlists ──", m.provider.Name()))
+		if len(m.providers) > 1 {
+			right := " " + helpKey("P", "Provider")
+			return left + right
+		}
+		return left
 	}
 
 	var shuffle string
@@ -365,6 +370,7 @@ func (m Model) renderPlaylistHeader() string {
 
 	return dimStyle.Render("── Playlist ── ") + shuffle + queueStr + themeStr + " " + dimStyle.Render("──")
 }
+
 
 func (m Model) renderProviderList() string {
 	if m.provLoading {
@@ -511,7 +517,11 @@ func (m Model) renderJumpOverlay() string {
 
 func (m Model) renderHelp() string {
 	if m.focus == focusProvider {
-		return helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ") + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
+		help := helpKey("↑↓", "Navigate ") + helpKey("Enter", "Load ")
+		if len(m.providers) > 1 {
+			help += helpKey("P", "Provider ")
+		}
+		return help + helpKey("Tab", "Focus ") + helpKey("Q", "Quit")
 	}
 
 	// Build help hints with priority (lower = dropped first when too wide).

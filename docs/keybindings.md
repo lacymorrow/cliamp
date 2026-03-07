@@ -28,6 +28,7 @@ Press `Ctrl+K` in the player to see all keybindings.
 | `x` | Expand/collapse playlist |
 | `o` | Open file browser |
 | `b` `Esc` | Back to provider |
+| `P` | Cycle provider (Radio, Navidrome, Spotify) |
 
 ## EQ and Appearance
 

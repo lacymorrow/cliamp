@@ -147,8 +147,37 @@ func fetchTracksCmd(prov playlist.Provider, playlistID string) tea.Cmd {
 		if err != nil {
 			return err
 		}
+		// Resolve PLS/M3U wrapper URLs to actual stream URLs so the
+		// player receives a direct audio stream instead of a playlist file.
+		tracks = resolveWrapperURLs(tracks)
 		return tracksLoadedMsg(tracks)
 	}
+}
+
+// resolveWrapperURLs expands any PLS/M3U track paths into the actual stream
+// URLs they contain. Non-wrapper tracks are passed through unchanged.
+func resolveWrapperURLs(tracks []playlist.Track) []playlist.Track {
+	var out []playlist.Track
+	for _, t := range tracks {
+		if playlist.IsURL(t.Path) && (playlist.IsPLS(t.Path) || playlist.IsM3U(t.Path)) {
+			resolved, err := resolve.Remote([]string{t.Path})
+			if err == nil && len(resolved) > 0 {
+				// Preserve the original title/artist on resolved tracks.
+				for i := range resolved {
+					if resolved[i].Title == "" || resolved[i].Title == resolved[i].Path {
+						resolved[i].Title = t.Title
+					}
+					if resolved[i].Artist == "" {
+						resolved[i].Artist = t.Artist
+					}
+				}
+				out = append(out, resolved...)
+				continue
+			}
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 const navAlbumPageSize = 100

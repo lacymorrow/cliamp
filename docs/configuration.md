@@ -43,6 +43,34 @@ visualizer = "Bars"
 theme = "Tokyo Night"
 ```
 
+## Default Provider
+
+Set which provider to start with:
+
+```toml
+provider = "radio"
+```
+
+Valid values: `radio` (default), `navidrome`, `spotify`.
+
+You can also override from the CLI: `cliamp --provider navidrome`.
+
+## Custom Radio Stations
+
+Add your own stations to `~/.config/cliamp/radios.toml`:
+
+```toml
+[[station]]
+name = "Jazz FM"
+url = "https://jazz.example.com/stream"
+
+[[station]]
+name = "Ambient Radio"
+url = "https://ambient.example.com/stream.m3u"
+```
+
+These appear alongside the built-in cliamp radio in the Radio provider.
+
 See [audio-quality.md](audio-quality.md) for sample rate, buffer, bit depth, and resample quality settings.
 
 ## ffmpeg (optional)

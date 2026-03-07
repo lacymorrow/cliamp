@@ -22,7 +22,7 @@ import (
 type focusArea int
 
 const (
-	focusPlaylist focusArea = iota
+	focusPlaylist      focusArea = iota
 	focusEQ
 	focusSearch
 	focusProvider
@@ -55,6 +55,13 @@ const (
 	navBrowseScreenAlbums                            // artist's albums (ArtistAlbum mode only)
 	navBrowseScreenTracks                            // final song list in any mode
 )
+
+// ProviderEntry pairs a display name with a key and provider implementation.
+type ProviderEntry struct {
+	Key      string            // config key: "radio", "navidrome", "spotify"
+	Name     string            // display name: "Radio", "Navidrome", "Spotify"
+	Provider playlist.Provider // nil if not configured
+}
 
 type tickMsg time.Time
 type autoPlayMsg struct{}
@@ -105,6 +112,10 @@ type Model struct {
 	provSearchQuery   string
 	provSearchResults []int // indices into providerLists
 	provSearchCursor  int
+
+	// Provider picker (pill tabs)
+	providers    []ProviderEntry // all available providers
+	provPillIdx  int             // selected pill index
 	// EQ preset state (-1 = custom, 0+ = index into eqPresets)
 	eqPresetIdx int
 
@@ -234,11 +245,13 @@ type Model struct {
 }
 
 // NewModel creates a Model wired to the given player and playlist.
+// providers is the ordered list of available providers (Radio, Navidrome, Spotify).
+// defaultProvider is the config key of the provider to select initially ("radio", "navidrome", "spotify").
 // localProv is an optional direct reference to the local provider for write ops.
 // navCfg is the Navidrome config used to seed the initial browse sort preference.
 // nav is the raw NavidromeClient (may be nil); stored directly so the browser
 // key handler doesn't have to unwrap a CompositeProvider.
-func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, localProv *local.Provider, themes []theme.Theme, navCfg config.NavidromeConfig, nav *navidrome.NavidromeClient) Model {
+func NewModel(p *player.Player, pl *playlist.Playlist, providers []ProviderEntry, defaultProvider string, localProv *local.Provider, themes []theme.Theme, navCfg config.NavidromeConfig, nav *navidrome.NavidromeClient) Model {
 	sortType := navCfg.BrowseSort
 	if sortType == "" {
 		sortType = navidrome.SortAlphabeticalByName
@@ -253,12 +266,23 @@ func NewModel(p *player.Player, pl *playlist.Playlist, prov playlist.Provider, l
 		themes:             themes,
 		themeIdx:           -1, // Default (ANSI)
 		localProvider:      localProv,
+		providers:          providers,
 		navSortType:        sortType,
 		navClient:          nav,
 		navScrobbleEnabled: navCfg.ScrobbleEnabled(),
 	}
-	if prov != nil {
-		m.provider = prov
+	// Select the default provider pill.
+	for i, pe := range providers {
+		if pe.Key == defaultProvider {
+			m.provPillIdx = i
+			m.provider = pe.Provider
+			break
+		}
+	}
+	// Fallback: select first available provider.
+	if m.provider == nil && len(providers) > 0 {
+		m.provPillIdx = 0
+		m.provider = providers[0].Provider
 	}
 	return m
 }
@@ -416,6 +440,21 @@ func (m *Model) StartInProvider() {
 		m.focus = focusProvider
 		m.provLoading = true
 	}
+}
+
+// switchProvider sets the active provider by pill index and fetches its playlists.
+func (m *Model) switchProvider(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(m.providers) {
+		return nil
+	}
+	m.provPillIdx = idx
+	m.provider = m.providers[idx].Provider
+	m.providerLists = nil
+	m.provCursor = 0
+	m.provLoading = true
+	m.provSearching = false
+	m.focus = focusProvider
+	return fetchPlaylistsCmd(m.provider)
 }
 
 // SetPendingURLs stores remote URLs (feeds, M3U) for async resolution after Init.
