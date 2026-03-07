@@ -55,7 +55,7 @@ func run(overrides config.Overrides, positional []string) error {
 		providers = append(providers, ui.ProviderEntry{Key: "spotify", Name: "Spotify", Provider: spotifyProv})
 	}
 
-	var ytmusicProv *ytmusic.YouTubeMusicProvider
+	var ytProviders ytmusic.Providers
 	if cfg.YouTubeMusic.IsSet() {
 		ytClientID, ytClientSecret := cfg.YouTubeMusic.ResolveCredentials(ytmusic.FallbackCredentials)
 		// Configure yt-dlp cookie source for YouTube Music uploads/private tracks.
@@ -63,25 +63,28 @@ func run(overrides config.Overrides, positional []string) error {
 			player.SetYTDLCookiesFrom(cfg.YouTubeMusic.CookiesFrom)
 		}
 		if ytClientID == "" || ytClientSecret == "" {
-			fmt.Fprintf(os.Stderr, "YouTube Music: no credentials available (configure client_id/client_secret in config.toml)\n")
+			fmt.Fprintf(os.Stderr, "YouTube: no credentials available (configure client_id/client_secret in config.toml)\n")
 		} else {
-			// YouTube Music playback requires yt-dlp. Check early and offer to install.
+			// YouTube playback requires yt-dlp. Check early and offer to install.
 			if !player.YTDLPAvailable() {
-				fmt.Fprintf(os.Stderr, "\nYouTube Music requires yt-dlp for audio playback.\n")
+				fmt.Fprintf(os.Stderr, "\nYouTube requires yt-dlp for audio playback.\n")
 				fmt.Fprintf(os.Stderr, "Install command: %s\n\n", player.YtdlpInstallHint())
 				fmt.Fprintf(os.Stderr, "Press Enter to install automatically, or Ctrl+C to skip... ")
 				fmt.Scanln()
 				fmt.Fprintf(os.Stderr, "Installing yt-dlp...\n")
 				if err := player.InstallYTDLP(); err != nil {
 					fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
-					fmt.Fprintf(os.Stderr, "YouTube Music provider disabled. Install manually and restart.\n\n")
+					fmt.Fprintf(os.Stderr, "YouTube providers disabled. Install manually and restart.\n\n")
 				} else {
 					fmt.Fprintf(os.Stderr, "yt-dlp installed successfully!\n\n")
 				}
 			}
 			if player.YTDLPAvailable() {
-				ytmusicProv = ytmusic.New(nil, ytClientID, ytClientSecret, cfg.YouTubeMusic.CookiesFrom != "")
-				providers = append(providers, ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytmusicProv})
+				ytProviders = ytmusic.New(nil, ytClientID, ytClientSecret, cfg.YouTubeMusic.CookiesFrom != "")
+				providers = append(providers,
+					ui.ProviderEntry{Key: "youtube", Name: "YouTube", Provider: ytProviders.Video},
+					ui.ProviderEntry{Key: "ytmusic", Name: "YouTube Music", Provider: ytProviders.Music},
+				)
 			}
 		}
 	}
@@ -92,8 +95,8 @@ func run(overrides config.Overrides, positional []string) error {
 	if spotifyProv != nil {
 		defer spotifyProv.Close()
 	}
-	if ytmusicProv != nil {
-		defer ytmusicProv.Close()
+	if ytProviders.Music != nil {
+		defer ytProviders.Music.Close()
 	}
 
 	if len(positional) > 0 && (positional[0] == "search" || positional[0] == "search-sc") {
@@ -222,7 +225,7 @@ Audio engine:
   --bit-depth <n>         PCM bit depth: 16 (default) or 32 (lossless)
 
 Provider:
-  --provider <name>       Default provider: radio, navidrome, spotify, ytmusic (default: radio)
+  --provider <name>       Default provider: radio, navidrome, spotify, youtube, ytmusic (default: radio)
 
 Appearance:
   --theme <name>          UI theme name

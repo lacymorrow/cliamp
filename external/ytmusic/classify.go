@@ -1,0 +1,175 @@
+package ytmusic
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"google.golang.org/api/youtube/v3"
+)
+
+// musicCategoryID is the YouTube video category for Music.
+const musicCategoryID = "10"
+
+// classificationCache maps playlist ID → true if the playlist is music.
+type classificationCache struct {
+	Music map[string]bool `json:"music"` // playlist ID → is music
+}
+
+// classificationCachePath returns the path to the classification cache file.
+func classificationCachePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "cliamp", "ytmusic_classification.json")
+}
+
+// loadClassification loads cached playlist classifications from disk.
+func loadClassification() map[string]bool {
+	data, err := os.ReadFile(classificationCachePath())
+	if err != nil {
+		return nil
+	}
+	var cache classificationCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil
+	}
+	return cache.Music
+}
+
+// saveClassification writes playlist classifications to disk.
+func saveClassification(music map[string]bool) {
+	cache := classificationCache{Music: music}
+	data, _ := json.MarshalIndent(cache, "", "  ")
+	path := classificationCachePath()
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	os.WriteFile(path, data, 0o600)
+}
+
+// classifyPlaylists determines which playlists contain music content by
+// sampling one video from each and checking its category.
+// Returns a map of playlist ID → true (music) / false (not music).
+// Results are cached to disk to avoid repeated API calls.
+func classifyPlaylists(svc *youtube.Service, playlists []playlistEntry, ctx context.Context) map[string]bool {
+	cached := loadClassification()
+	if cached == nil {
+		cached = make(map[string]bool)
+	}
+
+	// Find playlists that need classification.
+	var toClassify []playlistEntry
+	for _, pl := range playlists {
+		if _, ok := cached[pl.ID]; !ok {
+			toClassify = append(toClassify, pl)
+		}
+	}
+
+	if len(toClassify) == 0 {
+		return cached
+	}
+
+	fmt.Fprintf(os.Stderr, "ytmusic: classifying %d playlists...\n", len(toClassify))
+
+	// Sample one video ID from each playlist (parallel, max 10 concurrent).
+	type sampleResult struct {
+		playlistID string
+		videoID    string
+	}
+	sampleCh := make(chan sampleResult, len(toClassify))
+	sem := make(chan struct{}, 10) // concurrency limit
+	var wg sync.WaitGroup
+
+	for _, pl := range toClassify {
+		wg.Add(1)
+		go func(plID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			resp, err := svc.PlaylistItems.List([]string{"contentDetails"}).
+				PlaylistId(plID).
+				MaxResults(1).
+				Context(ctx).
+				Do()
+			if err != nil || len(resp.Items) == 0 {
+				sampleCh <- sampleResult{playlistID: plID}
+				return
+			}
+			sampleCh <- sampleResult{
+				playlistID: plID,
+				videoID:    resp.Items[0].ContentDetails.VideoId,
+			}
+		}(pl.ID)
+	}
+
+	wg.Wait()
+	close(sampleCh)
+
+	// Collect video IDs for batch category lookup.
+	videoToPlaylist := make(map[string]string) // videoID → playlistID
+	var videoIDs []string
+	for s := range sampleCh {
+		if s.videoID != "" {
+			videoToPlaylist[s.videoID] = s.playlistID
+			videoIDs = append(videoIDs, s.videoID)
+		} else {
+			// No video found — default to non-music.
+			cached[s.playlistID] = false
+		}
+	}
+
+	// Batch fetch video categories (50 per request).
+	for i := 0; i < len(videoIDs); i += 50 {
+		end := i + 50
+		if end > len(videoIDs) {
+			end = len(videoIDs)
+		}
+		batch := videoIDs[i:end]
+
+		vResp, err := svc.Videos.List([]string{"snippet"}).
+			Id(batch...).
+			Context(ctx).
+			Do()
+		if err != nil {
+			// On error, default unclassified to non-music.
+			for _, vid := range batch {
+				if plID, ok := videoToPlaylist[vid]; ok {
+					cached[plID] = false
+				}
+			}
+			continue
+		}
+
+		for _, v := range vResp.Items {
+			plID := videoToPlaylist[v.Id]
+			cached[plID] = (v.Snippet.CategoryId == musicCategoryID)
+		}
+	}
+
+	// Mark any remaining unclassified as non-music.
+	for _, pl := range toClassify {
+		if _, ok := cached[pl.ID]; !ok {
+			cached[pl.ID] = false
+		}
+	}
+
+	saveClassification(cached)
+	fmt.Fprintf(os.Stderr, "ytmusic: classification complete\n")
+	return cached
+}
+
+// playlistEntry is a minimal playlist descriptor for classification.
+type playlistEntry struct {
+	ID         string
+	Name       string
+	TrackCount int
+}
+
+// classifyWithTimeout runs classification with a timeout.
+func classifyWithTimeout(svc *youtube.Service, playlists []playlistEntry, timeout time.Duration) map[string]bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return classifyPlaylists(svc, playlists, ctx)
+}

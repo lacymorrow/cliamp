@@ -1,6 +1,10 @@
-# YouTube Music Integration
+# YouTube & YouTube Music Integration
 
-Cliamp can browse your [YouTube Music](https://music.youtube.com/) playlists and play tracks through its audio pipeline — EQ, visualizer, and all effects apply. Playback uses yt-dlp, which must be installed.
+Cliamp can browse your [YouTube](https://youtube.com/) and [YouTube Music](https://music.youtube.com/) playlists and play tracks through its audio pipeline — EQ, visualizer, and all effects apply. Playback uses yt-dlp, which must be installed.
+
+Your playlists are automatically classified into two providers:
+- **YouTube Music** — playlists containing music content
+- **YouTube** — playlists containing non-music content (podcasts, vlogs, tutorials, etc.)
 
 ## Setup
 
@@ -32,13 +36,27 @@ client_id = "your_client_id_here"
 client_secret = "your_client_secret_here"
 ```
 
-Run `cliamp`, select YouTube Music as a provider, and press Enter to sign in. Credentials are cached at `~/.config/cliamp/ytmusic_credentials.json` — subsequent launches refresh silently.
+Optional: to play uploaded/private tracks, add your browser for cookie access:
+
+```toml
+[ytmusic]
+client_id = "your_client_id_here"
+client_secret = "your_client_secret_here"
+cookies_from = "chrome"
+```
+
+Supported browsers: `chrome`, `firefox`, `brave`, `edge`, `opera`, `safari`, `chromium`.
+
+Run `cliamp` (or `cliamp --provider ytmusic` / `cliamp --provider youtube`), select a provider, and press Enter to sign in. Credentials are cached at `~/.config/cliamp/ytmusic_credentials.json` — subsequent launches refresh silently.
 
 ## Usage
 
-Once authenticated, YouTube Music appears as a provider alongside Spotify, Navidrome, and Radio. Press `Esc`/`b` to open the provider browser and select YouTube Music.
+Once authenticated, **YouTube** and **YouTube Music** appear as separate providers alongside Spotify, Navidrome, and Radio. Press `Esc`/`b` to open the provider browser.
 
-Your playlists are listed in the provider panel, with "Liked Videos" at the top. Navigate with the arrow keys and press `Enter` to load one. Tracks are played through cliamp's yt-dlp pipeline, so EQ, visualizer, mono, and all other effects work exactly as with local files.
+- **YouTube Music** shows playlists classified as music (video category "Music")
+- **YouTube** shows all other playlists (podcasts, vlogs, tutorials, etc.)
+
+Both share the same Google account login. Classification is automatic (based on video category) and cached to disk so subsequent launches are instant.
 
 ## Controls
 
@@ -55,12 +73,17 @@ After loading a playlist you return to the standard playlist view with all the u
 
 ## Playlists
 
-All playlists in your YouTube Music library are shown, including:
-- **Liked Videos** — your liked videos (YouTube's special `LL` playlist)
-- Playlists you've created
-- Playlists you've saved
+Playlists are automatically split between the two providers:
 
-YouTube doesn't distinguish between YouTube Music playlists and regular YouTube playlists — all appear in the list. This is intentional: if you have a "Coding Music" YouTube playlist, you probably want it in cliamp too.
+**YouTube Music** shows:
+- **Liked Music** — your liked music (YouTube's special `LL` playlist)
+- Playlists containing music content (auto-classified by video category)
+
+**YouTube** shows:
+- **Liked Videos** — your liked videos
+- Playlists containing non-music content
+
+Classification is determined by sampling a video from each playlist and checking its YouTube category. Results are cached at `~/.config/cliamp/ytmusic_classification.json`. Delete this file to reclassify.
 
 ## Troubleshooting
 
