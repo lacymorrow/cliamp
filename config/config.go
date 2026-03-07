@@ -60,18 +60,31 @@ func (s SpotifyConfig) IsSet() bool {
 }
 
 // YouTubeMusicConfig holds settings for the YouTube Music provider.
-// Requires a Google Cloud project with YouTube Data API v3 enabled
-// and an OAuth 2.0 Client ID (Desktop application type).
+// If no client_id/client_secret are set, built-in fallback credentials are
+// used automatically (same pattern as Spotify).
 type YouTubeMusicConfig struct {
 	Disabled     bool   // true only when user explicitly sets enabled = false
-	ClientID     string // Google Cloud OAuth2 client ID (required)
-	ClientSecret string // Google Cloud OAuth2 client secret (required for Desktop apps)
+	Enabled      bool   // true when [ytmusic] section exists (even without credentials)
+	ClientID     string // Google Cloud OAuth2 client ID (overrides built-in fallback)
+	ClientSecret string // Google Cloud OAuth2 client secret (overrides built-in fallback)
 }
 
 // IsSet reports whether the YouTube Music provider should be shown.
-// Requires a client_id and must not be explicitly disabled.
+// Returns true when enabled, even without explicit credentials (fallback pool is used).
 func (y YouTubeMusicConfig) IsSet() bool {
-	return !y.Disabled && y.ClientID != "" && y.ClientSecret != ""
+	return !y.Disabled && y.Enabled
+}
+
+// ResolveCredentials returns the user's configured credentials, or falls back
+// to the built-in pool. Returns empty strings only when the pool is also empty.
+func (y YouTubeMusicConfig) ResolveCredentials(fallbackFn func() (string, string)) (clientID, clientSecret string) {
+	if y.ClientID != "" && y.ClientSecret != "" {
+		return y.ClientID, y.ClientSecret
+	}
+	if fallbackFn != nil {
+		return fallbackFn()
+	}
+	return "", ""
 }
 
 // Config holds user preferences loaded from the config file.
@@ -140,6 +153,11 @@ func Load() (Config, error) {
 		// Section header: [navidrome]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.ToLower(line[1 : len(line)-1])
+			// Mark providers as enabled when their section exists.
+			switch section {
+			case "ytmusic":
+				cfg.YouTubeMusic.Enabled = true
+			}
 			continue
 		}
 
