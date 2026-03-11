@@ -101,6 +101,14 @@ func Remote(urls []string) ([]playlist.Track, error) {
 	var tracks []playlist.Track
 	for _, u := range urls {
 		switch {
+		case playlist.IsYouTubeMusicURL(u):
+			// YouTube Music requires yt-dlp; the native YouTube API client
+			// does not support music.youtube.com playlists.
+			t, err := resolveYTDL(u)
+			if err != nil {
+				return nil, fmt.Errorf("resolving youtube music %s: %w", u, err)
+			}
+			tracks = append(tracks, t...)
 		case playlist.IsYouTubeURL(u):
 			t, err := resolveYouTube(u)
 			if err != nil {
