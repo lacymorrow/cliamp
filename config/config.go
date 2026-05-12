@@ -125,6 +125,19 @@ type Config struct {
 	Navidrome       NavidromeConfig    // optional Navidrome/Subsonic server credentials
 	Spotify         SpotifyConfig      // optional Spotify provider (requires Premium)
 	YouTubeMusic    YouTubeMusicConfig // optional YouTube Music provider
+	AppleMusic      AppleMusicConfig   // optional Apple Music provider (macOS 14+ only)
+}
+
+// AppleMusicConfig holds settings for the Apple Music provider.
+// Requires macOS 14+ and an active Apple Music subscription.
+// No API keys needed — MusicKit handles auth via macOS system dialog.
+type AppleMusicConfig struct {
+	Enabled bool
+}
+
+// IsSet reports whether the Apple Music provider is enabled.
+func (a AppleMusicConfig) IsSet() bool {
+	return a.Enabled
 }
 
 // Default returns a Config with sensible defaults.
@@ -221,6 +234,11 @@ func Load() (Config, error) {
 				cfg.YouTubeMusic.ClientSecret = strings.Trim(val, `"'`)
 			case "cookies_from":
 				cfg.YouTubeMusic.CookiesFrom = strings.Trim(val, `"'`)
+			}
+		case "applemusic":
+			switch key {
+			case "enabled":
+				cfg.AppleMusic.Enabled = val == "true"
 			}
 		default:
 			switch key {
